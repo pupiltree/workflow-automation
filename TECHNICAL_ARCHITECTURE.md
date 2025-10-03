@@ -225,24 +225,26 @@ class PRDBuilderEngine:
 
 **Architecture**:
 ```yaml
-# YAML Configuration Structure
+# YAML Configuration Structure (Enhanced for Dynamic Voice & Chat Agents)
 automation_config:
   config_id: "config_client_123_v1"
   client_id: "client_123"
   use_case: "customer_support"
 
-  # AI Agent Configuration
+  # Dynamic AI Agent Configuration (Works for both Voice and Chat)
   agent:
     system_prompt: |
-      You are a customer support agent for {client_name}.
-      Your objectives are:
-      1. {objective_1}
-      2. {objective_2}
+      You are {agent_name}, a {agent_type} agent for {client_name}.
+      Your personality: {personality}
+
+      Core Objectives:
+      {objectives}
 
       Guidelines:
-      - Always collect PII when appropriate
-      - Escalate to human when sentiment is negative
-      - Cross-sell products when relevant
+      - Always follow the escalation protocol
+      - Collect PII when appropriate for business processes
+      - Use {language} communication style
+      - Handle {business_context} scenarios professionally
 
     model:
       primary: "gemini-2.5-pro"
@@ -250,40 +252,356 @@ automation_config:
       temperature: 0.7
       max_tokens: 2000
 
-  # Tools Configuration
+    # Dynamic agent properties
+    agent_name: "Maya"
+    agent_type: "healthcare assistant"
+    personality: "caring, professional, empathetic"
+    language: "Hindi and English"
+    business_context: "medical diagnostics and test booking"
+
+  # Voice Configuration (Dynamic Voice Agent Settings)
+  voice:
+    # Voice characteristics
+    voice_id: "Kore"  # Professional female voice for healthcare
+    language: "en-IN"  # Indian English with Hindi support
+    temperature: 0.2  # Conservative for healthcare accuracy
+
+    # Dynamic greeting configuration
+    greeting:
+      message: "START the greeting in Hindi as Maya, a caring female healthcare assistant from {client_name}. Greet warmly in Hindi and ask how you can help with their healthcare needs."
+      language_detection: true
+      supported_languages: ["hi", "en", "bn", "te", "mr", "ta", "gu", "ur"]
+
+    # STT/TTS configuration
+    stt_provider: "google"
+    tts_provider: "google"
+    turn_detection:
+      type: "server_vad"
+      prefix_padding_ms: 500
+      silence_duration_ms: 1200
+      threshold: 0.5
+
+    # Voice-specific business logic
+    business_logic:
+      pricing_requirements:
+        - always_mention_specific_prices: true
+        - compare_individual_vs_panel: true
+        - include_preparation_requirements: true
+        - currency: "INR"
+
+      escalation_triggers:
+        - sentiment_score_below: 0.3
+        - medical_complexity_high: true
+        - customer_request: true
+
+      data_collection:
+        - auto_detect_phone: true
+        - prescription_analysis: true
+        - appointment_booking: true
+
+  # Tools Configuration (Dynamic Tool Loading)
   tools:
     available:
+      # Database tools
       - name: "fetch_customer_data"
         type: "database"
         config:
           table: "customers"
           permissions: ["read"]
-      - name: "update_ticket"
+          fields: ["name", "phone", "history", "preferences"]
+
+      - name: "check_appointment_availability"
+        type: "database"
+        config:
+          table: "appointments"
+          permissions: ["read"]
+          date_range: 30  # days ahead
+
+      # API tools
+      - name: "create_medical_order"
         type: "api"
         config:
-          endpoint: "https://api.client.com/tickets"
-          method: "PUT"
+          endpoint: "https://api.client.com/orders"
+          method: "POST"
+          auth_type: "bearer"
+          required_fields: ["customer_name", "phone", "test_codes"]
 
+      - name: "process_payment"
+        type: "api"
+        config:
+          endpoint: "https://api.client.com/payments"
+          method: "POST"
+          payment_providers: ["razorpay", "phonepe", "cash"]
+
+      # Healthcare-specific tools
+      - name: "medical_rag_tool"
+        type: "rag"
+        config:
+          knowledge_base: "medical_knowledge"
+          include_pricing: true
+          include_preparation: true
+
+      - name: "prescription_analysis"
+        type: "ai_vision"
+        config:
+          supported_formats: ["jpg", "png", "pdf"]
+          confidence_threshold: 0.8
+          whatsapp_integration: true
+
+      # Communication tools
+      - name: "send_whatsapp_message"
+        type: "messaging"
+        config:
+          provider: "twilio_whatsapp"
+          templates: ["appointment_reminder", "test_results", "payment_request"]
+
+      - name: "create_support_ticket"
+        type: "ticketing"
+        config:
+          priority_levels: ["urgent", "high", "medium", "low"]
+          auto_escalation: true
+
+    # Missing tools management
     missing:
-      - name: "appointment_scheduler"
-        required_for: ["healthcare_appointments"]
+      - name: "advanced_medical_ai"
+        description: "AI-powered symptom checker with differential diagnosis"
+        required_for: ["advanced_healthcare", "symptom_analysis"]
         github_issue_created: true
         issue_id: "ISSUE-123"
+        estimated_complexity: "high"
 
-  # Integrations Configuration
+      - name: "insurance_verification"
+        description: "Real-time insurance coverage verification"
+        required_for: ["insurance_clients", "pre_authorization"]
+        github_issue_created: true
+        issue_id: "ISSUE-124"
+
+  # Integrations Configuration (Dynamic Integration Loading)
   integrations:
     available:
+      # CRM Integration
       - name: "zendesk"
         type: "crm"
         config:
           api_key: "${ZENDESK_API_KEY}"
           subdomain: "client.zendesk.com"
+          webhook_url: "https://webhook.client.com/zendesk"
 
+      # Payment Integration
+      - name: "razorpay"
+        type: "payment"
+        config:
+          api_key: "${RAZORPAY_API_KEY}"
+          secret_key: "${RAZORPAY_SECRET}"
+          webhook_secret: "${RAZORPAY_WEBHOOK_SECRET}"
+
+      # Messaging Integration
+      - name: "twilio_whatsapp"
+        type: "messaging"
+        config:
+          account_sid: "${TWILIO_ACCOUNT_SID}"
+          auth_token: "${TWILIO_AUTH_TOKEN}"
+          phone_number: "+14155238886"
+          webhook_url: "https://webhook.client.com/whatsapp"
+
+      # Healthcare Integration
+      - name: "lab_information_system"
+        type: "healthcare_it"
+        config:
+          api_base: "https://api.lab.client.com"
+          auth_type: "oauth2"
+          scopes: ["read:tests", "write:orders", "read:results"]
+
+      # Analytics Integration
+      - name: "google_analytics"
+        type: "analytics"
+        config:
+          measurement_id: "${GA_MEASUREMENT_ID}"
+          api_secret: "${GA_API_SECRET}"
+
+    # Missing integrations management
     missing:
-      - name: "salesforce"
-        required_for: ["enterprise_clients"]
+      - name: "salesforce_health_cloud"
+        description: "Salesforce Health Cloud integration for patient management"
+        required_for: ["enterprise_clients", "healthcare_providers"]
         github_issue_created: true
-        issue_id: "ISSUE-124"
+        issue_id: "ISSUE-125"
+
+      - name: "epic_emr"
+        description: "Epic EMR integration for hospital systems"
+        required_for: ["hospital_clients", "emr_integration"]
+        github_issue_created: true
+        issue_id: "ISSUE-126"
+
+  # Channel Configuration (Multi-Channel Support)
+  channels:
+    input:
+      # Voice channels
+      - type: "voice"
+        enabled: true
+        provider: "livekit_sip"
+        config:
+          phone_numbers: ["+919876543210", "+919876543211"]
+          sip_trunk: "twilio_sip"
+          ivr_enabled: true
+
+      - type: "web_voice"
+        enabled: true
+        provider: "livekit_web"
+        config:
+          room_prefix: "voice_"
+          max_duration: 1800  # 30 minutes
+
+      # Chat channels
+      - type: "web_chat"
+        enabled: true
+        config:
+          widget_url: "https://chat.client.com/widget"
+          proactive_chat: true
+
+      - type: "whatsapp"
+        enabled: true
+        provider: "twilio_whatsapp"
+        config:
+          phone_number: "+14155238886"
+          business_profile: "healthcare_assistant"
+
+      - type: "instagram"
+        enabled: true
+        config:
+          business_account: "client_healthcare"
+          auto_reply: true
+
+    output:
+      - type: "voice"
+        config:
+          voice_id: "Kore"
+          speed: 1.0
+          pitch: 1.0
+
+      - type: "whatsapp"
+        config:
+          template_messages: true
+          media_support: true
+
+      - type: "email"
+        config:
+          provider: "sendgrid"
+          templates: ["appointment_confirmation", "test_results", "follow_up"]
+
+      - type: "sms"
+        config:
+          provider: "twilio_sms"
+          opt_in_required: true
+
+  # Business Logic Configuration (Dynamic Business Rules)
+  business_logic:
+    # Dynamic cross-sell configuration
+    cross_sell:
+      enabled: true
+      triggers:
+        - type: "positive_sentiment"
+          action: "suggest_premium_tests"
+        - type: "test_completion"
+          action: "suggest_follow_up"
+        - type: "family_mention"
+          action: "suggest_family_packages"
+
+      products:
+        - id: "premium_health_checkup"
+          name: "Premium Health Checkup"
+          price: 2999
+          conditions: ["age_above_30", "first_time_customer"]
+          description: "Comprehensive health screening with 50+ tests"
+
+        - id: "family_package"
+          name: "Family Health Package"
+          price: 4999
+          conditions: ["mention_family", "group_booking"]
+          description: "Health checkup package for up to 4 family members"
+
+    # Dynamic survey configuration
+    surveys:
+      enabled: true
+      questions:
+        - id: "source_awareness"
+          text: "How did you hear about our services?"
+          type: "multiple_choice"
+          options: ["Google Search", "Social Media", "Friend/Family", "Doctor Referral", "Advertisement"]
+          trigger: "post_booking"
+
+        - id: "satisfaction_rating"
+          text: "How would you rate our service?"
+          type: "rating"
+          scale: "1-5"
+          trigger: "post_service"
+
+        - id: "improvement_feedback"
+          text: "How can we improve our service?"
+          type: "text"
+          trigger: "post_service"
+          optional: true
+
+    # Dynamic escalation configuration
+    escalation:
+      enabled: true
+      triggers:
+        - condition: "sentiment_score < 0.3"
+          action: "urgent_human_callback"
+          priority: "high"
+
+        - condition: "medical_complexity_high"
+          action: "doctor_consultation"
+          priority: "urgent"
+
+        - condition: "customer_request_escalation"
+          action: "human_agent_transfer"
+          priority: "medium"
+
+        - condition: "system_error"
+          action: "technical_support"
+          priority: "high"
+
+      handoff:
+        - type: "human_agent"
+          timeout: 30  # seconds
+          fallback: "create_ticket"
+          departments: ["customer_support", "technical_support", "medical_team"]
+
+        - type: "doctor"
+          timeout: 60  # seconds
+          fallback: "schedule_appointment"
+          specialization: ["general_practitioner", "specialist"]
+
+      # What to do when human is unavailable
+      human_unavailable:
+        - action: "create_urgent_ticket"
+          auto_reply: "I'll connect you with a specialist as soon as possible. They'll call you back within 30 minutes."
+
+        - action: "schedule_callback"
+          auto_reply: "Our specialists are currently busy. When would be a good time for them to call you back?"
+
+        - action: "offer_alternative"
+          auto_reply: "Would you like me to help you with something else while you wait for a specialist?"
+
+    # Dynamic outbound retargeting
+    outbound_retargeting:
+      enabled: true
+      triggers:
+        - condition: "abandoned_booking"
+          delay: 300  # 5 minutes
+          channel: "whatsapp"
+          message: "I noticed you didn't complete your booking. Need help with anything?"
+
+        - condition: "missed_appointment"
+          delay: 3600  # 1 hour
+          channel: "voice"
+          message: "We missed you for your appointment. Would you like to reschedule?"
+
+        - condition: "test_results_ready"
+          delay: 0  # immediate
+          channel: "whatsapp"
+          message: "Your test results are ready! Would you like me to explain them?"
 
   # Channel Configuration
   channels:
@@ -407,71 +725,232 @@ class WorkflowAgent:
 ```
 
 #### 4.2 LiveKit Voice AI Infrastructure
-**Purpose**: Real-time voice communication with AI agents
+**Purpose**: Real-time voice communication with AI agents using dynamic configuration
 
-**Technology Stack**: LiveKit Server + LiveKit SIP + STT/TTS Services
+**Technology Stack**: LiveKit Server + LiveKit SIP + STT/TTS Services + Dynamic Configuration System
 
 **Architecture**:
 ```python
-# Voice Agent Implementation
+# Dynamic Voice Agent Implementation (Based on krishna_diagnostics pattern)
 import asyncio
-from livekit import rtc
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
-from livekit.agents.llm import LLMContext, ChatContext
-from livekit.agents.voice_assistant import VoiceAssistant
+import json
+from livekit import rtc, agents
+from livekit.agents import Agent, AgentSession, function_tool
+from livekit.plugins.google.beta.realtime import RealtimeModel
 
-class VoiceAgent:
-    def __init__(self, config: VoiceConfig):
-        self.config = config
-        self.stt_service = STTService(config.stt_provider)
-        self.tts_service = TTSService(config.tts_provider)
-        self.llm_client = LLMClient(config.llm_model)
+class DynamicVoiceAgent(Agent):
+    """
+    Dynamic voice agent that loads configuration, tools, and integrations
+    based on YAML configuration for each use case/client.
+    """
 
-    async def start(self, room: rtc.Room):
-        """Start voice agent in LiveKit room"""
-        self.room = room
+    def __init__(self, config: VoiceConfig, end_call_coro, client_config: dict):
+        # Dynamic configuration from YAML
+        self.client_config = client_config
+        self.system_prompt = client_config.get('agent', {}).get('system_prompt', '')
+        self.tools_config = client_config.get('tools', {})
+        self.integrations_config = client_config.get('integrations', {})
+        self.voice_config = client_config.get('voice', {})
 
-        # Set up audio tracks
-        self.microphone_track = rtc.LocalAudioTrack.create_microphone_track()
-        self.speaker_track = rtc.LocalAudioTrack.create_speaker_track()
+        # Dynamic tool loading
+        self.available_tools = {}
+        self._load_tools()
 
-        await room.publish(self.microphone_track)
-        await room.publish(self.speaker_track)
+        # Dynamic integration loading
+        self.integrations = {}
+        self._load_integrations()
 
-        # Start conversation loop
-        asyncio.create_task(self.conversation_loop())
+        # Context management
+        self._current_context = {}
+        self._end_call = end_call_coro
 
-    async def conversation_loop(self):
-        """Main conversation processing loop"""
-        while True:
-            # Listen for user speech
-            user_text = await self.stt_service.transcribe(self.microphone_track)
+        super().__init__(instructions=self.system_prompt)
 
-            if user_text:
-                # Process with LLM
-                response = await self.llm_client.generate_response(
-                    messages=[
-                        {"role": "system", "content": self.config.system_prompt},
-                        {"role": "user", "content": user_text}
-                    ]
-                )
+    def _load_tools(self):
+        """Dynamically load tools based on YAML configuration"""
+        available_tools = self.tools_config.get('available', [])
 
-                # Convert response to speech
-                audio_data = await self.tts_service.synthesize(response.content)
+        for tool_config in available_tools:
+            tool_name = tool_config.get('name')
+            tool_type = tool_config.get('type')
 
-                # Play response
-                await self.speaker_track.capture_frame(audio_data)
+            if tool_type == 'database':
+                self._load_database_tool(tool_config)
+            elif tool_type == 'api':
+                self._load_api_tool(tool_config)
+            elif tool_type == 'custom':
+                self._load_custom_tool(tool_config)
 
-# SIP Integration for Telephony
-class SIPConnector:
-    def __init__(self, sip_config: SIPConfig):
-        self.livekit_sip = LiveKitSIPConnector(sip_config)
+            logging.info(f"🔧 Loaded tool: {tool_name} ({tool_type})")
+
+    def _load_integrations(self):
+        """Dynamically load integrations based on YAML configuration"""
+        available_integrations = self.integrations_config.get('available', [])
+
+        for integration_config in available_integrations:
+            integration_name = integration_config.get('name')
+            integration_type = integration_config.get('type')
+
+            if integration_type == 'whatsapp':
+                self._load_whatsapp_integration(integration_config)
+            elif integration_type == 'payment':
+                self._load_payment_integration(integration_config)
+            elif integration_type == 'crm':
+                self._load_crm_integration(integration_config)
+
+            logging.info(f"🔗 Loaded integration: {integration_name} ({integration_type})")
+
+    @function_tool()
+    async def dynamic_tool_call(self, tool_name: str, parameters: dict) -> str:
+        """
+        Execute a dynamically loaded tool with given parameters.
+        Tools are loaded based on YAML configuration and can be customized per client.
+        """
+        if tool_name not in self.available_tools:
+            return f"tool_not_found: {tool_name}"
+
+        try:
+            tool_func = self.available_tools[tool_name]
+            result = await tool_func(**parameters)
+            return str(result)
+        except Exception as e:
+            return f"tool_error: {str(e)}"
+
+    @function_tool()
+    async def update_context(self, context_key: str, context_value: str) -> str:
+        """
+        Update conversation context dynamically. Context is managed per session
+        and can be used for personalization and state management.
+        """
+        self._current_context[context_key] = context_value
+        logging.info(f"📝 Updated context: {context_key} = {context_value}")
+        return "context_updated"
+
+    @function_tool()
+    async def get_context(self, context_key: str = None) -> str:
+        """
+        Retrieve conversation context. If no key provided, returns all context.
+        """
+        if context_key:
+            return self._current_context.get(context_key, "not_found")
+        return json.dumps(self._current_context)
+
+# Dynamic Voice Agent Factory
+class VoiceAgentFactory:
+    """
+    Factory class to create voice agents with dynamic configurations.
+    Each client/use case gets a customized voice agent based on YAML config.
+    """
+
+    def __init__(self, config_manager: ConfigManager):
+        self.config_manager = config_manager
+
+    async def create_voice_agent(self, client_id: str, config_id: str, end_call_coro) -> DynamicVoiceAgent:
+        """Create voice agent with dynamic configuration"""
+
+        # Load client-specific configuration
+        client_config = await self.config_manager.get_config(client_id, config_id)
+
+        # Create voice configuration
+        voice_config = VoiceConfig(
+            stt_provider=client_config.get('voice', {}).get('stt_provider', 'google'),
+            tts_provider=client_config.get('voice', {}).get('tts_provider', 'google'),
+            llm_model=client_config.get('agent', {}).get('model', 'gemini-2.5-pro'),
+            voice_id=client_config.get('voice', {}).get('voice_id', 'Kore'),
+            language=client_config.get('voice', {}).get('language', 'en-IN')
+        )
+
+        # Create dynamic voice agent
+        agent = DynamicVoiceAgent(
+            config=voice_config,
+            end_call_coro=end_call_coro,
+            client_config=client_config
+        )
+
+        return agent
+
+# Voice Agent Entry Point with Dynamic Configuration
+async def entrypoint(ctx: agents.JobContext):
+    """
+    Dynamic voice agent entry point that loads configuration based on client/use case.
+    """
+    await ctx.connect()
+
+    # Extract client information from room name or participant identity
+    client_id, config_id = extract_client_info(ctx.room.name)
+
+    if not client_id or not config_id:
+        logging.error(f"Cannot determine client/config from room: {ctx.room.name}")
+        ctx.shutdown(reason="Invalid client configuration")
+        return
+
+    logging.info(f"Starting voice agent for client: {client_id}, config: {config_id}")
+
+    # Initialize configuration manager
+    config_manager = get_config_manager()
+    voice_agent_factory = VoiceAgentFactory(config_manager)
+
+    async def _end_call_impl(reason: str):
+        logging.info(f"Dynamic voice agent requested call end. Reason: {reason}")
+        await ctx.api.room.delete_room(lk_api.DeleteRoomRequest(room=ctx.room.name))
+        ctx.shutdown(reason=f"Dynamic voice call ended: {reason}")
+
+    # Create dynamic voice agent with client-specific configuration
+    voice_agent = await voice_agent_factory.create_voice_agent(
+        client_id=client_id,
+        config_id=config_id,
+        end_call_coro=_end_call_impl
+    )
+
+    # Create session with dynamic model configuration
+    client_config = await config_manager.get_config(client_id, config_id)
+    model_config = client_config.get('agent', {})
+
+    session = AgentSession(
+        llm=RealtimeModel(
+            api_key=GOOGLE_API_KEY,
+            voice=model_config.get('voice_id', 'Kore'),
+            language=model_config.get('language', 'en-IN'),
+            modalities=["AUDIO"],
+            temperature=model_config.get('temperature', 0.2),
+        )
+    )
+
+    # Start the dynamic voice agent
+    await session.start(agent=voice_agent, room=ctx.room)
+
+    # Dynamic greeting based on client configuration
+    greeting_config = client_config.get('voice', {}).get('greeting', {})
+    await session.generate_reply(
+        instructions=greeting_config.get('message', 'Hello! How can I help you today?')
+    )
+
+# SIP Integration with Dynamic Configuration
+class DynamicSIPConnector:
+    """
+    Dynamic SIP connector that routes calls to appropriate voice agents
+    based on client configuration and phone number mapping.
+    """
+
+    def __init__(self, config_manager: ConfigManager):
+        self.config_manager = config_manager
+        self.livekit_sip = LiveKitSIPConnector()
 
     async def handle_incoming_call(self, call_id: str, caller_number: str):
-        """Route incoming SIP call to voice agent"""
+        """Route incoming SIP call to dynamically configured voice agent"""
+
+        # Determine client and config based on phone number
+        client_config = await self.config_manager.get_client_by_phone(caller_number)
+
+        if not client_config:
+            logging.error(f"No configuration found for phone: {caller_number}")
+            return
+
+        client_id = client_config.get('client_id')
+        config_id = client_config.get('config_id')
 
         # Create LiveKit room for this call
-        room_name = f"call_{call_id}"
+        room_name = f"call_{call_id}_{client_id}_{config_id}"
 
         # Connect SIP trunk to LiveKit room
         await self.livekit_sip.connect_sip_to_room(
@@ -479,10 +958,8 @@ class SIPConnector:
             room_name=room_name
         )
 
-        # Start voice agent in room
-        agent = VoiceAgent(self.get_voice_config(caller_number))
-        room = await self.livekit_client.join_room(room_name)
-        await agent.start(room)
+        # Start dynamically configured voice agent
+        await self.start_voice_agent(room_name, client_id, config_id, caller_number)
 ```
 
 #### 4.3 RAG/GraphRAG Knowledge Management

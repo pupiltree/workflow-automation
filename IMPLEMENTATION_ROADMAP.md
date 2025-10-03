@@ -151,12 +151,17 @@ Authentication → Demo Gen → PRD Builder → Monitoring → Advanced Security
   - [ ] Quality control workflows
   - [ ] Escalation procedures
 
-#### Sprint 2.2: Simple Chatbot (Week 7)
+#### Sprint 2.2: Simple Chatbot & Dynamic Configuration Foundation (Week 7)
 - [ ] **LangGraph Integration**
   - [ ] Basic LangGraph agent setup
-  - [ ] Simple system prompts
+  - [ ] Simple system prompts (from YAML)
   - [ ] Predefined response templates
   - [ ] Manual tool integration
+- [ ] **Dynamic Configuration System** **CRITICAL**
+  - [ ] YAML configuration storage and versioning
+  - [ ] Dynamic system prompt injection
+  - [ ] Basic tool registration framework
+  - [ ] Configuration validation and testing
 - [ ] **Chat Interface**
   - [ ] Real-time chat UI
   - [ ] Conversation history
@@ -174,39 +179,46 @@ Authentication → Demo Gen → PRD Builder → Monitoring → Advanced Security
 **Automation Level: 40% (60% Manual Work)**
 **Goal: Enable dynamic configuration and introduce voice capabilities**
 
-#### Sprint 3.1: Automation Engine (Week 8)
-- [ ] **YAML Configuration System**
-  - [ ] YAML-to-agent conversion
-  - [ ] Dynamic system prompt injection
-  - [ ] Tool registration and management
-  - [ ] Configuration validation
+#### Sprint 3.1: Dynamic Configuration Engine (Week 8)
+- [ ] **YAML Configuration System** **CRITICAL**
+  - [ ] YAML-to-agent conversion (based on krishna_diagnostics pattern)
+  - [ ] Dynamic system prompt injection (for both voice & chat)
+  - [ ] Dynamic tool loading and registration
+  - [ ] Dynamic integration loading (WhatsApp, Payment, CRM)
+  - [ ] Configuration validation and hot-reloading
+- [ ] **Dynamic Agent Factory** **CRITICAL**
+  - [ ] Voice agent factory (inspired by krishna_voice_agent.py)
+  - [ ] Chat agent factory
+  - [ ] Client-specific agent instantiation
+  - [ ] Runtime configuration switching
 - [ ] **GitHub Integration**
   - [ ] Automatic issue creation for missing tools
   - [ ] Tool development tracking
   - [ ] Configuration updates from Git
   - [ ] Version control integration
-- [ ] **Configuration Management**
-  - [ ] Client-specific configurations
-  - [ ] Configuration deployment
-  - [ ] A/B testing for configurations
-  - [ ] Performance monitoring
 
-#### Sprint 3.2: Voice AI Foundation (Week 9)
-- [ ] **LiveKit Integration**
+#### Sprint 3.2: Dynamic Voice AI Foundation (Week 9)
+- [ ] **LiveKit Integration** **CRITICAL**
   - [ ] LiveKit server setup
-  - [ ] Room management system
+  - [ ] Dynamic room management (client-based routing)
   - [ ] WebRTC connection handling
-  - [ ] Basic audio processing
+  - [ ] Real-time audio processing
+- [ ] **Dynamic Voice Agent** **CRITICAL**
+  - [ ] Dynamic voice agent implementation (based on krishna_voice_agent.py)
+  - [ ] Dynamic system prompt loading from YAML
+  - [ ] Dynamic tool loading per client configuration
+  - [ ] Dynamic integration loading (WhatsApp, Payment, etc.)
+  - [ ] Multi-language support configuration
 - [ ] **STT/TTS Integration**
   - [ ] Speech-to-text service
   - [ ] Text-to-speech service
-  - [ ] Audio quality optimization
-  - [ ] Latency monitoring
-- [ ] **Voice Interface**
-  - [ ] Basic voice bot UI
-  - [ ] Manual voice configuration
-  - [ ] Call logging and transcription
-  - [ ] Basic SIP integration
+  - [ ] Dynamic voice configuration (voice_id, language, temperature)
+  - [ ] Audio quality optimization and latency monitoring
+- [ ] **Dynamic SIP Integration**
+  - [ ] Phone number to client mapping
+  - [ ] Dynamic voice agent routing based on phone
+  - [ ] Call logging and transcription per client
+  - [ ] Dynamic escalation and handoff
 
 ---
 
