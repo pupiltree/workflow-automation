@@ -631,14 +631,21 @@ Response (200 OK):
 
 **Functional Requirements:**
 1. Generate exceptional, smooth, beautiful demo UI with client branding (logo, colors)
-2. Create contextually relevant mock data (customer profiles, conversation histories)
-3. Implement mock tool integrations (CRM, scheduling, payment)
-4. Deploy to isolated sandbox environment with unique shareable URL
-5. Enable client feedback directly within demo interface (inline comments, ratings)
-6. Display transparent agent workflow visualization (tool calls, reasoning steps)
-7. Enable developer testing with issue tracking
-8. Iterate on feedback until "demo perfect" status
-9. Support A/B demo variations for same client
+2. **Dynamic Demo Generation** (Client-Specific):
+   - Auto-generate system prompt from research findings
+   - Auto-generate mock tools based on client's use case
+   - Use LangGraph two-node workflow (agent node + tools node) per https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
+   - Create contextually relevant mock data (customer profiles, conversations)
+   - Deploy to isolated sandbox for client viewing
+3. **Real Showcase Demos** (Internal/Sales):
+   - Maintain production-ready demos with real tools and integrations
+   - Include admin dashboard, analytics, full feature set
+   - Use for internal training and high-stakes sales presentations
+4. Enable client feedback directly within demo interface (inline comments, ratings)
+5. Display transparent agent workflow visualization (tool calls, reasoning steps)
+6. Enable developer testing with issue tracking
+7. Iterate on feedback until "demo perfect" status
+8. Support A/B demo variations for same client
 
 **Non-Functional Requirements:**
 - Demo generation time: <30 minutes from research completion
@@ -664,11 +671,19 @@ Response (200 OK):
 **Must-Have:**
 1. ✅ Exceptional UI generation with client branding (logo, brand colors from research)
 2. ✅ Smooth, beautiful design with micro-animations and transitions
-3. ✅ Client feedback interface (inline comments, emoji reactions, ratings)
-4. ✅ Transparent agent workflow visualization (tool calls, reasoning, data flow)
-5. ✅ Mock data synthesis from research context
-6. ✅ Multi-channel demo support (web chat, voice call simulation)
-7. ✅ Sandbox environment provisioning (Kubernetes namespace)
+3. ✅ **Dynamic Demo Generation (Client-Specific)**:
+   - Auto-generate system prompt from research (business context, pain points, use case)
+   - Auto-generate mock tools (e.g., `fetch_order_status`, `schedule_appointment`, `process_refund`)
+   - Implement LangGraph two-node workflow (agent node + tools node)
+   - Mock tool responses return realistic data based on research
+4. ✅ **Real Showcase Demos (Internal/Sales)**:
+   - Production-ready demos with real integrations (Salesforce, Zendesk, Shopify)
+   - Full admin dashboard with analytics, user management, settings
+   - Real-time monitoring and performance metrics
+   - Multi-tenant admin interface for demo purposes
+5. ✅ Client feedback interface (inline comments, emoji reactions, ratings)
+6. ✅ Transparent agent workflow visualization (tool calls, reasoning, data flow)
+7. ✅ Sandbox environment provisioning (Kubernetes namespace per demo)
 8. ✅ Developer testing workflow (issue creation, fix tracking)
 9. ✅ Demo versioning and rollback
 10. ✅ Shareable demo links with client-specific access controls
@@ -686,7 +701,7 @@ Response (200 OK):
 
 #### API Specification
 
-**1. Generate Demo**
+**1. Generate Dynamic Demo (Client-Specific)**
 ```http
 POST /api/v1/demos/generate
 Authorization: Bearer {jwt_token}
@@ -696,24 +711,47 @@ Request Body:
 {
   "research_job_id": "uuid",
   "client_id": "uuid",
+  "demo_type": "dynamic",
   "demo_config": {
     "channels": ["webchat", "voice"],
     "use_cases": ["customer_support", "lead_qualification"],
-    "branding": {
-      "primary_color": "#1a73e8",
-      "logo_url": "https://cdn.acme.com/logo.png",
-      "company_name": "Acme Corp"
+    "auto_generate_system_prompt": true,
+    "auto_generate_tools": true,
+    "langgraph_workflow": {
+      "type": "two_node",
+      "nodes": ["agent", "tools"],
+      "architecture_reference": "https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/"
     },
-    "mock_tools": ["crm_lookup", "appointment_scheduling", "knowledge_base"],
+    "branding_from_research": true,
     "conversation_samples": 10
-  },
-  "template_id": "support_bot_v2"
+  }
 }
 
 Response (202 Accepted):
 {
   "demo_id": "uuid",
+  "demo_type": "dynamic",
   "status": "generating",
+  "generation_plan": {
+    "system_prompt": "Auto-generating from research findings (business context, pain points)",
+    "mock_tools": [
+      {
+        "tool_name": "fetch_order_status",
+        "generated_from": "e-commerce context in research",
+        "mock_response_type": "realistic_order_data"
+      },
+      {
+        "tool_name": "schedule_appointment",
+        "generated_from": "customer support use case",
+        "mock_response_type": "calendar_slots"
+      }
+    ],
+    "branding": {
+      "logo_url": "https://storage.workflow.com/logos/acme-primary.png",
+      "primary_color": "#1a73e8",
+      "source": "research_job_uuid"
+    }
+  },
   "estimated_completion": "2025-10-04T11:00:00Z",
   "webhook_url": "https://api.workflow.com/webhooks/demo-ready"
 }
@@ -722,6 +760,52 @@ Error Responses:
 400 Bad Request: Invalid research_job_id or missing required config
 402 Payment Required: Tenant exceeded demo quota
 422 Unprocessable Entity: Research data insufficient for demo generation
+```
+
+**1b. Generate Showcase Demo (Real Tools & Admin)**
+```http
+POST /api/v1/demos/generate-showcase
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "showcase_type": "full_platform",
+  "demo_config": {
+    "channels": ["webchat", "voice"],
+    "use_cases": ["customer_support", "sales", "analytics"],
+    "real_integrations": ["salesforce", "zendesk", "shopify"],
+    "include_admin_dashboard": true,
+    "include_analytics": true,
+    "multi_tenant_demo": true,
+    "sample_tenants": 3
+  },
+  "purpose": "high_stakes_sales_presentation"
+}
+
+Response (202 Accepted):
+{
+  "demo_id": "uuid",
+  "demo_type": "showcase",
+  "status": "generating",
+  "includes": {
+    "admin_dashboard": true,
+    "real_integrations": ["salesforce", "zendesk", "shopify"],
+    "analytics_dashboard": true,
+    "user_management": true,
+    "settings_interface": true,
+    "multi_tenant_view": true
+  },
+  "access": {
+    "demo_url": "https://showcase.workflow.com/full-platform-demo",
+    "admin_url": "https://showcase.workflow.com/admin",
+    "credentials": {
+      "admin_user": "demo@workflow.com",
+      "password": "will_be_sent_via_email"
+    }
+  },
+  "estimated_completion": "2025-10-04T12:00:00Z"
+}
 ```
 
 **2. Get Demo Status**
@@ -1031,6 +1115,96 @@ Response (200 OK):
 - React Query for API data fetching
 - Real-time updates via Server-Sent Events (SSE)
 - LocalStorage for draft configurations
+
+#### Technical Architecture: LangGraph Two-Node Workflow
+
+**Dynamic Demo Implementation:**
+
+Each demo uses the same LangGraph architecture with dynamically generated components:
+
+```python
+# Core LangGraph Workflow (Same for All Demos)
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+
+# State Definition
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+# Two-Node Architecture (per LangGraph tutorial)
+workflow = StateGraph(State)
+
+# Node 1: Agent Node (LLM Reasoning)
+def agent_node(state):
+    # Uses dynamically generated system prompt
+    system_prompt = load_from_demo_config(demo_id, "system_prompt")
+    response = llm.invoke([system_prompt] + state["messages"])
+    return {"messages": [response]}
+
+# Node 2: Tools Node (Tool Execution)
+def tools_node(state):
+    # Uses dynamically generated mock tools
+    tools = load_from_demo_config(demo_id, "tools")
+    tool_calls = state["messages"][-1].tool_calls
+    responses = [execute_tool(tool_call, tools) for tool_call in tool_calls]
+    return {"messages": responses}
+
+# Workflow Definition
+workflow.add_node("agent", agent_node)
+workflow.add_node("tools", tools_node)
+workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", "end": END})
+workflow.add_edge("tools", "agent")
+workflow.set_entry_point("agent")
+
+app = workflow.compile()
+```
+
+**What Changes Per Demo:**
+1. **System Prompt** (auto-generated from research):
+   ```
+   "You are a helpful customer support agent for {company_name}.
+   The company specializes in {business_type} and customers frequently ask about {common_pain_points}.
+   Your goal is to resolve issues quickly while maintaining a {tone} tone."
+   ```
+
+2. **Mock Tools** (auto-generated from use case):
+   ```python
+   # E-commerce demo gets:
+   tools = [
+       fetch_order_status(order_id: str) -> OrderStatus,
+       schedule_delivery(order_id: str, date: str) -> Confirmation,
+       process_refund(order_id: str, amount: float) -> RefundStatus
+   ]
+
+   # Healthcare demo gets:
+   tools = [
+       fetch_patient_record(patient_id: str) -> PatientRecord,
+       schedule_appointment(patient_id: str, date: str) -> Appointment,
+       check_insurance_coverage(patient_id: str) -> Coverage
+   ]
+   ```
+
+3. **Mock Tool Responses** (realistic data from research):
+   ```python
+   def fetch_order_status_mock(order_id: str):
+       # Returns data matching client's business context
+       return {
+           "order_id": order_id,
+           "status": "in_transit",
+           "items": generate_realistic_items(client_research),
+           "delivery_date": "2025-10-15"
+       }
+   ```
+
+**Showcase Demo Implementation:**
+
+Real demos use the same workflow but with:
+- Real tool implementations (actual API calls to Salesforce, Zendesk, etc.)
+- Production database connections
+- Full admin dashboard
+- Multi-tenant data (3 sample tenants with realistic data)
+
+**Reference:** https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
 
 #### Stakeholders and Agents
 
