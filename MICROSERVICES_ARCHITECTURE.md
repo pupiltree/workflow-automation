@@ -122,11 +122,13 @@ Data Layer:
 
 **Functional Requirements:**
 1. Multi-source data collection (Instagram, Facebook, TikTok, Google Maps, Reddit, reviews)
-2. Competitive workflow analysis through mystery shopping (human agent coordination)
-3. Response quality assessment (speed, hours, coverage gaps)
-4. Automated report generation with actionable insights
-5. Data enrichment via third-party APIs (Clearbit, Apollo, ZoomInfo)
-6. Duplicate detection and data deduplication
+2. Decision maker identification via Apollo.io, LinkedIn Sales Navigator, and contact databases
+3. Financial/funding news research via TechCrunch, YourStory, Crunchbase, PitchBook
+4. Competitive workflow analysis through mystery shopping (human agent coordination)
+5. Response quality assessment (speed, hours, coverage gaps)
+6. Automated report generation with actionable insights
+7. Data enrichment via third-party APIs (Clearbit, Apollo, ZoomInfo)
+8. Duplicate detection and data deduplication
 
 **Non-Functional Requirements:**
 - Research completion within 24-48 hours per client
@@ -138,7 +140,13 @@ Data Layer:
 **Dependencies:**
 - Demo Generator Service (publishes research_completed event)
 - Configuration Management Service (scraping rules, source priorities)
-- External APIs: Google Maps API, social media APIs, web scraping proxy services
+- External APIs:
+  - Social media: Instagram, Facebook, TikTok APIs
+  - Business data: Google Maps API, Yelp API
+  - Decision makers: Apollo.io, LinkedIn Sales Navigator, ZoomInfo
+  - Financial news: TechCrunch API, YourStory, Crunchbase, PitchBook
+  - Data enrichment: Clearbit, Hunter.io
+  - Web scraping: Bright Data, ScrapingBee proxy services
 
 **Data Storage:**
 - PostgreSQL: Research metadata, job status, findings summaries
@@ -152,15 +160,17 @@ Data Layer:
 2. ✅ Multi-platform social media data extraction
 3. ✅ Google Maps business data scraping
 4. ✅ Review aggregation and sentiment analysis
-5. ✅ Mystery shopping workflow (human agent task assignment)
-6. ✅ Competitor workflow documentation
-7. ✅ Research report generation (JSON + PDF formats)
+5. ✅ Decision maker research (Apollo.io, LinkedIn Sales Navigator integration)
+6. ✅ Financial/funding news aggregation (TechCrunch, YourStory, Crunchbase, PitchBook)
+7. ✅ Mystery shopping workflow (human agent task assignment)
+8. ✅ Competitor workflow documentation
+9. ✅ Research report generation (JSON + PDF formats)
 
 **Nice-to-Have:**
-8. 🔄 Real-time data streaming (live social media monitoring)
-9. 🔄 Predictive analytics (churn risk, expansion opportunities)
-10. 🔄 Video content transcription and analysis
-11. 🔄 Automated SWOT analysis generation
+10. 🔄 Real-time data streaming (live social media monitoring)
+11. 🔄 Predictive analytics (churn risk, expansion opportunities)
+12. 🔄 Video content transcription and analysis
+13. 🔄 Automated SWOT analysis generation
 
 **Feature Interactions:**
 - Research completion triggers demo generation
@@ -275,6 +285,63 @@ Response (200 OK - JSON):
       ]
     }
   },
+  "decision_makers": {
+    "identified_count": 5,
+    "contacts": [
+      {
+        "name": "John Smith",
+        "title": "CEO",
+        "email": "john@acme.com",
+        "phone": "+1-555-123-4567",
+        "linkedin_url": "https://linkedin.com/in/johnsmith",
+        "source": "apollo.io",
+        "confidence": 0.95
+      },
+      {
+        "name": "Jane Doe",
+        "title": "VP Operations",
+        "email": "jane@acme.com",
+        "linkedin_url": "https://linkedin.com/in/janedoe",
+        "source": "linkedin_sales_navigator",
+        "confidence": 0.88
+      }
+    ],
+    "org_chart": {
+      "ceo": "John Smith",
+      "direct_reports": ["Jane Doe - VP Ops", "Mike Johnson - CTO", "Sarah Williams - CFO"]
+    }
+  },
+  "financial_news": {
+    "funding_status": "Series B",
+    "total_funding": "$25M",
+    "last_round": {
+      "amount": "$15M",
+      "date": "2024-08-15",
+      "lead_investor": "Sequoia Capital",
+      "source": "crunchbase"
+    },
+    "recent_news": [
+      {
+        "title": "Acme Corp raises $15M Series B to expand AI capabilities",
+        "source": "techcrunch",
+        "url": "https://techcrunch.com/2024/08/15/acme-series-b",
+        "date": "2024-08-15",
+        "sentiment": "positive"
+      },
+      {
+        "title": "Acme Corp shows 300% YoY growth in Q2 2024",
+        "source": "yourstory",
+        "url": "https://yourstory.com/2024/09/acme-growth",
+        "date": "2024-09-10",
+        "sentiment": "positive"
+      }
+    ],
+    "growth_indicators": {
+      "employee_count_growth": "+45% YoY",
+      "market_expansion": ["US", "EU", "India"],
+      "recent_partnerships": ["Microsoft", "AWS"]
+    }
+  },
   "deep_research": {
     "reddit_mentions": 23,
     "industry_forum_discussions": 8,
@@ -288,6 +355,8 @@ Response (200 OK - JSON):
     "workflow_analysis": "Email-based, manual routing, no automation"
   },
   "recommendations": [
+    "Target decision makers: John Smith (CEO) and Jane Doe (VP Ops) for pilot discussions",
+    "Leverage Series B funding news as conversation starter about scaling operations",
     "Implement 24/7 chatbot for after-hours coverage",
     "Automate response routing to reduce 4hr response time to <15min",
     "Add SMS/WhatsApp channels based on customer preferences"
