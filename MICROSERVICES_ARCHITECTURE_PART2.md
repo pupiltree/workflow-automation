@@ -55,17 +55,23 @@
 6. ✅ Integration architecture planner (escalation rules, tool mapping)
 7. ✅ Sprint roadmap generator (12-month automation plan)
 8. ✅ Collaborative editing with client feedback loop
+9. ✅ **Help button with shareable code generation** (expiring codes for human agent collaboration)
+10. ✅ **Real-time collaborative canvas** (multi-user editing with cursor tracking)
+11. ✅ **Human agent join capability** (agents can join PRD sessions to help clients)
+12. ✅ **Collaboration chat** (side-by-side chat during PRD building)
 
 **Nice-to-Have:**
-9. 🔄 Auto-generated user stories from PRD
-10. 🔄 Competitive analysis integration
-11. 🔄 Risk assessment and mitigation planning
-12. 🔄 ROI calculator based on automation metrics
+13. 🔄 Auto-generated user stories from PRD
+14. 🔄 Competitive analysis integration
+15. 🔄 Risk assessment and mitigation planning
+16. 🔄 ROI calculator based on automation metrics
 
 **Feature Interactions:**
 - Proposal signing → Auto-triggers PRD session
 - PRD approval → Triggers automation engine YAML generation
 - Village knowledge → Suggests objectives client didn't request
+- Help button clicked → Generates shareable code → Publishes help_requested event → Human agent joins → Real-time collaboration begins
+- Collaboration ended → Session resumes with AI PRD builder → Client continues independently
 
 #### API Specification
 
@@ -460,9 +466,347 @@ Topic: prd_events
 }
 ```
 
+**7. Request Help (Generate Shareable Code)**
+```http
+POST /api/v1/prd/sessions/{session_id}/request-help
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "help_reason": "Need guidance on integration architecture for complex API requirements",
+  "urgency": "medium",
+  "context": {
+    "current_section": "integration_architecture",
+    "specific_question": "How to handle OAuth2 flows for third-party integrations?"
+  }
+}
+
+Response (201 Created):
+{
+  "help_request_id": "uuid",
+  "session_id": "uuid",
+  "shareable_code": "HELP-ACME-X7K9-2025",
+  "expires_at": "2025-10-04T14:00:00Z",
+  "join_url": "https://prd.workflow.com/collaborate/HELP-ACME-X7K9-2025",
+  "status": "waiting_for_agent",
+  "estimated_wait_time": "5 minutes",
+  "message": "Your help request has been created. Share the code 'HELP-ACME-X7K9-2025' with our support team, or wait for an agent to join automatically."
+}
+
+Event Published to Kafka:
+Topic: collaboration_events
+{
+  "event_type": "help_requested",
+  "help_request_id": "uuid",
+  "session_id": "uuid",
+  "organization_id": "uuid",
+  "requested_by": "uuid",
+  "urgency": "medium",
+  "timestamp": "2025-10-04T12:00:00Z"
+}
+```
+
+**8. Join PRD Session (Human Agent)**
+```http
+POST /api/v1/prd/collaborate/join
+Authorization: Bearer {agent_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "shareable_code": "HELP-ACME-X7K9-2025",
+  "agent_id": "uuid",
+  "agent_name": "Mike Thompson"
+}
+
+Response (200 OK):
+{
+  "collaboration_session_id": "uuid",
+  "prd_session_id": "uuid",
+  "organization": {
+    "organization_id": "uuid",
+    "organization_name": "Acme Corp"
+  },
+  "client_users": [
+    {
+      "user_id": "uuid",
+      "full_name": "John Doe",
+      "role": "admin",
+      "currently_active": true
+    }
+  ],
+  "session_context": {
+    "prd_id": "uuid",
+    "completion_percent": 65,
+    "current_section": "integration_architecture",
+    "help_reason": "Need guidance on integration architecture for complex API requirements"
+  },
+  "collaboration_url": "https://prd.workflow.com/collaborate/uuid",
+  "capabilities": {
+    "can_chat": true,
+    "can_edit_canvas": true,
+    "can_view_prd": true,
+    "can_suggest_changes": true
+  },
+  "joined_at": "2025-10-04T12:05:00Z"
+}
+
+Event Published to Kafka:
+Topic: collaboration_events
+{
+  "event_type": "agent_joined_session",
+  "collaboration_session_id": "uuid",
+  "session_id": "uuid",
+  "agent_id": "uuid",
+  "timestamp": "2025-10-04T12:05:00Z"
+}
+```
+
+**9. Send Collaboration Chat Message**
+```http
+POST /api/v1/prd/collaborate/{collaboration_session_id}/chat
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "message": "For OAuth2 flows, I recommend using the Authorization Code flow with PKCE. I'll add this to the integration architecture section.",
+  "attachments": [
+    {
+      "type": "code_snippet",
+      "content": "// OAuth2 PKCE Flow Example\nconst authUrl = generateAuthUrl({ flow: 'pkce', ... });"
+    }
+  ],
+  "metadata": {
+    "sender_type": "human_agent",
+    "sender_name": "Mike Thompson"
+  }
+}
+
+Response (200 OK):
+{
+  "collaboration_session_id": "uuid",
+  "message_id": "uuid",
+  "message": "For OAuth2 flows, I recommend using the Authorization Code flow with PKCE. I'll add this to the integration architecture section.",
+  "sender": {
+    "user_id": "uuid",
+    "name": "Mike Thompson",
+    "type": "human_agent"
+  },
+  "timestamp": "2025-10-04T12:10:00Z",
+  "delivered_to": [
+    {"user_id": "uuid", "name": "John Doe", "delivered_at": "2025-10-04T12:10:00Z"}
+  ]
+}
+
+WebSocket Broadcast to Session:
+{
+  "event": "new_chat_message",
+  "collaboration_session_id": "uuid",
+  "message_id": "uuid",
+  "sender": "Mike Thompson (Support Agent)",
+  "message": "...",
+  "timestamp": "2025-10-04T12:10:00Z"
+}
+```
+
+**10. Edit Canvas (Collaborative PRD Editing)**
+```http
+POST /api/v1/prd/collaborate/{collaboration_session_id}/canvas/edit
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "section": "integration_architecture.oauth_flows",
+  "operation": "add",
+  "content": {
+    "flow_name": "OAuth2 with PKCE",
+    "description": "Authorization Code flow with Proof Key for Code Exchange for enhanced security",
+    "tools": ["salesforce", "hubspot", "google_workspace"],
+    "implementation_notes": "Use PKCE to prevent authorization code interception attacks"
+  },
+  "editor": {
+    "user_id": "uuid",
+    "name": "Mike Thompson",
+    "type": "human_agent"
+  }
+}
+
+Response (200 OK):
+{
+  "collaboration_session_id": "uuid",
+  "edit_id": "uuid",
+  "section": "integration_architecture.oauth_flows",
+  "operation": "add",
+  "status": "applied",
+  "prd_version": 5,
+  "applied_at": "2025-10-04T12:12:00Z"
+}
+
+WebSocket Broadcast to Session:
+{
+  "event": "canvas_updated",
+  "collaboration_session_id": "uuid",
+  "edit_id": "uuid",
+  "section": "integration_architecture.oauth_flows",
+  "operation": "add",
+  "editor": "Mike Thompson (Support Agent)",
+  "content": {...},
+  "timestamp": "2025-10-04T12:12:00Z"
+}
+
+Event Published to Kafka:
+Topic: collaboration_events
+{
+  "event_type": "canvas_edited",
+  "collaboration_session_id": "uuid",
+  "prd_id": "uuid",
+  "editor_id": "uuid",
+  "editor_type": "human_agent",
+  "section": "integration_architecture.oauth_flows",
+  "timestamp": "2025-10-04T12:12:00Z"
+}
+```
+
+**11. End Collaboration Session**
+```http
+POST /api/v1/prd/collaborate/{collaboration_session_id}/end
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "ended_by": "uuid",
+  "end_reason": "issue_resolved",
+  "summary": "Added OAuth2 PKCE flow guidance and updated integration architecture section. Client is ready to continue independently.",
+  "follow_up_required": false
+}
+
+Response (200 OK):
+{
+  "collaboration_session_id": "uuid",
+  "status": "ended",
+  "duration_minutes": 15,
+  "ended_at": "2025-10-04T12:20:00Z",
+  "ended_by": {
+    "user_id": "uuid",
+    "name": "Mike Thompson",
+    "type": "human_agent"
+  },
+  "session_summary": {
+    "chat_messages": 8,
+    "canvas_edits": 3,
+    "sections_updated": ["integration_architecture"],
+    "client_satisfaction": null
+  },
+  "prd_session_continues": true
+}
+
+Event Published to Kafka:
+Topic: collaboration_events
+{
+  "event_type": "collaboration_ended",
+  "collaboration_session_id": "uuid",
+  "session_id": "uuid",
+  "duration_minutes": 15,
+  "ended_by": "uuid",
+  "timestamp": "2025-10-04T12:20:00Z"
+}
+```
+
+**12. Get Active Collaboration Sessions (Agent Dashboard)**
+```http
+GET /api/v1/prd/collaborate/active
+Authorization: Bearer {agent_jwt_token}
+
+Response (200 OK):
+{
+  "active_sessions": [
+    {
+      "help_request_id": "uuid",
+      "shareable_code": "HELP-ACME-X7K9-2025",
+      "organization_name": "Acme Corp",
+      "requested_by": "John Doe",
+      "help_reason": "Need guidance on integration architecture",
+      "urgency": "medium",
+      "wait_time_minutes": 3,
+      "status": "waiting_for_agent"
+    },
+    {
+      "collaboration_session_id": "uuid",
+      "shareable_code": "HELP-BETA-M3P8-2025",
+      "organization_name": "Beta Corp",
+      "client_users": ["Sarah Johnson"],
+      "agent": "Alice Chen",
+      "started_at": "2025-10-04T12:00:00Z",
+      "duration_minutes": 10,
+      "status": "in_progress"
+    }
+  ],
+  "queue_length": 2,
+  "average_wait_time_minutes": 4
+}
+```
+
+**WebSocket - Real-Time Collaboration**
+```
+wss://prd.workflow.com/collaborate/{collaboration_session_id}
+Authorization: Bearer {jwt_token}
+
+Server → Client Events:
+
+1. Agent Joined:
+{
+  "event": "agent_joined",
+  "agent_id": "uuid",
+  "agent_name": "Mike Thompson",
+  "timestamp": "2025-10-04T12:05:00Z"
+}
+
+2. User Typing Indicator:
+{
+  "event": "user_typing",
+  "user_id": "uuid",
+  "user_name": "John Doe",
+  "user_type": "client",
+  "timestamp": "2025-10-04T12:10:00Z"
+}
+
+3. Canvas Cursor Position (Real-Time):
+{
+  "event": "cursor_moved",
+  "user_id": "uuid",
+  "user_name": "Mike Thompson",
+  "section": "integration_architecture",
+  "position": {"x": 245, "y": 678},
+  "timestamp": "2025-10-04T12:11:00Z"
+}
+
+4. Canvas Selection:
+{
+  "event": "selection_changed",
+  "user_id": "uuid",
+  "user_name": "John Doe",
+  "section": "integration_architecture.oauth_flows",
+  "timestamp": "2025-10-04T12:11:30Z"
+}
+
+5. Collaboration Ended:
+{
+  "event": "collaboration_ended",
+  "ended_by": "uuid",
+  "summary": "Issue resolved. Client ready to continue.",
+  "timestamp": "2025-10-04T12:20:00Z"
+}
+```
+
 **Rate Limiting:**
 - 10 PRD sessions per day per tenant
 - 200 chat messages per hour per session
+- 5 help requests per day per PRD session
+- 50 canvas edits per hour per collaboration session
 - 1000 API requests per minute per tenant
 
 #### Frontend Components
@@ -514,6 +858,60 @@ Topic: prd_events
   - Version comparison
   - Client approval workflow
 
+**6. Help Button & Request Modal**
+- Component: `HelpRequestModal.tsx`
+- Features:
+  - Floating help button in PRD interface
+  - Help request form (reason, urgency, context)
+  - Shareable code generator with QR code
+  - Wait time indicator
+  - Auto-copy shareable code
+  - Agent availability status
+
+**7. Collaborative Canvas**
+- Component: `CollaborativeCanvas.tsx`
+- Features:
+  - Split-pane view (PRD content + collaboration chat)
+  - Real-time cursor tracking (multi-user)
+  - User presence indicators (avatars with names)
+  - Collaborative text editing (OT/CRDT-based)
+  - Section-level locking (prevent conflicts)
+  - Inline comments and suggestions
+  - Change highlighting (who edited what)
+  - Undo/redo with conflict resolution
+
+**8. Collaboration Chat Panel**
+- Component: `CollaborationChatPanel.tsx`
+- Features:
+  - Side-by-side chat interface (client + agent)
+  - Typing indicators
+  - Code snippet sharing with syntax highlighting
+  - File/image attachments
+  - Message reactions
+  - Agent identity badge
+  - Chat history with timestamps
+  - Notification sounds on agent messages
+
+**9. Agent Join Notification**
+- Component: `AgentJoinNotification.tsx`
+- Features:
+  - Toast notification when agent joins
+  - Agent profile card (name, photo, expertise)
+  - "Wave" button to greet agent
+  - Session info (duration, purpose)
+  - End session button (client can end anytime)
+
+**10. Agent Collaboration Dashboard (Internal)**
+- Component: `AgentCollaborationDashboard.tsx`
+- Features:
+  - Active help requests queue
+  - Filter by urgency, wait time, organization
+  - One-click join with shareable code input
+  - Session context preview (PRD completion, current section)
+  - Multi-session management (handle multiple clients)
+  - Session notes for internal tracking
+  - Collaboration metrics (avg duration, client satisfaction)
+
 **State Management:**
 - Zustand for chat state and PRD content
 - React Query for API data fetching
@@ -543,6 +941,13 @@ Topic: prd_events
    - Permissions: read:all_prds, approve:technical_architecture
    - Workflows: Reviews integration requirements, assesses effort estimates, approves complex flows
    - Approval: Required for custom integrations, complex A/B flows
+
+4. **PRD Collaboration Support Agent (Human)**
+   - Role: Joins PRD sessions to help clients with complex questions, provides expert guidance
+   - Access: Join PRD sessions via shareable code, read/write canvas, chat with clients
+   - Permissions: join:collaboration_sessions, read:prd, write:canvas, chat:clients
+   - Workflows: Monitors help request queue → Joins session via shareable code → Chats with client → Edits canvas collaboratively → Resolves issue → Ends session
+   - Approval: None (agent-initiated collaboration on client request)
 
 **AI Agents:**
 

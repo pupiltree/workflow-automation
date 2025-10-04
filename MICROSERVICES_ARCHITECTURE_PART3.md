@@ -969,9 +969,12 @@ Response (200 OK):
 ### Event-Driven (Primary)
 
 **Kafka Topics:**
+- `auth_events`: User signed up, email verified, user logged in, password reset
+- `org_events`: Organization created, member invited, member joined, member removed, role updated
+- `collaboration_events`: Help requested, agent joined session, canvas edited, collaboration ended
 - `client_events`: Research completed, NDA signed, pilot agreed
 - `demo_events`: Demo generated, approved, failed
-- `prd_events`: PRD created, approved, updated
+- `prd_events`: PRD created, approved, updated, feedback received
 - `config_events`: Config generated, deployed, hot-reloaded
 - `conversation_events`: Started, escalated, completed
 - `voice_events`: Call initiated, transferred, ended
@@ -1127,9 +1130,21 @@ Response (200 OK):
 
 ### Event Flow Examples
 
-**1. Client Onboarding Flow:**
+**1. Client Onboarding Flow (Self-Service):**
 ```
-Research Engine → research_completed event
+User Signup (Org Management) → user_signed_up event
+  ↓
+Email Verification → email_verified event
+  ↓
+Organization Creation → organization_created event
+  ↓
+(Optional) Team Member Invitations → member_invited events
+  ↓
+Research Engine (auto-triggered) → research_completed event
+  ↓
+Outbound Email → email_sent OR manual_outreach_ticket_created event
+  ↓
+Client Feedback → feedback_received event
   ↓
 Demo Generator → demo_generated event
   ↓
@@ -1145,7 +1160,7 @@ Proposal Generator → proposal_generated event
   ↓
 Client Signs Proposal → proposal_signed event
   ↓
-PRD Builder → prd_approved event
+PRD Builder (with collaboration support) → prd_approved event
   ↓
 Automation Engine → config_generated event
   ↓
@@ -1186,6 +1201,33 @@ TTS (ElevenLabs) → Voice playback
 If transfer → Transfer event → Human Agent (SIP bridge)
   ↓
 Call End → Recording storage → Analytics
+```
+
+**4. PRD Collaboration Flow:**
+```
+Client working on PRD → Needs help → Clicks Help Button
+  ↓
+PRD Builder generates shareable code (e.g., HELP-ACME-X7K9-2025)
+  ↓
+help_requested event published to collaboration_events topic
+  ↓
+Human Agent sees request in Agent Collaboration Dashboard
+  ↓
+Agent joins session using shareable code
+  ↓
+agent_joined_session event published
+  ↓
+WebSocket connection established (real-time collaboration)
+  ↓
+Agent and client chat + edit canvas collaboratively
+  ↓
+canvas_edited events published for each edit
+  ↓
+Agent resolves issue → Ends collaboration session
+  ↓
+collaboration_ended event published
+  ↓
+Client continues with AI PRD builder independently
 ```
 
 ---

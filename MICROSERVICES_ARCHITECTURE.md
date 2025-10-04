@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into 15 specialized microservices, leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
+This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into 16 specialized microservices, leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
 
 **Key Architecture Principles:**
 - Event-driven communication via Apache Kafka for loose coupling and scalability
@@ -37,8 +37,9 @@ This document defines the comprehensive microservices architecture for an AI-pow
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Event Bus (Apache Kafka)                    │
-│     Topics: client_events, agent_decisions, tool_results,       │
-│         system_events, analytics_events, monitoring_events       │
+│   Topics: auth_events, org_events, collaboration_events,        │
+│   client_events, prd_events, demo_events, config_events,        │
+│   conversation_events, voice_events, analytics_events           │
 └────────────────────────────┬────────────────────────────────────┘
                              │
          ┌───────────────────┴──────────────────────┐
@@ -47,14 +48,16 @@ This document defines the comprehensive microservices architecture for an AI-pow
 ┌─────────────────┐                        ┌──────────────────┐
 │  Core Services  │                        │  Support Services│
 ├─────────────────┤                        ├──────────────────┤
-│ 1. Research     │                        │ 11. Monitoring   │
-│ 2. Demo Gen     │                        │ 12. Analytics    │
-│ 3. NDA Gen      │                        │ 13. Customer     │
-│ 4. Pricing      │                        │     Success      │
-│ 5. Proposal     │                        │ 14. Support      │
-│ 6. PRD Builder  │                        │ 15. CRM          │
-│ 7. Automation   │                        │     Integration  │
-│ 8. Agent Orch   │                        └──────────────────┘
+│ 0. Org Mgmt &   │                        │ 11. Monitoring   │
+│    Auth         │                        │ 12. Analytics    │
+│ 1. Research     │                        │ 13. Customer     │
+│ 2. Demo Gen     │                        │     Success      │
+│ 3. NDA Gen      │                        │ 14. Support      │
+│ 4. Pricing      │                        │ 15. CRM          │
+│ 5. Proposal     │                        │     Integration  │
+│ 6. PRD Builder  │                        └──────────────────┘
+│ 7. Automation   │
+│ 8. Agent Orch   │
 │ 9. Voice Agent  │
 │ 10. Config Mgmt │
 └─────────────────┘
@@ -63,7 +66,7 @@ Data Layer:
 - PostgreSQL (Supabase) with RLS: Transactional data, multi-tenant isolation
 - Qdrant: Vector storage for RAG, namespace-per-tenant
 - Neo4j: Knowledge graphs for GraphRAG
-- Redis: Caching, session state, rate limiting
+- Redis: Caching, session state, rate limiting, auth tokens
 - TimescaleDB: Time-series metrics and analytics
 ```
 
@@ -108,6 +111,533 @@ Data Layer:
 ---
 
 ## Microservice Specifications
+
+### 0. Organization Management & Authentication Service
+
+#### Objectives
+- **Primary Purpose**: Self-service client signup, organization creation, team member management, and authentication/authorization for the entire platform
+- **Business Value**: Enables product-led growth with self-service onboarding BEFORE sales engagement, reduces sales friction, enables team collaboration from day one
+- **Scope Boundaries**:
+  - **Does**: User signup/login, organization creation, team invitations, role-based permissions, work email verification, session management, OAuth integrations
+  - **Does Not**: Handle billing (separate service), generate content, manage workflows
+
+#### Requirements
+
+**Functional Requirements:**
+1. Work email signup with email verification
+2. Organization creation with admin role assignment
+3. Team member invitation system with expiration
+4. Role-based access control (Admin, Member, Viewer with custom permissions)
+5. OAuth integration (Google, Microsoft, GitHub SSO)
+6. Multi-factor authentication (MFA) support
+7. Session management with JWT tokens
+8. Organization-level settings and branding
+9. Audit logging for security events
+10. Team member removal and role updates
+
+**Non-Functional Requirements:**
+- Signup completion: <30 seconds
+- Support 100K+ organizations
+- Auth latency: <100ms P95
+- 99.99% uptime (authentication is critical path)
+- GDPR/SOC 2 compliance for user data
+
+**Dependencies:**
+- Research Engine (triggered after org creation)
+- PRD Builder (uses org/user context for permissions)
+- Configuration Management (org-level feature flags)
+- External: SendGrid (email verification), Auth0/Supabase Auth (optional managed auth)
+
+**Data Storage:**
+- PostgreSQL: Users, organizations, memberships, roles, permissions, audit logs
+- Redis: Session tokens, email verification codes, rate limiting
+
+#### Features
+
+**Must-Have:**
+1. ✅ Work email signup with domain validation
+2. ✅ Email verification with expiring tokens
+3. ✅ Organization creation wizard
+4. ✅ Team member invitation system
+5. ✅ Role-based permissions (Admin, Member, Viewer)
+6. ✅ Custom permission sets per role
+7. ✅ OAuth SSO (Google, Microsoft, GitHub)
+8. ✅ Session management with refresh tokens
+9. ✅ Organization settings dashboard
+10. ✅ Audit logging for security events
+
+**Nice-to-Have:**
+11. 🔄 SAML SSO for enterprise customers
+12. 🔄 Directory sync (Okta, Azure AD)
+13. 🔄 IP allowlisting
+14. 🔄 Advanced MFA (biometric, hardware keys)
+
+**Feature Interactions:**
+- Organization created → Triggers initial research job creation
+- Team member joins → Sends welcome email with PRD Builder access
+- Admin updates permissions → Real-time permission sync across services
+
+#### API Specification
+
+**1. Sign Up (Work Email)**
+```http
+POST /api/v1/auth/signup
+Content-Type: application/json
+
+Request Body:
+{
+  "email": "john@acme.com",
+  "password": "SecurePass123!",
+  "full_name": "John Doe",
+  "company_name": "Acme Corp",
+  "role_in_company": "Product Manager"
+}
+
+Response (201 Created):
+{
+  "user_id": "uuid",
+  "email": "john@acme.com",
+  "verification_status": "pending",
+  "verification_email_sent": true,
+  "message": "Please check your email to verify your account",
+  "expires_at": "2025-10-05T10:30:00Z"
+}
+
+Event Published to Kafka:
+Topic: auth_events
+{
+  "event_type": "user_signed_up",
+  "user_id": "uuid",
+  "email": "john@acme.com",
+  "company_name": "Acme Corp",
+  "timestamp": "2025-10-04T10:30:00Z"
+}
+```
+
+**2. Verify Email**
+```http
+POST /api/v1/auth/verify-email
+Content-Type: application/json
+
+Request Body:
+{
+  "email": "john@acme.com",
+  "verification_code": "ABC123"
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "email_verified": true,
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "uuid",
+  "expires_in": 3600,
+  "next_step": "create_organization"
+}
+```
+
+**3. Create Organization**
+```http
+POST /api/v1/organizations
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_name": "Acme Corp",
+  "industry": "e-commerce",
+  "company_size": "50-100",
+  "website": "https://acme.com",
+  "logo_url": "https://acme.com/logo.png"
+}
+
+Response (201 Created):
+{
+  "organization_id": "uuid",
+  "organization_name": "Acme Corp",
+  "slug": "acme-corp",
+  "admin_user_id": "uuid",
+  "created_at": "2025-10-04T10:35:00Z",
+  "onboarding_status": "research_queued",
+  "dashboard_url": "https://app.workflow.com/acme-corp"
+}
+
+Event Published to Kafka:
+Topic: org_events
+{
+  "event_type": "organization_created",
+  "organization_id": "uuid",
+  "admin_user_id": "uuid",
+  "industry": "e-commerce",
+  "timestamp": "2025-10-04T10:35:00Z"
+}
+```
+
+**4. Invite Team Member**
+```http
+POST /api/v1/organizations/{org_id}/invitations
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "email": "sarah@acme.com",
+  "role": "member",
+  "permissions": {
+    "prd_builder": ["read", "write"],
+    "research": ["read"],
+    "demos": ["read"],
+    "analytics": ["read"]
+  },
+  "custom_message": "Join our team to collaborate on PRDs!"
+}
+
+Response (201 Created):
+{
+  "invitation_id": "uuid",
+  "email": "sarah@acme.com",
+  "role": "member",
+  "status": "sent",
+  "invitation_link": "https://app.workflow.com/invite/abc123xyz",
+  "expires_at": "2025-10-11T10:35:00Z",
+  "created_by": "uuid",
+  "created_at": "2025-10-04T10:35:00Z"
+}
+
+Event Published to Kafka:
+Topic: org_events
+{
+  "event_type": "member_invited",
+  "organization_id": "uuid",
+  "invitation_id": "uuid",
+  "invited_email": "sarah@acme.com",
+  "invited_by": "uuid",
+  "timestamp": "2025-10-04T10:35:00Z"
+}
+```
+
+**5. Accept Invitation**
+```http
+POST /api/v1/invitations/{invitation_id}/accept
+Content-Type: application/json
+
+Request Body:
+{
+  "full_name": "Sarah Johnson",
+  "password": "SecurePass456!"
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "role": "member",
+  "permissions": {
+    "prd_builder": ["read", "write"],
+    "research": ["read"],
+    "demos": ["read"],
+    "analytics": ["read"]
+  },
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "uuid",
+  "dashboard_url": "https://app.workflow.com/acme-corp"
+}
+
+Event Published to Kafka:
+Topic: org_events
+{
+  "event_type": "member_joined",
+  "organization_id": "uuid",
+  "user_id": "uuid",
+  "role": "member",
+  "timestamp": "2025-10-04T11:00:00Z"
+}
+```
+
+**6. Update Member Role/Permissions (Admin Only)**
+```http
+PATCH /api/v1/organizations/{org_id}/members/{user_id}
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "role": "admin",
+  "permissions": {
+    "prd_builder": ["read", "write", "admin"],
+    "research": ["read", "write"],
+    "demos": ["read", "write"],
+    "analytics": ["read", "write"]
+  }
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "role": "admin",
+  "permissions": {
+    "prd_builder": ["read", "write", "admin"],
+    "research": ["read", "write"],
+    "demos": ["read", "write"],
+    "analytics": ["read", "write"]
+  },
+  "updated_at": "2025-10-04T11:30:00Z",
+  "updated_by": "uuid"
+}
+
+Event Published to Kafka:
+Topic: org_events
+{
+  "event_type": "member_role_updated",
+  "organization_id": "uuid",
+  "user_id": "uuid",
+  "old_role": "member",
+  "new_role": "admin",
+  "updated_by": "uuid",
+  "timestamp": "2025-10-04T11:30:00Z"
+}
+```
+
+**7. Get Organization Members**
+```http
+GET /api/v1/organizations/{org_id}/members
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "members": [
+    {
+      "user_id": "uuid",
+      "email": "john@acme.com",
+      "full_name": "John Doe",
+      "role": "admin",
+      "permissions": {...},
+      "joined_at": "2025-10-04T10:35:00Z",
+      "last_active": "2025-10-04T11:30:00Z",
+      "status": "active"
+    },
+    {
+      "user_id": "uuid",
+      "email": "sarah@acme.com",
+      "full_name": "Sarah Johnson",
+      "role": "member",
+      "permissions": {...},
+      "joined_at": "2025-10-04T11:00:00Z",
+      "last_active": "2025-10-04T11:15:00Z",
+      "status": "active"
+    }
+  ],
+  "total_members": 2,
+  "pending_invitations": 1
+}
+```
+
+**8. Remove Team Member (Admin Only)**
+```http
+DELETE /api/v1/organizations/{org_id}/members/{user_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "user_id": "uuid",
+  "status": "removed",
+  "removed_at": "2025-10-04T12:00:00Z",
+  "removed_by": "uuid",
+  "access_revoked": true
+}
+
+Event Published to Kafka:
+Topic: org_events
+{
+  "event_type": "member_removed",
+  "organization_id": "uuid",
+  "user_id": "uuid",
+  "removed_by": "uuid",
+  "timestamp": "2025-10-04T12:00:00Z"
+}
+```
+
+**9. Login**
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+Request Body:
+{
+  "email": "john@acme.com",
+  "password": "SecurePass123!"
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "email": "john@acme.com",
+  "organizations": [
+    {
+      "organization_id": "uuid",
+      "organization_name": "Acme Corp",
+      "role": "admin",
+      "slug": "acme-corp"
+    }
+  ],
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "uuid",
+  "expires_in": 3600
+}
+
+Event Published to Kafka:
+Topic: auth_events
+{
+  "event_type": "user_logged_in",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "timestamp": "2025-10-04T13:00:00Z"
+}
+```
+
+**10. OAuth Login (Google/Microsoft/GitHub)**
+```http
+GET /api/v1/auth/oauth/{provider}/authorize
+Query Parameters:
+- redirect_uri: https://app.workflow.com/auth/callback
+- state: random_state_token
+
+Response (302 Redirect):
+Location: https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=...&scope=email+profile
+
+Callback:
+GET /api/v1/auth/oauth/{provider}/callback
+Query Parameters:
+- code: authorization_code
+- state: random_state_token
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "email": "john@acme.com",
+  "provider": "google",
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "uuid",
+  "first_login": false,
+  "organizations": [...]
+}
+```
+
+**Rate Limiting:**
+- Signup: 10 per hour per IP
+- Login: 20 per hour per IP
+- Email verification: 5 per hour per email
+- Invitations: 100 per day per organization
+- OAuth: 50 per hour per IP
+
+#### Frontend Components
+
+**1. Signup Flow**
+- Component: `SignupForm.tsx`
+- Features:
+  - Work email validation (no gmail/yahoo/hotmail)
+  - Password strength indicator
+  - Company autocomplete (Clearbit/similar)
+  - Progressive disclosure (email → verify → create org)
+  - OAuth buttons (Google, Microsoft, GitHub)
+
+**2. Organization Creation Wizard**
+- Component: `OrgCreationWizard.tsx`
+- Features:
+  - Step 1: Basic info (name, industry, size)
+  - Step 2: Logo upload/scraping
+  - Step 3: Invite teammates
+  - Step 4: Research job auto-creation
+  - Progress indicator
+
+**3. Team Management Dashboard**
+- Component: `TeamManagementDashboard.tsx`
+- Features:
+  - Member list with roles
+  - Invite new members modal
+  - Role/permission editor
+  - Activity logs
+  - Pending invitations management
+  - Bulk actions (remove, update roles)
+
+**4. Role & Permissions Editor**
+- Component: `RolePermissionsEditor.tsx`
+- Features:
+  - Granular permission toggles
+  - Role templates (Admin, Member, Viewer)
+  - Custom role creation
+  - Permission preview
+  - Conflict resolution
+
+**5. Organization Settings**
+- Component: `OrgSettings.tsx`
+- Features:
+  - Organization profile editing
+  - Branding (logo, colors)
+  - SSO configuration
+  - Security settings (MFA enforcement)
+  - Audit log viewer
+  - Danger zone (delete org)
+
+**State Management:**
+- Redux Toolkit for auth state
+- React Query for org/member data
+- Local storage for refresh tokens
+- Session timeout handling with auto-refresh
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Organization Admin**
+   - Role: Manages organization, invites members, sets permissions
+   - Access: Full organization settings, team management
+   - Permissions: admin:organization, manage:members, manage:permissions
+   - Workflows: Create org → Invite team → Configure settings → Monitor activity
+
+2. **Organization Member**
+   - Role: Collaborates on PRDs, views research/demos
+   - Access: PRD Builder, research results, demos (based on permissions)
+   - Permissions: read:research, write:prd, read:demos
+   - Workflows: Accept invitation → Complete profile → Start PRD collaboration
+
+3. **Platform Admin**
+   - Role: Monitors auth service health, manages fraud/abuse
+   - Access: All organizations (read-only), audit logs, security alerts
+   - Permissions: admin:platform, view:all_orgs, manage:security
+   - Workflows: Monitors suspicious activity, enforces ToS, resolves conflicts
+
+**AI Agents:**
+
+1. **Email Verification Agent**
+   - Responsibility: Sends verification emails, validates codes, handles bounces
+   - Tools: SendGrid API, email validation services
+   - Autonomy: Fully autonomous
+   - Escalation: Alerts on high bounce rates
+
+2. **Domain Validation Agent**
+   - Responsibility: Validates work email domains, detects disposable emails
+   - Tools: DNS lookups, email validator APIs, fraud detection
+   - Autonomy: Fully autonomous
+   - Escalation: Flags suspicious domains for manual review
+
+3. **Onboarding Orchestration Agent**
+   - Responsibility: Triggers research job after org creation, sends welcome emails
+   - Tools: Kafka producer, SendGrid, Research Engine API
+   - Autonomy: Fully autonomous
+   - Escalation: None
+
+**Approval Workflows:**
+1. User Signup → Auto-approved (email verification required)
+2. Organization Creation → Auto-approved
+3. Team Member Invitation → Auto-sent (admin initiated)
+4. Role Updates → Auto-applied (admin permission required)
+5. Member Removal → Auto-executed (admin permission required)
+
+---
 
 ### 1. Research Engine Service
 
