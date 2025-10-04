@@ -637,10 +637,12 @@ Response (200 OK):
    - Use LangGraph two-node workflow (agent node + tools node) per https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
    - Create contextually relevant mock data (customer profiles, conversations)
    - Deploy to isolated sandbox for client viewing
-3. **Real Showcase Demos** (Internal/Sales):
-   - Maintain production-ready demos with real tools and integrations
-   - Include admin dashboard, analytics, full feature set
-   - Use for internal training and high-stakes sales presentations
+3. **Real Showcase Demos** (For Client Presentations):
+   - Pre-built showcase demos (2-5 permanent demos) with real tools and integrations
+   - Full admin dashboard access with appropriate permissions for clients to explore
+   - Real integrations (Salesforce, Zendesk, Shopify, etc.) with sample data
+   - NOT live production systems - dedicated showcase environments only
+   - Used to demonstrate actual platform capabilities to prospects
 4. Enable client feedback directly within demo interface (inline comments, ratings)
 5. Display transparent agent workflow visualization (tool calls, reasoning steps)
 6. Enable developer testing with issue tracking
@@ -676,11 +678,13 @@ Response (200 OK):
    - Auto-generate mock tools (e.g., `fetch_order_status`, `schedule_appointment`, `process_refund`)
    - Implement LangGraph two-node workflow (agent node + tools node)
    - Mock tool responses return realistic data based on research
-4. ✅ **Real Showcase Demos (Internal/Sales)**:
-   - Production-ready demos with real integrations (Salesforce, Zendesk, Shopify)
-   - Full admin dashboard with analytics, user management, settings
+4. ✅ **Real Showcase Demos (For Client Presentations)**:
+   - 2-5 pre-built permanent showcase demos with real integrations (Salesforce, Zendesk, Shopify)
+   - Full admin dashboard accessible to clients with appropriate permissions
+   - Analytics, user management, settings interfaces fully functional
    - Real-time monitoring and performance metrics
-   - Multi-tenant admin interface for demo purposes
+   - Sample data and multi-tenant views for comprehensive demonstration
+   - Dedicated showcase environments (NOT live production systems)
 5. ✅ Client feedback interface (inline comments, emoji reactions, ratings)
 6. ✅ Transparent agent workflow visualization (tool calls, reasoning, data flow)
 7. ✅ Sandbox environment provisioning (Kubernetes namespace per demo)
@@ -762,7 +766,7 @@ Error Responses:
 422 Unprocessable Entity: Research data insufficient for demo generation
 ```
 
-**1b. Generate Showcase Demo (Real Tools & Admin)**
+**1b. Generate Showcase Demo (Real Tools & Admin - For Client Presentations)**
 ```http
 POST /api/v1/demos/generate-showcase
 Authorization: Bearer {jwt_token}
@@ -780,31 +784,42 @@ Request Body:
     "multi_tenant_demo": true,
     "sample_tenants": 3
   },
-  "purpose": "high_stakes_sales_presentation"
+  "purpose": "client_presentation",
+  "client_id": "uuid"
 }
 
 Response (202 Accepted):
 {
   "demo_id": "uuid",
   "demo_type": "showcase",
-  "status": "generating",
+  "status": "ready",
+  "note": "Using pre-built showcase demo #2 (e-commerce template)",
   "includes": {
     "admin_dashboard": true,
     "real_integrations": ["salesforce", "zendesk", "shopify"],
     "analytics_dashboard": true,
     "user_management": true,
     "settings_interface": true,
-    "multi_tenant_view": true
+    "multi_tenant_view": true,
+    "sample_data": "realistic_e_commerce_data"
   },
   "access": {
-    "demo_url": "https://showcase.workflow.com/full-platform-demo",
-    "admin_url": "https://showcase.workflow.com/admin",
-    "credentials": {
-      "admin_user": "demo@workflow.com",
-      "password": "will_be_sent_via_email"
+    "demo_url": "https://showcase.workflow.com/e-commerce-demo",
+    "admin_url": "https://showcase.workflow.com/e-commerce-demo/admin",
+    "client_credentials": {
+      "role": "admin_viewer",
+      "username": "john@acme.com",
+      "permissions": ["view_dashboard", "view_analytics", "view_settings", "test_chatbot"],
+      "restrictions": ["no_delete", "no_user_management"]
     }
   },
-  "estimated_completion": "2025-10-04T12:00:00Z"
+  "showcase_environment": "dedicated (NOT production)",
+  "available_showcase_demos": [
+    "e-commerce (Shopify, Stripe, Zendesk)",
+    "healthcare (Epic, Twilio, Salesforce Health Cloud)",
+    "saas (Intercom, Stripe, HubSpot)",
+    "financial_services (Plaid, Salesforce Financial Services)"
+  ]
 }
 ```
 
@@ -1198,11 +1213,18 @@ app = workflow.compile()
 
 **Showcase Demo Implementation:**
 
-Real demos use the same workflow but with:
+Pre-built showcase demos (2-5 permanent environments) use the same workflow but with:
 - Real tool implementations (actual API calls to Salesforce, Zendesk, etc.)
-- Production database connections
-- Full admin dashboard
+- Dedicated showcase database (NOT production)
+- Full admin dashboard with client-appropriate permissions
 - Multi-tenant data (3 sample tenants with realistic data)
+- Client access with view/test permissions only (no delete, no user management)
+
+**Available Showcase Demo Templates:**
+1. E-commerce: Shopify + Stripe + Zendesk integrations
+2. Healthcare: Epic + Twilio + Salesforce Health Cloud
+3. SaaS: Intercom + Stripe + HubSpot
+4. Financial Services: Plaid + Salesforce Financial Services
 
 **Reference:** https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
 
