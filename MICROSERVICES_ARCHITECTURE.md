@@ -140,6 +140,8 @@ Data Layer:
 **Dependencies:**
 - Demo Generator Service (publishes research_completed event)
 - Configuration Management Service (scraping rules, source priorities)
+- RAG Pipeline Service (for Research Chat Q&A functionality)
+- LLM Gateway Service (for chat responses and insight generation)
 - External APIs:
   - Social media: Instagram, Facebook, TikTok APIs
   - Business data: Google Maps API, Yelp API
@@ -165,12 +167,13 @@ Data Layer:
 7. ✅ Mystery shopping workflow (human agent task assignment)
 8. ✅ Competitor workflow documentation
 9. ✅ Research report generation (JSON + PDF formats)
+10. ✅ Interactive chat interface for research Q&A (RAG-powered)
 
 **Nice-to-Have:**
-10. 🔄 Real-time data streaming (live social media monitoring)
-11. 🔄 Predictive analytics (churn risk, expansion opportunities)
-12. 🔄 Video content transcription and analysis
-13. 🔄 Automated SWOT analysis generation
+11. 🔄 Real-time data streaming (live social media monitoring)
+12. 🔄 Predictive analytics (churn risk, expansion opportunities)
+13. 🔄 Video content transcription and analysis
+14. 🔄 Automated SWOT analysis generation
 
 **Feature Interactions:**
 - Research completion triggers demo generation
@@ -367,7 +370,64 @@ Response (200 OK - PDF):
 Binary PDF content with formatted report
 ```
 
-**4. Trigger Mystery Shopping Task**
+**4. Chat with Research (Q&A Interface)**
+```http
+POST /api/v1/research/jobs/{job_id}/chat
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "message": "Who are the key decision makers we should target?",
+  "session_id": "uuid",
+  "include_sources": true
+}
+
+Response (200 OK):
+{
+  "job_id": "uuid",
+  "message_id": "uuid",
+  "response": {
+    "answer": "Based on the research, you should target the following key decision makers:\n\n1. **John Smith (CEO)** - Primary decision maker for strategic initiatives. Best contact via email: john@acme.com or LinkedIn. Confidence: 95%\n\n2. **Jane Doe (VP Operations)** - Operational decision maker, directly responsible for customer support and workflow automation. Contact: jane@acme.com. Confidence: 88%\n\n3. **Mike Johnson (CTO)** - Technical decision maker for integration and platform decisions.\n\nRecommendation: Start with John Smith for high-level discussion, then involve Jane Doe for operational details.",
+    "sources": [
+      {
+        "type": "decision_makers",
+        "data": {
+          "name": "John Smith",
+          "title": "CEO",
+          "source": "apollo.io"
+        }
+      },
+      {
+        "type": "org_chart",
+        "data": {
+          "hierarchy": "CEO → VP Ops, CTO, CFO"
+        }
+      }
+    ],
+    "related_insights": [
+      "Acme Corp recently raised $15M Series B - use this as conversation starter",
+      "Company is expanding to EU and India - automation needs likely growing"
+    ]
+  },
+  "conversation_context": {
+    "turn_count": 1,
+    "topics_discussed": ["decision_makers"]
+  },
+  "timestamp": "2025-10-05T14:30:00Z"
+}
+
+Example Questions:
+- "What are the main pain points we discovered?"
+- "What's their funding status and recent news?"
+- "How do they currently handle customer support?"
+- "What are their business hours and coverage gaps?"
+- "Who are their main competitors?"
+- "What's the sentiment around their brand?"
+- "Give me talking points for the first sales call"
+```
+
+**5. Trigger Mystery Shopping Task**
 ```http
 POST /api/v1/research/jobs/{job_id}/mystery-shopping
 Authorization: Bearer {jwt_token}
@@ -397,7 +457,7 @@ Response (202 Accepted):
 }
 ```
 
-**5. List Research Jobs**
+**6. List Research Jobs**
 ```http
 GET /api/v1/research/jobs?status=completed&limit=50&offset=0
 Authorization: Bearer {jwt_token}
@@ -448,13 +508,24 @@ Response (200 OK):
 **3. Research Report Viewer**
 - Component: `ResearchReportViewer.tsx`
 - Features:
-  - Tabbed interface (Summary, Primary, Deep, Mystery Shopping)
+  - Tabbed interface (Summary, Primary, Deep, Mystery Shopping, Decision Makers, Financial News)
   - Interactive charts (sentiment analysis, rating distributions)
   - Export options (PDF, JSON, CSV)
   - Annotation tools for sales team
   - Integration with Demo Generator (one-click demo creation)
 
-**4. Mystery Shopping Task Manager**
+**4. Research Chat Interface**
+- Component: `ResearchChatInterface.tsx`
+- Features:
+  - Full-screen chat with RAG-powered research assistant
+  - Ask questions about research findings in natural language
+  - Source citations with clickable references
+  - Suggested questions based on research content
+  - Related insights auto-displayed
+  - Export chat history with answers
+  - Quick action buttons ("Generate talking points", "Find decision makers", "Summarize pain points")
+
+**5. Mystery Shopping Task Manager**
 - Component: `MysteryShoppingTasks.tsx`
 - Features:
   - Task assignment interface for human agents
@@ -511,6 +582,12 @@ Response (200 OK):
    - Tools: LLM (GPT-4), sentiment analysis, workflow pattern recognition
    - Autonomy: Fully autonomous
    - Escalation: Human review for high-stakes recommendations (>$100K contracts)
+
+4. **Research Chat Agent (RAG-powered)**
+   - Responsibility: Answers questions about research findings in natural language
+   - Tools: LLM (GPT-4), Qdrant semantic search on research data, source citation generator
+   - Autonomy: Fully autonomous for Q&A
+   - Escalation: None (read-only access to research data)
 
 **Approval Workflows:**
 1. Research Job Creation → Auto-approved for existing clients, requires Sales Lead approval for new clients
