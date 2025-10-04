@@ -122,13 +122,14 @@ Data Layer:
 
 **Functional Requirements:**
 1. Multi-source data collection (Instagram, Facebook, TikTok, Google Maps, Reddit, reviews)
-2. Decision maker identification via Apollo.io, LinkedIn Sales Navigator, and contact databases
-3. Financial/funding news research via TechCrunch, YourStory, Crunchbase, PitchBook
-4. Competitive workflow analysis through mystery shopping (human agent coordination)
-5. Response quality assessment (speed, hours, coverage gaps)
-6. Automated report generation with actionable insights
-7. Data enrichment via third-party APIs (Clearbit, Apollo, ZoomInfo)
-8. Duplicate detection and data deduplication
+2. Company logo scraping and storage (website, social media, Google Maps)
+3. Decision maker identification via Apollo.io, LinkedIn Sales Navigator, and contact databases
+4. Financial/funding news research via TechCrunch, YourStory, Crunchbase, PitchBook
+5. Competitive workflow analysis through mystery shopping (human agent coordination)
+6. Response quality assessment (speed, hours, coverage gaps)
+7. Automated report generation with actionable insights
+8. Data enrichment via third-party APIs (Clearbit, Apollo, ZoomInfo)
+9. Duplicate detection and data deduplication
 
 **Non-Functional Requirements:**
 - Research completion within 24-48 hours per client
@@ -160,20 +161,21 @@ Data Layer:
 **Must-Have:**
 1. ✅ Automated scraping orchestrator (Playwright/Puppeteer)
 2. ✅ Multi-platform social media data extraction
-3. ✅ Google Maps business data scraping
-4. ✅ Review aggregation and sentiment analysis
-5. ✅ Decision maker research (Apollo.io, LinkedIn Sales Navigator integration)
-6. ✅ Financial/funding news aggregation (TechCrunch, YourStory, Crunchbase, PitchBook)
-7. ✅ Mystery shopping workflow (human agent task assignment)
-8. ✅ Competitor workflow documentation
-9. ✅ Research report generation (JSON + PDF formats)
-10. ✅ Interactive chat interface for research Q&A (RAG-powered)
+3. ✅ Company logo scraping and optimization (multiple resolutions)
+4. ✅ Google Maps business data scraping
+5. ✅ Review aggregation and sentiment analysis
+6. ✅ Decision maker research (Apollo.io, LinkedIn Sales Navigator integration)
+7. ✅ Financial/funding news aggregation (TechCrunch, YourStory, Crunchbase, PitchBook)
+8. ✅ Mystery shopping workflow (human agent task assignment)
+9. ✅ Competitor workflow documentation
+10. ✅ Research report generation (JSON + PDF formats)
+11. ✅ Interactive chat interface for research Q&A (RAG-powered)
 
 **Nice-to-Have:**
-11. 🔄 Real-time data streaming (live social media monitoring)
-12. 🔄 Predictive analytics (churn risk, expansion opportunities)
-13. 🔄 Video content transcription and analysis
-14. 🔄 Automated SWOT analysis generation
+12. 🔄 Real-time data streaming (live social media monitoring)
+13. 🔄 Predictive analytics (churn risk, expansion opportunities)
+14. 🔄 Video content transcription and analysis
+15. 🔄 Automated SWOT analysis generation
 
 **Feature Interactions:**
 - Research completion triggers demo generation
@@ -255,6 +257,26 @@ Response (200 OK - JSON):
   "job_id": "uuid",
   "client_id": "uuid",
   "research_completed_at": "2025-10-05T15:30:00Z",
+  "branding": {
+    "company_name": "Acme Corp",
+    "logo": {
+      "primary_url": "https://storage.workflow.com/logos/acme-primary.png",
+      "favicon_url": "https://storage.workflow.com/logos/acme-favicon.ico",
+      "resolutions": {
+        "512x512": "https://storage.workflow.com/logos/acme-512.png",
+        "256x256": "https://storage.workflow.com/logos/acme-256.png",
+        "128x128": "https://storage.workflow.com/logos/acme-128.png"
+      },
+      "source": "website",
+      "background": "transparent",
+      "format": "png"
+    },
+    "brand_colors": {
+      "primary": "#1a73e8",
+      "secondary": "#34a853",
+      "extracted_from": "website"
+    }
+  },
   "primary_findings": {
     "social_media": {
       "instagram": {
@@ -608,13 +630,15 @@ Response (200 OK):
 #### Requirements
 
 **Functional Requirements:**
-1. Generate demo chatbot/voicebot UI based on research findings
+1. Generate exceptional, smooth, beautiful demo UI with client branding (logo, colors)
 2. Create contextually relevant mock data (customer profiles, conversation histories)
 3. Implement mock tool integrations (CRM, scheduling, payment)
-3. Deploy to isolated sandbox environment with unique URL
-4. Enable developer testing with issue tracking
-5. Iterate on feedback until "demo perfect" status
-6. Support A/B demo variations for same client
+4. Deploy to isolated sandbox environment with unique shareable URL
+5. Enable client feedback directly within demo interface (inline comments, ratings)
+6. Display transparent agent workflow visualization (tool calls, reasoning steps)
+7. Enable developer testing with issue tracking
+8. Iterate on feedback until "demo perfect" status
+9. Support A/B demo variations for same client
 
 **Non-Functional Requirements:**
 - Demo generation time: <30 minutes from research completion
@@ -622,6 +646,7 @@ Response (200 OK):
 - Concurrent demos: Support 100+ active sandbox environments
 - Security: Complete tenant isolation, no cross-demo data leakage
 - Performance: <2s initial load, <500ms chatbot response time
+- UI/UX: Exceptional design quality, smooth animations, mobile-responsive
 
 **Dependencies:**
 - Research Engine (consumes research_completed events)
@@ -637,19 +662,22 @@ Response (200 OK):
 #### Features
 
 **Must-Have:**
-1. ✅ Template-based UI generation (React/Next.js components)
-2. ✅ Mock data synthesis from research context
-3. ✅ Multi-channel demo support (web chat, voice call simulation)
-4. ✅ Sandbox environment provisioning (Kubernetes namespace)
-5. ✅ Developer testing workflow (issue creation, fix tracking)
-6. ✅ Demo versioning and rollback
-7. ✅ Shareable demo links with access controls
+1. ✅ Exceptional UI generation with client branding (logo, brand colors from research)
+2. ✅ Smooth, beautiful design with micro-animations and transitions
+3. ✅ Client feedback interface (inline comments, emoji reactions, ratings)
+4. ✅ Transparent agent workflow visualization (tool calls, reasoning, data flow)
+5. ✅ Mock data synthesis from research context
+6. ✅ Multi-channel demo support (web chat, voice call simulation)
+7. ✅ Sandbox environment provisioning (Kubernetes namespace)
+8. ✅ Developer testing workflow (issue creation, fix tracking)
+9. ✅ Demo versioning and rollback
+10. ✅ Shareable demo links with client-specific access controls
 
 **Nice-to-Have:**
-8. 🔄 Real-time collaboration on demo (multiplayer editing)
-9. 🔄 Analytics on demo interactions (heatmaps, engagement)
-10. 🔄 Auto-generated demo scripts for sales team
-11. 🔄 Demo recording and playback
+11. 🔄 Real-time collaboration on demo (multiplayer editing)
+12. 🔄 Analytics on demo interactions (heatmaps, engagement)
+13. 🔄 Auto-generated demo scripts for sales team
+14. 🔄 Demo recording and playback
 
 **Feature Interactions:**
 - Research findings → Auto-populate demo context
@@ -794,7 +822,68 @@ Response (201 Created):
 }
 ```
 
-**5. Mark Demo as Perfect**
+**5. Submit Client Feedback on Demo**
+```http
+POST /api/v1/demos/{demo_id}/client-feedback
+Authorization: Bearer {demo_access_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_contact": {
+    "name": "John Smith",
+    "email": "john@acme.com",
+    "role": "CEO"
+  },
+  "feedback_type": "inline_comment",
+  "location": {
+    "component": "chat_widget",
+    "message_id": "msg_123",
+    "timestamp": "2025-10-04T14:30:00Z"
+  },
+  "comment": "Love how the AI automatically detected my order issue! Can we also show product recommendations here?",
+  "rating": {
+    "type": "emoji",
+    "value": "😍"
+  },
+  "overall_impression": {
+    "rating": 5,
+    "would_recommend": true,
+    "comments": "This is exactly what we need. The transparent workflow view showing tool calls is very helpful to understand how it works."
+  }
+}
+
+Response (201 Created):
+{
+  "feedback_id": "uuid",
+  "demo_id": "uuid",
+  "status": "received",
+  "client_contact": {
+    "name": "John Smith",
+    "role": "CEO"
+  },
+  "feedback_summary": {
+    "total_comments": 1,
+    "avg_rating": 5,
+    "sentiment": "very_positive"
+  },
+  "notification_sent_to": ["sales_engineer_uuid"],
+  "created_at": "2025-10-04T14:31:00Z"
+}
+
+Event Published to Kafka:
+Topic: demo_events
+{
+  "event_type": "client_feedback_received",
+  "demo_id": "uuid",
+  "client_id": "uuid",
+  "feedback_id": "uuid",
+  "sentiment": "very_positive",
+  "timestamp": "2025-10-04T14:31:00Z"
+}
+```
+
+**6. Mark Demo as Perfect**
 ```http
 POST /api/v1/demos/{demo_id}/approve
 Authorization: Bearer {jwt_token}
@@ -825,7 +914,7 @@ Topic: demo_events
 }
 ```
 
-**6. Get Demo Analytics**
+**7. Get Demo Analytics**
 ```http
 GET /api/v1/demos/{demo_id}/analytics
 Authorization: Bearer {jwt_token}
@@ -873,16 +962,34 @@ Response (200 OK):
   - Research findings auto-population
   - Budget estimate calculator
 
-**2. Demo Builder Canvas**
+**2. Exceptional Demo UI (Client-Facing)**
+- Component: `ClientDemoInterface.tsx`
+- Features:
+  - **Exceptional Design**: Smooth animations, micro-interactions, beautiful typography
+  - **Client Branding**: Auto-applied logo and brand colors from research
+  - **Transparent Workflow Visualization**:
+    - Live agent reasoning display ("Analyzing your order status...")
+    - Tool call cards ("🔧 Calling fetch_order_status with order_id: ORD-78945")
+    - Data flow visualization (API → AI → Response)
+    - Processing time indicators (STT: 320ms, LLM: 1.2s, TTS: 75ms)
+  - **Client Feedback Interface**:
+    - Inline comment bubbles on any message (💬 "Love this!")
+    - Emoji reactions (😍 👍 🤔 😕)
+    - Star ratings per interaction
+    - Overall impression form (expandable)
+  - **Mobile-Responsive**: Flawless experience on all devices
+  - **Accessibility**: WCAG 2.1 AA compliant
+
+**3. Demo Builder Canvas**
 - Component: `DemoBuilderCanvas.tsx`
 - Features:
-  - Drag-and-drop UI editor
-  - Component library (chat widget, voice interface, forms)
+  - Drag-and-drop UI editor with component library
   - Live preview mode (desktop, tablet, mobile)
-  - Mock data editor (inline editing of conversation samples)
+  - Mock data editor (inline editing)
   - Version history with visual diff
+  - Workflow visualization editor (customize what clients see)
 
-**3. Developer Testing Dashboard**
+**4. Developer Testing Dashboard**
 - Component: `DevTestingDashboard.tsx`
 - Features:
   - Issue tracker (Kanban board: Open, In Progress, Fixed, Verified)
@@ -891,16 +998,26 @@ Response (200 OK):
   - Device/browser matrix testing status
   - Automated test results integration
 
-**4. Demo Presentation View**
+**5. Demo Presentation View**
 - Component: `DemoPresentationView.tsx`
 - Features:
   - Fullscreen demo player
   - Presenter controls (pause, reset conversation, switch scenarios)
+  - Toggle workflow visualization on/off
   - Side-by-side comparison (current vs proposed solution)
   - Real-time analytics overlay (engagement heatmap)
   - Screen recording with annotated commentary
 
-**5. Demo Management Dashboard**
+**6. Client Feedback Dashboard**
+- Component: `ClientFeedbackDashboard.tsx`
+- Features:
+  - Real-time feedback stream (comments, ratings, reactions)
+  - Sentiment analysis visualization
+  - Comment threading and replies
+  - Feedback categorization (UI, functionality, feature requests)
+  - Export to PDF for stakeholder reviews
+
+**7. Demo Management Dashboard**
 - Component: `DemoManagementDashboard.tsx`
 - Features:
   - Grid/list view of all demos
@@ -941,22 +1058,34 @@ Response (200 OK):
 **AI Agents:**
 
 1. **Demo Generation Agent**
-   - Responsibility: Orchestrates UI generation, mock data creation, deployment
-   - Tools: Code generators (React component builder), mock data synthesizers, Kubernetes API
+   - Responsibility: Orchestrates exceptional UI generation with branding, mock data creation, deployment
+   - Tools: Code generators (React component builder), brand asset processors (logo optimization), mock data synthesizers, Kubernetes API
    - Autonomy: Fully autonomous for standard demos
    - Escalation: Human approval required for custom integrations or non-standard templates
 
 2. **Mock Data Synthesis Agent**
-   - Responsibility: Creates realistic mock datasets from research context
+   - Responsibility: Creates realistic mock datasets from research context with client branding
    - Tools: LLM (GPT-4 for context understanding), data generators (Faker.js), domain knowledge bases
    - Autonomy: Fully autonomous within data volume limits (max 1000 mock records)
    - Escalation: Alerts on insufficient research data for quality mock generation
 
-3. **Issue Resolution Agent**
+3. **Workflow Visualization Agent**
+   - Responsibility: Generates real-time transparent workflow displays (tool calls, reasoning, timing)
+   - Tools: Agent activity trackers, visualization renderers, animation libraries
+   - Autonomy: Fully autonomous
+   - Escalation: None (read-only display of agent operations)
+
+4. **Issue Resolution Agent**
    - Responsibility: Analyzes developer feedback, suggests fixes, auto-patches simple issues
    - Tools: Code analysis (AST parsers), LLM for bug diagnosis, GitHub API
    - Autonomy: Auto-fixes for trivial issues (typos, CSS adjustments), suggests fixes for complex bugs
    - Escalation: Complex issues assigned to human developers with AI-generated fix recommendations
+
+5. **Client Feedback Analysis Agent**
+   - Responsibility: Analyzes client feedback sentiment, categorizes comments, prioritizes improvements
+   - Tools: LLM (GPT-4 for sentiment analysis), categorization models, prioritization algorithms
+   - Autonomy: Fully autonomous for analysis and recommendations
+   - Escalation: High-priority feedback (negative sentiment) alerts Sales Engineer immediately
 
 **Approval Workflows:**
 1. Demo Generation → Auto-approved for standard templates, Sales Manager approval for custom/enterprise
