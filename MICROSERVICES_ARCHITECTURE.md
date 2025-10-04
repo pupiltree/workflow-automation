@@ -170,15 +170,18 @@ Data Layer:
 9. ✅ Competitor workflow documentation
 10. ✅ Research report generation (JSON + PDF formats)
 11. ✅ Interactive chat interface for research Q&A (RAG-powered)
+12. ✅ **Automated outbound email** (research findings + proposed demo scope + feedback request)
+13. ✅ **Manual outreach ticket system** (when email unavailable, create ticket for human agent)
 
 **Nice-to-Have:**
-12. 🔄 Real-time data streaming (live social media monitoring)
-13. 🔄 Predictive analytics (churn risk, expansion opportunities)
-14. 🔄 Video content transcription and analysis
-15. 🔄 Automated SWOT analysis generation
+14. 🔄 Real-time data streaming (live social media monitoring)
+15. 🔄 Predictive analytics (churn risk, expansion opportunities)
+16. 🔄 Video content transcription and analysis
+17. 🔄 Automated SWOT analysis generation
 
 **Feature Interactions:**
-- Research completion triggers demo generation
+- Research completion → Auto-send outbound email (if email available) OR create manual outreach ticket
+- Client feedback on research → Triggers demo generation with confirmed requirements
 - Findings feed into PRD Builder for context
 - Competitive insights inform pricing model
 
@@ -479,7 +482,166 @@ Response (202 Accepted):
 }
 ```
 
-**6. List Research Jobs**
+**6. Send Outbound Email (Auto-triggered on Research Completion)**
+```http
+POST /api/v1/research/jobs/{job_id}/send-outbound
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "auto_send": true,
+  "email_template": "research_complete_outbound"
+}
+
+Response (200 OK - Email Available):
+{
+  "job_id": "uuid",
+  "outbound_status": "email_sent",
+  "sent_to": "john@acme.com",
+  "sent_at": "2025-10-05T16:00:00Z",
+  "email_content": {
+    "subject": "We researched Acme Corp - Here's what we found and how we can help",
+    "preview": "Hi John, We did comprehensive research about Acme Corp and identified key opportunities...",
+    "includes": {
+      "research_summary": true,
+      "proposed_demo_scope": true,
+      "feedback_request": true
+    }
+  },
+  "tracking": {
+    "email_id": "uuid",
+    "open_tracking": true,
+    "click_tracking": true,
+    "reply_tracking": true
+  },
+  "next_steps": "awaiting_client_feedback"
+}
+
+Response (200 OK - No Email Available):
+{
+  "job_id": "uuid",
+  "outbound_status": "ticket_created",
+  "reason": "no_email_found_in_research",
+  "ticket": {
+    "ticket_id": "uuid",
+    "type": "manual_outreach_required",
+    "priority": "high",
+    "assigned_to": "sales_team",
+    "contact_channels_available": ["phone", "linkedin", "instagram_dm"],
+    "instructions": "Manually reach out to client via available channels, share research findings, gather feedback on proposed demo scope",
+    "dashboard_url": "https://dashboard.workflow.com/tickets/uuid"
+  },
+  "next_steps": "manual_agent_outreach_required"
+}
+
+Email Template Structure:
+---
+Subject: We researched {company_name} - Here's what we found and how we can help
+
+Hi {decision_maker_name},
+
+We did comprehensive research about {company_name} and discovered some interesting insights:
+
+**What We Found:**
+- Your current customer support operates Mon-Fri 9-6 with 4-hour average response time
+- You're getting complaints about weekend unavailability
+- You recently raised $15M Series B - congrats!
+
+**What We Think You Need:**
+We believe an AI-powered automation solution could help you:
+- Achieve 24/7 customer coverage
+- Reduce response time from 4 hours to <15 minutes
+- Handle 80% of queries automatically
+
+**Proposed Demo:**
+We'd like to build a customized demo showing:
+- AI chatbot handling your common customer queries
+- Integration with your existing Zendesk setup
+- Analytics dashboard for tracking automation metrics
+
+**We Need Your Feedback:**
+1. Does this align with your priorities?
+2. Any specific features or use cases you'd like to see?
+3. Any concerns or requirements we should address?
+
+Reply to this email or click here to provide feedback: [Feedback Link]
+
+Best regards,
+{sales_engineer_name}
+---
+
+Event Published to Kafka:
+Topic: research_events
+{
+  "event_type": "outbound_sent",
+  "job_id": "uuid",
+  "client_id": "uuid",
+  "outbound_method": "email" | "ticket_created",
+  "timestamp": "2025-10-05T16:00:00Z"
+}
+```
+
+**7. Submit Client Feedback on Research**
+```http
+POST /api/v1/research/jobs/{job_id}/client-feedback
+Authorization: Bearer {demo_access_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_contact": {
+    "name": "John Smith",
+    "email": "john@acme.com",
+    "role": "CEO"
+  },
+  "feedback": {
+    "research_accuracy": 5,
+    "proposed_demo_alignment": 4,
+    "comments": "Great research! We'd also like to see SMS integration in the demo, not just chat.",
+    "additional_requirements": [
+      "Show SMS/WhatsApp channels",
+      "Include multilingual support (English, Spanish)",
+      "Demonstrate escalation to human agents"
+    ],
+    "priority_use_cases": ["customer_support", "lead_qualification"],
+    "ready_for_demo": true
+  }
+}
+
+Response (201 Created):
+{
+  "feedback_id": "uuid",
+  "job_id": "uuid",
+  "status": "feedback_received",
+  "next_steps": {
+    "action": "demo_generation_queued",
+    "updated_demo_scope": {
+      "channels": ["webchat", "sms", "whatsapp"],
+      "languages": ["en", "es"],
+      "use_cases": ["customer_support", "lead_qualification"],
+      "required_features": ["human_escalation", "multilingual"]
+    },
+    "estimated_demo_ready": "2025-10-06T14:00:00Z"
+  },
+  "notification_sent_to": ["sales_engineer_uuid"],
+  "created_at": "2025-10-05T18:30:00Z"
+}
+
+Event Published to Kafka:
+Topic: research_events
+{
+  "event_type": "client_feedback_received",
+  "job_id": "uuid",
+  "client_id": "uuid",
+  "ready_for_demo": true,
+  "timestamp": "2025-10-05T18:30:00Z"
+}
+
+Triggers: Demo Generator Service (consumes client_feedback_received event)
+```
+
+**8. List Research Jobs**
 ```http
 GET /api/v1/research/jobs?status=completed&limit=50&offset=0
 Authorization: Bearer {jwt_token}
@@ -494,6 +656,8 @@ Response (200 OK):
       "job_id": "uuid",
       "client_name": "Acme Corp",
       "status": "completed",
+      "outbound_status": "email_sent",
+      "client_feedback_received": true,
       "created_at": "2025-10-01T10:00:00Z",
       "completed_at": "2025-10-03T15:30:00Z"
     },
@@ -547,7 +711,37 @@ Response (200 OK):
   - Export chat history with answers
   - Quick action buttons ("Generate talking points", "Find decision makers", "Summarize pain points")
 
-**5. Mystery Shopping Task Manager**
+**5. Outbound Email Preview & Tracking**
+- Component: `OutboundEmailPreview.tsx`
+- Features:
+  - Email template preview before sending
+  - Personalization variable preview (decision maker name, company details)
+  - Send time scheduler
+  - Email tracking dashboard (opens, clicks, replies)
+  - A/B test different email versions
+
+**6. Manual Outreach Ticket Dashboard**
+- Component: `ManualOutreachTickets.tsx`
+- Features:
+  - Ticket queue (priority-sorted: high, medium, low)
+  - Client info panel (available contact channels, research summary)
+  - Quick actions (call, LinkedIn message, Instagram DM)
+  - Outreach template library (email, LinkedIn, SMS)
+  - Response tracking (contacted, responded, feedback collected)
+  - Ticket resolution workflow (mark as contacted → awaiting response → feedback received → resolved)
+
+**7. Client Feedback Collection Form**
+- Component: `ClientFeedbackForm.tsx`
+- Features:
+  - Embedded in outbound email (one-click feedback link)
+  - Standalone form for manual collection
+  - Research accuracy rating
+  - Proposed demo alignment rating
+  - Additional requirements input (multi-select + free text)
+  - Priority use cases selection
+  - Ready for demo checkbox
+
+**8. Mystery Shopping Task Manager**
 - Component: `MysteryShoppingTasks.tsx`
 - Features:
   - Task assignment interface for human agents
@@ -559,31 +753,38 @@ Response (200 OK):
 **State Management:**
 - Redux Toolkit for global research job state
 - React Query for API data fetching and caching
-- WebSocket integration for real-time updates
-- Optimistic UI updates for job creation
+- WebSocket integration for real-time updates (email opens, ticket status)
+- Optimistic UI updates for job creation and outbound sending
 
 #### Stakeholders and Agents
 
 **Human Stakeholders:**
 
 1. **Sales Team Lead**
-   - Role: Initiates research jobs for qualified leads
+   - Role: Initiates research jobs, reviews outbound emails, manages client relationships
    - Access: Full CRUD on research jobs for assigned clients
-   - Permissions: create:research, read:research, update:research
-   - Workflows: Reviews reports, triggers demo generation
+   - Permissions: create:research, read:research, update:research, send:outbound
+   - Workflows: Reviews reports, approves outbound emails, tracks client feedback, triggers demo generation
 
-2. **Mystery Shopper Agents**
+2. **Sales Development Representative (SDR)**
+   - Role: Handles manual outreach tickets when email unavailable
+   - Access: Manual outreach ticket queue, client research data
+   - Permissions: read:tickets, update:tickets, read:research
+   - Workflows: Receives ticket assignment, reaches out via available channels (phone, LinkedIn, Instagram), collects client feedback, resolves ticket
+   - Approval: Ticket resolution auto-updates research status
+
+3. **Mystery Shopper Agents**
    - Role: Conduct manual competitor analysis and workflow testing
    - Access: Read-only on assigned tasks, write access to observations
    - Permissions: read:tasks, write:observations
    - Workflows: Receives task assignments, completes mystery shopping, submits findings
    - Approval: Task completions reviewed by QA before inclusion in reports
 
-3. **Research Operations Manager**
-   - Role: Oversees research quality, manages scraping infrastructure
-   - Access: Full admin access to all research jobs and configurations
-   - Permissions: admin:research, configure:scrapers, manage:agents
-   - Workflows: Monitors job failures, optimizes scraping rules, reviews escalated issues
+4. **Research Operations Manager**
+   - Role: Oversees research quality, manages scraping infrastructure, monitors outbound performance
+   - Access: Full admin access to all research jobs, outbound emails, and configurations
+   - Permissions: admin:research, configure:scrapers, manage:agents, view:email_analytics
+   - Workflows: Monitors job failures, optimizes scraping rules, reviews escalated issues, tracks outbound email performance
 
 **AI Agents:**
 
@@ -611,10 +812,26 @@ Response (200 OK):
    - Autonomy: Fully autonomous for Q&A
    - Escalation: None (read-only access to research data)
 
+5. **Outbound Email Generation Agent**
+   - Responsibility: Generates personalized outbound emails from research findings and proposed demo scope
+   - Tools: LLM (GPT-4), email templates, personalization engine, research data accessors
+   - Autonomy: Fully autonomous for email generation and sending (if email available)
+   - Escalation: Creates manual outreach ticket if no email found in research
+
+6. **Client Feedback Analysis Agent**
+   - Responsibility: Analyzes client feedback, extracts requirements, updates demo scope
+   - Tools: LLM (GPT-4), sentiment analysis, requirement extractors
+   - Autonomy: Fully autonomous for feedback analysis
+   - Escalation: Alerts Sales Team Lead for negative feedback or unclear requirements
+
 **Approval Workflows:**
 1. Research Job Creation → Auto-approved for existing clients, requires Sales Lead approval for new clients
-2. Mystery Shopping Tasks → Auto-assigned to available agents, QA review before report inclusion
-3. Third-Party API Costs > $20 → Requires Research Operations Manager approval
+2. Research Completion → Auto-send outbound email (if email available) OR create manual outreach ticket
+3. Outbound Email Sending → Auto-approved and sent with tracking
+4. Manual Outreach Ticket → Auto-assigned to available SDR
+5. Client Feedback Received → Auto-triggers demo generation with updated requirements
+6. Mystery Shopping Tasks → Auto-assigned to available agents, QA review before report inclusion
+7. Third-Party API Costs > $20 → Requires Research Operations Manager approval
 
 ---
 
