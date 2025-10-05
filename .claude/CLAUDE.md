@@ -1,5 +1,27 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Project Overview
+
+**AI-Powered Workflow Automation Platform for B2B SaaS**
+
+This platform automates the complete client lifecycle: research → demo generation → NDA/pricing → PRD creation → implementation → monitoring → customer success. The goal is 95% automation within 12 months.
+
+### Project Status
+**Currently in planning phase** - comprehensive architecture documentation exists but implementation has not yet begun.
+
+### Key Architecture Documents
+- **WORKFLOW.md**: End-to-end business process flow
+- **MICROSERVICES_ARCHITECTURE*.md**: Technical architecture across 16 microservices
+- **RESEARCH.md**: Research and competitive analysis
+
+---
+
+## Implementation Philosophy
+
 > Think carefully and implement the most concise solution that changes as little code as possible.
 
 ## USE SUB-AGENTS FOR CONTEXT OPTIMIZATION
@@ -63,3 +85,82 @@ Using the test-runner agent ensures:
 - NO OVER-ENGINEERING - Don't add unnecessary abstractions, factory patterns, or middleware when simple functions would work. Don't think "enterprise" when you need "working"
 - NO MIXED CONCERNS - Don't put validation logic inside API handlers, database queries inside UI components, etc. instead of proper separation
 - NO RESOURCE LEAKS - Don't forget to close database connections, clear timeouts, remove event listeners, or clean up file handles
+
+---
+
+## Architecture Patterns (When Implementation Begins)
+
+### Agent Orchestration
+- **LangGraph two-node workflow**: Standard pattern is agent node + tools node
+- Reference: https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
+- **YAML-driven configuration**: System prompts, tools, and integrations configured per client via YAML
+- **Checkpointing**: Always implement state persistence for fault tolerance
+- **State typing**: Use strict TypedDict/Pydantic models for agent state
+
+### Multi-Tenancy
+- **Row-Level Security (RLS)**: ALWAYS filter by tenant_id in PostgreSQL queries
+- **Namespace isolation**: Use tenant namespaces in Qdrant, Neo4j, and vector DBs
+- **Never bypass tenant filtering**: Even for admin operations, use proper authorization checks
+- **Test isolation thoroughly**: Every test must verify data cannot leak between tenants
+
+### Event-Driven Architecture
+- **Kafka topic naming**: `{service}_{entity}_{event_type}` (e.g., `prd_builder_prd_created`)
+- **Event schema versioning**: Always version event schemas, use backward-compatible changes
+- **Idempotency**: All event handlers MUST be idempotent (use idempotency keys)
+- **Saga pattern**: Use for distributed transactions across services
+
+### YAML Configuration
+- **JSON Schema validation**: Validate YAML configs before applying
+- **Version control**: All YAML configs tracked in Git with semantic versioning
+- **Hot reload testing**: Test config updates without service restarts
+- **S3 storage**: Production configs stored in S3, cached in Redis
+
+### Technology Stack
+- **Agent framework**: LangGraph for stateful AI workflows
+- **Database**: PostgreSQL (Supabase) with RLS for multi-tenant isolation
+- **Vector DB**: Qdrant with namespace-per-tenant
+- **Voice**: LiveKit for real-time voice agents
+- **Event bus**: Apache Kafka for service coordination
+- **Orchestration**: Kubernetes for container management
+- **API Gateway**: Kong for routing, auth, rate limiting
+
+### Cost Optimization
+- **Token monitoring**: Track LLM token usage per tenant, per workflow
+- **Semantic caching**: Cache similar prompts to reduce LLM calls
+- **Model routing**: Use cheaper models (GPT-3.5) for simple tasks, premium (GPT-4) for complex
+- **Batch processing**: Aggregate non-urgent operations to reduce API calls
+
+### Voice Agent Specific
+- **Latency target**: <500ms for voice responses
+- **LiveKit workflow**: Two-node pattern (see ../kishna_diagnostics/services/voice)
+- **Interruption handling**: Support barge-in and context preservation
+- **Fallback strategy**: Always have human escalation path
+
+### Testing Requirements
+- **Integration tests**: Use real Kafka/PostgreSQL/Qdrant instances (no mocks for infrastructure)
+- **Multi-tenant test fixtures**: Create test data for multiple tenants in every test
+- **Event replay**: Test idempotency by replaying events
+- **Load testing**: Simulate 1000+ concurrent voice/chat sessions
+- **Chaos testing**: Verify resilience when services fail
+
+---
+
+## When Implementation Starts
+
+### Sprint Planning Reference
+The architecture documents define a 20-sprint roadmap (40 weeks) to production. Refer to MICROSERVICES_ARCHITECTURE*.md for detailed sprint breakdown.
+
+### First Implementation Priorities (Sprints 1-2)
+1. Basic LangGraph agent orchestration
+2. LLM gateway with model routing
+3. PostgreSQL setup with RLS and multi-tenancy
+4. Kafka event bus foundation
+5. Configuration management service
+
+### Common Development Patterns
+- **Service template**: Each microservice follows the same structure (API layer → Business logic → Data access → Event publishing)
+- **Error boundaries**: Graceful degradation when optional services fail
+- **Observability**: OpenTelemetry for distributed tracing across all services
+- **Health checks**: Kubernetes liveness/readiness probes for every service
+
+---

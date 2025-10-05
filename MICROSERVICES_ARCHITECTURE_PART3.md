@@ -969,8 +969,9 @@ Response (200 OK):
 ### Event-Driven (Primary)
 
 **Kafka Topics:**
-- `auth_events`: User signed up, email verified, user logged in, password reset
+- `auth_events`: User signed up, email verified, user logged in, password reset, assisted account created, assisted account claimed, claim link sent, claim link resent, assisted account expired, assisted account access granted, account ownership transferred
 - `org_events`: Organization created, member invited, member joined, member removed, role updated
+- `agent_events`: Agent registered, client assigned to agent, handoff initiated, handoff accepted, handoff rejected, specialist invited, specialist joined, specialist handoff back, agent status updated, agent availability changed, workload redistributed
 - `collaboration_events`: Help requested, agent joined session, canvas edited, collaboration ended
 - `client_events`: Research completed, NDA signed, pilot agreed
 - `demo_events`: Demo generated, approved, failed
@@ -1167,6 +1168,152 @@ Automation Engine → config_generated event
 Agent Orchestration + Voice → services_ready event
   ↓
 Customer Success → monitoring_active event
+```
+
+**1b. Client Onboarding Flow (Assisted Signup with Human Agent Handoffs):**
+```
+═══════════════════════════════════════════════════════════════════════
+STAGE 1: SALES (Human Agent: Sales Agent - Sam)
+═══════════════════════════════════════════════════════════════════════
+Sales Agent Creates Assisted Account → assisted_account_created event
+  ↓
+Agent Auto-Assignment → client_assigned_to_agent event (Sam - Sales Agent)
+  ↓
+Claim Link Sent to Client → claim_link_sent event
+  ↓
+Research Engine (auto-triggered by AI) → research_completed event
+  ↓
+Sales Agent Prepares Demo/Data → assisted_account_access_granted event
+  ↓
+Demo Generator (AI-assisted) → demo_generated event
+  ↓
+Client Receives Claim Link → (Pending client action)
+  ↓
+Client Claims Account → assisted_account_claimed event
+  ↓
+Account Ownership Transferred → account_ownership_transferred event
+  ↓
+Sales Meeting (Sales Agent facilitated) → demo_approved + pilot_agreed events
+  ↓
+NDA Generator (AI-generated, Sales Agent reviews) → nda_generated event
+  ↓
+Client Signs NDA (Sales Agent follows up) → nda_fully_signed event
+  ↓
+Pricing Model Generator (AI-generated) → pricing_generated event
+  ↓
+Proposal Generator (AI-generated, Sales Agent reviews) → proposal_generated event
+  ↓
+Client Signs Proposal (Sales Agent closes) → proposal_signed event
+  ↓
+═══════════════════════════════════════════════════════════════════════
+HANDOFF: Sales Agent (Sam) → Onboarding Specialist (Rahul)
+═══════════════════════════════════════════════════════════════════════
+Sales Agent Initiates Handoff → handoff_initiated event
+  ↓  (Context: All sales docs, client prefs, technical requirements)
+Onboarding Specialist Accepts → handoff_accepted event
+  ↓
+═══════════════════════════════════════════════════════════════════════
+STAGE 2: ONBOARDING (Human Agent: Onboarding Specialist - Rahul)
+Duration: 1-2 weeks | Automation: 60% | Human: 40% (supervision + tie shoelaces)
+═══════════════════════════════════════════════════════════════════════
+Onboarding Specialist Reviews Context → agent_assigned event
+  ↓
+PRD Builder (AI-driven, Human collaborates when needed) → prd_created event
+  ↓  (Human uses Help button if stuck, AI handles 80% of questions)
+Client Requests Help → help_requested event (Onboarding Specialist joins)
+  ↓
+Collaboration Session → agent_joined_session event
+  ↓  (Human provides expert guidance, edits canvas)
+Collaboration Ended → collaboration_ended event (AI resumes)
+  ↓
+PRD Approved → prd_approved event
+  ↓
+Automation Engine (AI-generated YAML) → config_generated event
+  ↓
+Onboarding Specialist Reviews Config → config_reviewed event
+  ↓
+Config Deployed (Human supervises) → config_deployed event
+  ↓
+Agent Orchestration + Voice Launch → services_ready event
+  ↓
+Week 1 Handholding (Human monitors AI performance daily)
+  ↓  (AI Supervisor reviews quality metrics)
+AI Quality Check Passed → onboarding_week1_complete event
+  ↓
+═══════════════════════════════════════════════════════════════════════
+HANDOFF: Onboarding Specialist (Rahul) → Support + Success (Parallel)
+═══════════════════════════════════════════════════════════════════════
+Onboarding Specialist Initiates Dual Handoff:
+  ↓
+  ├─→ Support Specialist (Technical issues) → handoff_initiated event (to Support)
+  │   ↓
+  │   Support Specialist Accepts → handoff_accepted event
+  │
+  └─→ Success Manager (KPIs, adoption) → handoff_initiated event (to Success)
+      ↓
+      Success Manager Accepts → handoff_accepted event
+  ↓
+═══════════════════════════════════════════════════════════════════════
+STAGE 3: ONGOING SUPPORT + SUCCESS (Dual Human Agents - Long-term)
+Automation: 90% | Human: 10% (exceptions + supervision + strategy)
+═══════════════════════════════════════════════════════════════════════
+[SUPPORT TRACK - Support Specialist monitors AI agent health]
+  │
+  ├─→ AI Handles 90% of Support Tickets → conversation_completed events
+  │   ↓
+  ├─→ Complex Issues Escalate to Human → escalation_triggered event
+  │   ↓  (Support Specialist intervenes)
+  ├─→ Support Specialist Resolves → ticket_resolved event
+  │   ↓
+  └─→ AI Supervision (config tuning, prompt updates) → config_updated events
+
+[SUCCESS TRACK - Success Manager drives adoption]
+  │
+  ├─→ AI Monitors KPIs Daily → kpi_calculated events
+  │   ↓
+  ├─→ Success Manager Reviews QBR Metrics (Monthly) → qbr_scheduled event
+  │   ↓
+  ├─→ Success Manager Identifies Upsell Opportunity → opportunity_identified event
+  │   ↓
+  │   SUCCESS MANAGER INVITES SPECIALIST:
+  │   ↓
+  │   Invite Sales Specialist (Voice addon) → specialist_invited event
+  │   ↓
+  │   Sales Specialist Accepts → specialist_joined event
+  │   ↓
+  │   Sales Specialist Pitches → expansion_proposal_created event
+  │   ↓
+  │   Client Agrees → upsell_closed event
+  │   ↓
+  │   Sales Specialist Exits → specialist_handoff_back event
+  │   ↓
+  │   Success Manager Continues → client_expanded event
+  │
+  └─→ Continuous Adoption Monitoring → monitoring_active event
+
+═══════════════════════════════════════════════════════════════════════
+OPTIONAL: ITERATION / FLOW CHANGES (Success Manager drives)
+═══════════════════════════════════════════════════════════════════════
+Success Manager Identifies Iteration Need → iteration_requested event
+  ↓
+Invite Onboarding Specialist (or AI Workflow Designer) → specialist_invited event
+  ↓
+Specialist Accepts → specialist_joined event
+  ↓
+PRD Updated → prd_updated event
+  ↓
+Config Regenerated (AI-driven, human reviews) → config_generated event
+  ↓
+Deployed → config_deployed event
+  ↓
+Specialist Exits → specialist_handoff_back event
+  ↓
+Success Manager Continues Monitoring → monitoring_active event
+
+Note: If account not claimed within expiry period:
+Client Doesn't Claim → assisted_account_expired event
+  ↓
+Sales Agent Notified → manual_followup_required event
 ```
 
 **2. Conversation Flow:**

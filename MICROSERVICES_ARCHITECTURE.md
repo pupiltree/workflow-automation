@@ -21,6 +21,19 @@ This document defines the comprehensive microservices architecture for an AI-pow
 - Support for 10,000+ multi-tenant customers with isolated configurations
 - Real-time monitoring and analytics for continuous optimization
 - Sub-500ms voice agent latency and <2s API response times
+- Structured human agent lifecycle (Sales → Onboarding → Support → Success) with seamless handoffs
+- Human-in-the-loop supervision: Humans "tie shoelaces" (10-40% touch) while AI handles execution (60-90%)
+
+**Human-in-the-Loop Philosophy:**
+The architecture maintains **maximum automation while preserving human supervision and strategic decision-making**:
+
+- **Sales Stage (40% human touch)**: AI handles research, demo generation, document creation; Human handles relationship building, negotiation, strategic decisions
+- **Onboarding Stage (40% human touch)**: AI drives PRD creation, config generation, testing; Human provides expert guidance, reviews technical architecture, supervises launch
+- **Support Stage (10% human touch)**: AI handles 90% of tickets autonomously; Human handles complex escalations, config tuning, quality supervision
+- **Success Stage (10% human touch)**: AI monitors KPIs daily; Human conducts QBRs, identifies strategic opportunities, drives renewals
+- **Upsell/Iteration**: Human specialists invited dynamically by Success Managers for expansion opportunities
+
+Human agents work **alongside AI**, not **instead of AI**. Humans supervise, review, handle exceptions, and make strategic decisions while AI executes the tactical work at scale.
 
 ---
 
@@ -37,9 +50,10 @@ This document defines the comprehensive microservices architecture for an AI-pow
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Event Bus (Apache Kafka)                    │
-│   Topics: auth_events, org_events, collaboration_events,        │
-│   client_events, prd_events, demo_events, config_events,        │
-│   conversation_events, voice_events, analytics_events           │
+│   Topics: auth_events, org_events, agent_events,                │
+│   collaboration_events, client_events, prd_events,              │
+│   demo_events, config_events, conversation_events,              │
+│   voice_events, analytics_events                                │
 └────────────────────────────┬────────────────────────────────────┘
                              │
          ┌───────────────────┴──────────────────────┐
@@ -50,12 +64,14 @@ This document defines the comprehensive microservices architecture for an AI-pow
 ├─────────────────┤                        ├──────────────────┤
 │ 0. Org Mgmt &   │                        │ 11. Monitoring   │
 │    Auth         │                        │ 12. Analytics    │
-│ 1. Research     │                        │ 13. Customer     │
-│ 2. Demo Gen     │                        │     Success      │
-│ 3. NDA Gen      │                        │ 14. Support      │
-│ 4. Pricing      │                        │ 15. CRM          │
-│ 5. Proposal     │                        │     Integration  │
-│ 6. PRD Builder  │                        └──────────────────┘
+│ 0.5 Human Agent │                        │ 13. Customer     │
+│     Management  │◄───────────────────────┤     Success      │
+│ 1. Research     │  (Handoffs & Routing)  │ 14. Support      │
+│ 2. Demo Gen     │                        │ 15. CRM          │
+│ 3. NDA Gen      │                        │     Integration  │
+│ 4. Pricing      │                        └──────────────────┘
+│ 5. Proposal     │
+│ 6. PRD Builder  │
 │ 7. Automation   │
 │ 8. Agent Orch   │
 │ 9. Voice Agent  │
@@ -134,6 +150,7 @@ Data Layer:
 8. Organization-level settings and branding
 9. Audit logging for security events
 10. Team member removal and role updates
+11. Assisted signup - create and maintain client accounts on their behalf with claim capability
 
 **Non-Functional Requirements:**
 - Signup completion: <30 seconds
@@ -165,6 +182,10 @@ Data Layer:
 8. ✅ Session management with refresh tokens
 9. ✅ Organization settings dashboard
 10. ✅ Audit logging for security events
+11. ✅ Assisted signup - create accounts on behalf of clients
+12. ✅ Account claim process - clients can claim assisted accounts
+13. ✅ Temporary access tokens for assisted account management
+14. ✅ Account ownership transfer from platform to client
 
 **Nice-to-Have:**
 11. 🔄 SAML SSO for enterprise customers
@@ -173,9 +194,13 @@ Data Layer:
 14. 🔄 Advanced MFA (biometric, hardware keys)
 
 **Feature Interactions:**
-- Organization created → Triggers initial research job creation
+- Organization created (self-service) → Triggers initial research job creation
+- Organization created (assisted) → Creates account with claim token, sends claim email, triggers research job
 - Team member joins → Sends welcome email with PRD Builder access
 - Admin updates permissions → Real-time permission sync across services
+- Assisted account claimed → Transfers ownership, converts to full account, sends confirmation email
+- Assisted account nearing expiry (7 days) → Automated reminder email sent to client
+- Assisted account expired unclaimed → Account locked, platform admin notified for follow-up
 
 #### API Specification
 
@@ -526,12 +551,261 @@ Response (200 OK):
 }
 ```
 
+**11. Assisted Signup - Create Account on Behalf of Client (Platform Admin Only)**
+```http
+POST /api/v1/auth/assisted-signup
+Authorization: Bearer {admin_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_email": "client@example.com",
+  "client_name": "Jane Smith",
+  "company_name": "Example Corp",
+  "company_website": "https://example.com",
+  "industry": "e-commerce",
+  "company_size": "10-50",
+  "created_by": "platform_admin_user_id",
+  "notes": "Lead from conference, requested demo"
+}
+
+Response (201 Created):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "email": "client@example.com",
+  "account_status": "assisted_unclaimed",
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "claim_url": "https://app.workflow.com/claim/CLAIM-ABC123-XYZ789",
+  "temporary_access_token": "temp_eyJhbGciOiJIUzI1NiIs...",
+  "expires_at": "2025-11-04T10:30:00Z",
+  "created_by": "platform_admin_user_id",
+  "created_at": "2025-10-05T10:30:00Z",
+  "dashboard_url": "https://app.workflow.com/example-corp",
+  "message": "Account created. Client can claim within 30 days using the claim link."
+}
+
+Event Published to Kafka:
+Topic: auth_events
+{
+  "event_type": "assisted_account_created",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "client_email": "client@example.com",
+  "created_by": "platform_admin_user_id",
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "expires_at": "2025-11-04T10:30:00Z",
+  "timestamp": "2025-10-05T10:30:00Z"
+}
+```
+
+**12. Get Assisted Account Details (Platform Admin Only)**
+```http
+GET /api/v1/auth/assisted-accounts/{user_id}
+Authorization: Bearer {admin_jwt_token}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "email": "client@example.com",
+  "company_name": "Example Corp",
+  "account_status": "assisted_unclaimed",
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "claim_url": "https://app.workflow.com/claim/CLAIM-ABC123-XYZ789",
+  "created_by": "platform_admin_user_id",
+  "created_at": "2025-10-05T10:30:00Z",
+  "expires_at": "2025-11-04T10:30:00Z",
+  "claimed_at": null,
+  "last_activity": "2025-10-05T14:20:00Z",
+  "activity_summary": {
+    "research_completed": true,
+    "demo_generated": true,
+    "nda_sent": false,
+    "prd_created": false
+  },
+  "notes": "Lead from conference, requested demo"
+}
+```
+
+**13. Claim Assisted Account**
+```http
+POST /api/v1/auth/claim-account
+Content-Type: application/json
+
+Request Body:
+{
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "password": "SecurePass123!",
+  "accept_terms": true
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "email": "client@example.com",
+  "company_name": "Example Corp",
+  "account_status": "claimed",
+  "role": "admin",
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "uuid",
+  "dashboard_url": "https://app.workflow.com/example-corp",
+  "inherited_data": {
+    "research_reports": 1,
+    "demos": 1,
+    "ndas": 0,
+    "prds": 0
+  },
+  "claimed_at": "2025-10-10T09:15:00Z",
+  "message": "Account successfully claimed! You now have full access to your organization and all data created on your behalf."
+}
+
+Event Published to Kafka:
+Topic: auth_events
+{
+  "event_type": "assisted_account_claimed",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "email": "client@example.com",
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "claimed_at": "2025-10-10T09:15:00Z",
+  "timestamp": "2025-10-10T09:15:00Z"
+}
+```
+
+**14. Resend Claim Link (Platform Admin Only)**
+```http
+POST /api/v1/auth/assisted-accounts/{user_id}/resend-claim
+Authorization: Bearer {admin_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "custom_message": "Hi Jane, here's your account access link again. Let me know if you have questions!"
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "email": "client@example.com",
+  "claim_url": "https://app.workflow.com/claim/CLAIM-ABC123-XYZ789",
+  "email_sent": true,
+  "sent_at": "2025-10-06T11:00:00Z",
+  "expires_at": "2025-11-04T10:30:00Z"
+}
+
+Event Published to Kafka:
+Topic: auth_events
+{
+  "event_type": "claim_link_resent",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "resent_by": "platform_admin_user_id",
+  "timestamp": "2025-10-06T11:00:00Z"
+}
+```
+
+**15. Manage Assisted Account (Platform Admin Temporary Access)**
+```http
+POST /api/v1/auth/assisted-accounts/{user_id}/access
+Authorization: Bearer {admin_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "reason": "Setting up demo and research data for client presentation",
+  "duration_hours": 24
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "temporary_access_token": "temp_eyJhbGciOiJIUzI1NiIs...",
+  "access_type": "full_admin",
+  "granted_to": "platform_admin_user_id",
+  "granted_at": "2025-10-05T10:35:00Z",
+  "expires_at": "2025-10-06T10:35:00Z",
+  "reason": "Setting up demo and research data for client presentation",
+  "audit_logged": true
+}
+
+Event Published to Kafka:
+Topic: auth_events
+{
+  "event_type": "assisted_account_access_granted",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "granted_to": "platform_admin_user_id",
+  "reason": "Setting up demo and research data for client presentation",
+  "duration_hours": 24,
+  "timestamp": "2025-10-05T10:35:00Z"
+}
+```
+
+**16. List All Assisted Accounts (Platform Admin Only)**
+```http
+GET /api/v1/auth/assisted-accounts
+Authorization: Bearer {admin_jwt_token}
+Query Parameters:
+- status: unclaimed|claimed|expired (optional)
+- page: 1
+- limit: 50
+- sort_by: created_at|expires_at|claimed_at
+- order: asc|desc
+
+Response (200 OK):
+{
+  "accounts": [
+    {
+      "user_id": "uuid",
+      "organization_id": "uuid",
+      "email": "client@example.com",
+      "company_name": "Example Corp",
+      "account_status": "assisted_unclaimed",
+      "created_by": "platform_admin_user_id",
+      "created_at": "2025-10-05T10:30:00Z",
+      "expires_at": "2025-11-04T10:30:00Z",
+      "claimed_at": null,
+      "last_activity": "2025-10-05T14:20:00Z"
+    },
+    {
+      "user_id": "uuid",
+      "organization_id": "uuid",
+      "email": "another@company.com",
+      "company_name": "Another Company",
+      "account_status": "claimed",
+      "created_by": "platform_admin_user_id",
+      "created_at": "2025-10-01T08:00:00Z",
+      "expires_at": "2025-10-31T08:00:00Z",
+      "claimed_at": "2025-10-03T15:30:00Z",
+      "last_activity": "2025-10-05T16:45:00Z"
+    }
+  ],
+  "pagination": {
+    "current_page": 1,
+    "total_pages": 5,
+    "total_accounts": 247,
+    "per_page": 50
+  },
+  "summary": {
+    "total_unclaimed": 134,
+    "total_claimed": 98,
+    "total_expired": 15
+  }
+}
+```
+
 **Rate Limiting:**
 - Signup: 10 per hour per IP
 - Login: 20 per hour per IP
 - Email verification: 5 per hour per email
 - Invitations: 100 per day per organization
 - OAuth: 50 per hour per IP
+- Assisted signup: 100 per day per platform admin
+- Claim account: 5 per hour per claim token
+- Resend claim link: 10 per day per assisted account
 
 #### Frontend Components
 
@@ -582,6 +856,38 @@ Response (200 OK):
   - Audit log viewer
   - Danger zone (delete org)
 
+**6. Assisted Signup Dashboard (Platform Admin)**
+- Component: `AssistedSignupDashboard.tsx`
+- Features:
+  - Create assisted account form
+  - List all assisted accounts (unclaimed, claimed, expired)
+  - Search and filter accounts
+  - View account activity summary
+  - Resend claim links
+  - Generate temporary access tokens
+  - Bulk actions (resend, extend expiry)
+  - Activity timeline per account
+
+**7. Account Claim Flow (Client)**
+- Component: `AccountClaimFlow.tsx`
+- Features:
+  - Claim token validation
+  - Password setup form
+  - Terms acceptance
+  - Preview of inherited data (research, demos)
+  - Welcome tour after claim
+  - Account status indicator
+
+**8. Assisted Account Manager (Platform Admin)**
+- Component: `AssistedAccountManager.tsx`
+- Features:
+  - Temporary access request form
+  - Active access sessions viewer
+  - Audit log of admin actions
+  - Account handoff checklist
+  - Notes and communication history
+  - Expiry management (extend/revoke)
+
 **State Management:**
 - Redux Toolkit for auth state
 - React Query for org/member data
@@ -605,10 +911,27 @@ Response (200 OK):
    - Workflows: Accept invitation → Complete profile → Start PRD collaboration
 
 3. **Platform Admin**
-   - Role: Monitors auth service health, manages fraud/abuse
-   - Access: All organizations (read-only), audit logs, security alerts
-   - Permissions: admin:platform, view:all_orgs, manage:security
-   - Workflows: Monitors suspicious activity, enforces ToS, resolves conflicts
+   - Role: Monitors auth service health, manages fraud/abuse, creates assisted accounts
+   - Access: All organizations (read-only), audit logs, security alerts, assisted account management
+   - Permissions: admin:platform, view:all_orgs, manage:security, create:assisted_accounts, manage:assisted_accounts
+   - Workflows:
+     - Monitors suspicious activity, enforces ToS, resolves conflicts
+     - Creates assisted accounts for leads/prospects
+     - Manages account setup (research, demos) on behalf of clients
+     - Sends claim links to clients
+     - Monitors claim status and follows up
+     - Transfers ownership when account is claimed
+
+4. **Client (Assisted Account)**
+   - Role: Prospect/lead who receives an assisted account
+   - Access: Claim link, view-only access to inherited data until claimed
+   - Permissions: claim:account (before claim), full admin (after claim)
+   - Workflows:
+     - Receives claim link via email
+     - Reviews inherited data (research, demos)
+     - Claims account with password setup
+     - Gains full admin access to organization
+     - Inherits all data created on their behalf
 
 **AI Agents:**
 
@@ -630,12 +953,856 @@ Response (200 OK):
    - Autonomy: Fully autonomous
    - Escalation: None
 
+4. **Assisted Account Manager Agent**
+   - Responsibility: Manages assisted account lifecycle, sends claim reminders, handles expiry
+   - Tools: SendGrid, claim token generator, expiry scheduler, audit logger
+   - Autonomy: Fully autonomous
+   - Escalation: Alerts platform admin when accounts near expiry without claims
+
 **Approval Workflows:**
 1. User Signup → Auto-approved (email verification required)
 2. Organization Creation → Auto-approved
 3. Team Member Invitation → Auto-sent (admin initiated)
 4. Role Updates → Auto-applied (admin permission required)
 5. Member Removal → Auto-executed (admin permission required)
+6. Assisted Account Creation → Platform admin approval required
+7. Claim Link Sending → Auto-sent immediately after assisted account creation
+8. Account Claiming → Auto-approved (valid claim token required)
+9. Temporary Admin Access → Platform admin approval with audit logging
+
+---
+
+### 0.5. Human Agent Management Service
+
+#### Objectives
+- **Primary Purpose**: Unified management of all human agents across the platform with role-based access, multi-role assignments, handoff workflows, and specialist routing
+- **Business Value**: Enables structured client lifecycle management with seamless handoffs (Sales → Onboarding → Support → Success), maintains human-in-the-loop supervision while maximizing automation, supports 1000+ human agents with specialized roles
+- **Scope Boundaries**:
+  - **Does**: Manage agent profiles and roles, orchestrate client handoffs, track agent activities, route specialists, manage agent availability, supervise AI workflows
+  - **Does Not**: Execute business logic (services do), train agents, manage HR/payroll
+
+#### Requirements
+
+**Functional Requirements:**
+1. Agent registration and profile management with multi-role assignments
+2. Role-based access control with granular permissions per service
+3. Client handoff workflow orchestration (Sales → Onboarding → Support → Success → Upsell)
+4. Specialist matching and routing based on skills, availability, and workload
+5. Real-time agent availability and status management
+6. Activity tracking and performance metrics per role
+7. Queue management for each role type
+8. Agent invitation and cross-selling workflow
+9. Supervision mode for AI agent oversight
+10. Handoff approval workflow with notes and context transfer
+11. Agent workload balancing and auto-assignment
+
+**Non-Functional Requirements:**
+- Agent lookup: <50ms P95
+- Handoff processing: <2 seconds
+- Support 1000+ concurrent agents
+- 99.99% uptime (critical for handoffs)
+- Real-time availability updates <500ms
+
+**Dependencies:**
+- Organization Management (agent authentication)
+- All microservices (consume agent assignments and handoffs)
+- Analytics Service (agent performance metrics)
+- Monitoring Engine (agent activity tracking)
+
+**Data Storage:**
+- PostgreSQL: Agent profiles, roles, permissions, handoff history, activity logs
+- Redis: Real-time agent availability, queue state, active assignments
+- TimescaleDB: Agent performance metrics, SLA tracking
+
+#### Features
+
+**Must-Have:**
+1. ✅ Agent registration with multi-role assignment
+2. ✅ Granular role-based permissions (per service + per action)
+3. ✅ Client handoff workflow (Sales → Onboarding → Support → Success)
+4. ✅ Specialist routing engine (skill-based matching)
+5. ✅ Real-time availability management (online, busy, offline)
+6. ✅ Agent queue management (per role, per client)
+7. ✅ Activity tracking (time per client, actions performed)
+8. ✅ Cross-sell/upsell agent invitation
+9. ✅ Handoff approval with context notes
+10. ✅ Workload balancing (auto-assignment based on capacity)
+11. ✅ Supervision dashboard (AI oversight by human agents)
+12. ✅ Agent performance metrics (response time, CSAT, handoff quality)
+
+**Nice-to-Have:**
+13. 🔄 AI-powered agent suggestions (best agent for client)
+14. 🔄 Agent skill gap analysis
+15. 🔄 Automated agent training recommendations
+16. 🔄 Predictive workload forecasting
+
+**Feature Interactions:**
+- Client signup (assisted) → Auto-assign to Sales agent based on workload
+- Sales completes → Handoff to Onboarding agent → Context transferred
+- Onboarding completes → Handoff to dedicated Support + Success agents
+- Success agent identifies upsell → Invites Sales specialist to join
+- AI agent exceeds error threshold → Escalates to Supervision agent
+- Agent goes offline → Queue automatically redistributed
+
+#### API Specification
+
+**1. Register Human Agent**
+```http
+POST /api/v1/agents
+Authorization: Bearer {platform_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "email": "sam@workflow.com",
+  "full_name": "Sam Peterson",
+  "roles": [
+    {
+      "role_type": "sales_agent",
+      "primary": true,
+      "skills": ["b2b_saas", "enterprise_sales", "demo_presentation"],
+      "certifications": ["Salesforce_Certified"],
+      "languages": ["english", "spanish"]
+    },
+    {
+      "role_type": "onboarding_specialist",
+      "primary": false,
+      "skills": ["technical_onboarding", "integration_setup"],
+      "certifications": [],
+      "languages": ["english"]
+    }
+  ],
+  "permissions": {
+    "assisted_signup": ["create", "read", "update"],
+    "research_engine": ["read", "trigger"],
+    "demo_generator": ["read", "create", "approve"],
+    "prd_builder": ["read", "collaborate"],
+    "client_management": ["read", "update", "transfer"]
+  },
+  "capacity": {
+    "max_concurrent_clients": 15,
+    "max_active_handoffs": 3,
+    "availability_hours": "09:00-18:00 EST"
+  }
+}
+
+Response (201 Created):
+{
+  "agent_id": "uuid",
+  "email": "sam@workflow.com",
+  "full_name": "Sam Peterson",
+  "status": "active",
+  "roles": [
+    {
+      "role_id": "uuid",
+      "role_type": "sales_agent",
+      "primary": true,
+      "assigned_at": "2025-10-05T10:00:00Z"
+    },
+    {
+      "role_id": "uuid",
+      "role_type": "onboarding_specialist",
+      "primary": false,
+      "assigned_at": "2025-10-05T10:00:00Z"
+    }
+  ],
+  "current_workload": {
+    "active_clients": 0,
+    "pending_handoffs": 0,
+    "utilization_percent": 0
+  },
+  "created_at": "2025-10-05T10:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "agent_registered",
+  "agent_id": "uuid",
+  "roles": ["sales_agent", "onboarding_specialist"],
+  "timestamp": "2025-10-05T10:00:00Z"
+}
+```
+
+**2. Assign Client to Agent (Auto or Manual)**
+```http
+POST /api/v1/agents/assignments
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "role_type": "sales_agent",
+  "assignment_type": "auto",
+  "assignment_reason": "new_assisted_signup",
+  "priority": "normal",
+  "context": {
+    "company_name": "Teddy Corp",
+    "industry": "e-commerce",
+    "lead_source": "conference",
+    "notes": "Interested in customer support automation"
+  }
+}
+
+Response (201 Created):
+{
+  "assignment_id": "uuid",
+  "client_id": "uuid",
+  "assigned_agent": {
+    "agent_id": "uuid",
+    "full_name": "Sam Peterson",
+    "role_type": "sales_agent",
+    "contact_email": "sam@workflow.com"
+  },
+  "assignment_type": "auto",
+  "assigned_at": "2025-10-05T10:15:00Z",
+  "status": "active",
+  "sla": {
+    "first_contact_deadline": "2025-10-05T12:15:00Z",
+    "expected_completion": "2025-10-12T10:15:00Z"
+  }
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "client_assigned_to_agent",
+  "assignment_id": "uuid",
+  "client_id": "uuid",
+  "agent_id": "uuid",
+  "role_type": "sales_agent",
+  "timestamp": "2025-10-05T10:15:00Z"
+}
+```
+
+**3. Initiate Client Handoff**
+```http
+POST /api/v1/agents/handoffs
+Authorization: Bearer {agent_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "from_role": "sales_agent",
+  "to_role": "onboarding_specialist",
+  "handoff_reason": "sales_completed",
+  "handoff_type": "warm",
+  "context": {
+    "current_stage": "nda_signed",
+    "next_actions": ["setup_integrations", "configure_workflows"],
+    "client_preferences": {
+      "preferred_contact": "email",
+      "timezone": "EST",
+      "technical_level": "intermediate"
+    },
+    "completed_items": [
+      {"item": "research", "completed_at": "2025-10-05T11:00:00Z"},
+      {"item": "demo_approved", "completed_at": "2025-10-08T14:30:00Z"},
+      {"item": "nda_signed", "completed_at": "2025-10-09T16:00:00Z"},
+      {"item": "pricing_agreed", "completed_at": "2025-10-10T10:00:00Z"}
+    ],
+    "important_notes": "Client has custom API integration requirements. Technical contact is Jane (CTO)."
+  },
+  "target_agent_id": null,
+  "urgency": "normal"
+}
+
+Response (201 Created):
+{
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "from_agent": {
+    "agent_id": "uuid",
+    "full_name": "Sam Peterson",
+    "role_type": "sales_agent"
+  },
+  "to_agent": {
+    "agent_id": "uuid",
+    "full_name": "Rahul Kumar",
+    "role_type": "onboarding_specialist",
+    "status": "pending_acceptance"
+  },
+  "handoff_type": "warm",
+  "status": "pending",
+  "context_summary": {
+    "stage": "nda_signed",
+    "next_actions_count": 2,
+    "notes_count": 1
+  },
+  "sla": {
+    "acceptance_deadline": "2025-10-10T18:00:00Z",
+    "first_contact_deadline": "2025-10-11T10:00:00Z"
+  },
+  "created_at": "2025-10-10T14:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "handoff_initiated",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "from_agent_id": "uuid",
+  "to_agent_id": "uuid",
+  "from_role": "sales_agent",
+  "to_role": "onboarding_specialist",
+  "timestamp": "2025-10-10T14:00:00Z"
+}
+```
+
+**4. Accept/Reject Handoff**
+```http
+POST /api/v1/agents/handoffs/{handoff_id}/accept
+Authorization: Bearer {agent_jwt_token}
+Content-Type: application/json
+
+Request Body (Accept):
+{
+  "action": "accept",
+  "agent_id": "uuid",
+  "acceptance_notes": "Reviewed context. Ready to start onboarding. Will reach out to client within 24 hours.",
+  "estimated_completion": "2025-10-24T14:00:00Z"
+}
+
+Response (200 OK):
+{
+  "handoff_id": "uuid",
+  "status": "accepted",
+  "accepted_by": {
+    "agent_id": "uuid",
+    "full_name": "Rahul Kumar",
+    "role_type": "onboarding_specialist"
+  },
+  "accepted_at": "2025-10-10T15:00:00Z",
+  "client_notification_sent": true,
+  "previous_agent_notified": true
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "handoff_accepted",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "accepted_by_agent_id": "uuid",
+  "timestamp": "2025-10-10T15:00:00Z"
+}
+
+Request Body (Reject):
+{
+  "action": "reject",
+  "agent_id": "uuid",
+  "rejection_reason": "At capacity - cannot take new clients this week",
+  "suggested_agent_id": "uuid"
+}
+
+Response (200 OK):
+{
+  "handoff_id": "uuid",
+  "status": "rejected",
+  "rejected_by": {
+    "agent_id": "uuid",
+    "full_name": "Rahul Kumar",
+    "role_type": "onboarding_specialist"
+  },
+  "rejection_reason": "At capacity - cannot take new clients this week",
+  "reassignment_queued": true,
+  "next_available_agent": {
+    "agent_id": "uuid",
+    "full_name": "Maria Garcia",
+    "role_type": "onboarding_specialist",
+    "estimated_availability": "2025-10-11T09:00:00Z"
+  },
+  "rejected_at": "2025-10-10T15:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "handoff_rejected",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "rejected_by_agent_id": "uuid",
+  "reason": "at_capacity",
+  "reassignment_queued": true,
+  "timestamp": "2025-10-10T15:00:00Z"
+}
+```
+
+**5. Invite Specialist to Client (Cross-sell/Upsell/Iteration)**
+```http
+POST /api/v1/agents/invitations
+Authorization: Bearer {agent_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "invited_by_agent_id": "uuid",
+  "invited_role": "sales_specialist_voice",
+  "invitation_reason": "upsell_opportunity",
+  "context": {
+    "opportunity_type": "voice_agent_addon",
+    "estimated_value": 15000,
+    "urgency": "medium",
+    "background": "Client expressed interest in adding voice support to existing chatbot. Current utilization at 85%, strong ROI potential."
+  },
+  "target_agent_id": null,
+  "collaboration_mode": "join_existing"
+}
+
+Response (201 Created):
+{
+  "invitation_id": "uuid",
+  "client_id": "uuid",
+  "invited_by": {
+    "agent_id": "uuid",
+    "full_name": "Sarah Chen",
+    "role_type": "success_manager"
+  },
+  "invited_role": "sales_specialist_voice",
+  "invited_agent": {
+    "agent_id": "uuid",
+    "full_name": "Mike Rodriguez",
+    "role_type": "sales_specialist_voice",
+    "status": "pending_acceptance"
+  },
+  "collaboration_mode": "join_existing",
+  "estimated_value": 15000,
+  "status": "pending",
+  "created_at": "2025-11-01T10:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "specialist_invited",
+  "invitation_id": "uuid",
+  "client_id": "uuid",
+  "invited_by_agent_id": "uuid",
+  "invited_agent_id": "uuid",
+  "reason": "upsell_opportunity",
+  "timestamp": "2025-11-01T10:00:00Z"
+}
+```
+
+**6. Get Agent Workload and Queue**
+```http
+GET /api/v1/agents/{agent_id}/workload
+Authorization: Bearer {agent_jwt_token}
+
+Response (200 OK):
+{
+  "agent_id": "uuid",
+  "full_name": "Sam Peterson",
+  "primary_role": "sales_agent",
+  "all_roles": ["sales_agent", "onboarding_specialist"],
+  "current_status": "online",
+  "workload": {
+    "active_clients": 8,
+    "pending_handoffs": 2,
+    "pending_invitations": 1,
+    "max_capacity": 15,
+    "utilization_percent": 53,
+    "available_capacity": 7
+  },
+  "active_assignments": [
+    {
+      "assignment_id": "uuid",
+      "client_name": "Teddy Corp",
+      "organization_id": "uuid",
+      "role": "sales_agent",
+      "stage": "demo_scheduled",
+      "assigned_since": "2025-10-05T10:15:00Z",
+      "sla_status": "on_track",
+      "next_action": "conduct_demo",
+      "next_action_deadline": "2025-10-06T14:00:00Z"
+    }
+  ],
+  "pending_items": {
+    "handoffs_to_accept": 2,
+    "invitations_to_respond": 1,
+    "overdue_actions": 0
+  },
+  "performance": {
+    "avg_response_time_hours": 2.5,
+    "client_satisfaction_avg": 4.7,
+    "handoff_quality_score": 92,
+    "sla_compliance_percent": 98
+  }
+}
+```
+
+**7. Update Agent Availability**
+```http
+PATCH /api/v1/agents/{agent_id}/availability
+Authorization: Bearer {agent_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "status": "busy",
+  "status_message": "In client meeting until 3 PM",
+  "available_at": "2025-10-05T15:00:00Z",
+  "auto_assign": false
+}
+
+Response (200 OK):
+{
+  "agent_id": "uuid",
+  "status": "busy",
+  "status_message": "In client meeting until 3 PM",
+  "available_at": "2025-10-05T15:00:00Z",
+  "auto_assign_enabled": false,
+  "updated_at": "2025-10-05T13:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "agent_status_updated",
+  "agent_id": "uuid",
+  "status": "busy",
+  "timestamp": "2025-10-05T13:00:00Z"
+}
+```
+
+**8. Get Available Agents for Role**
+```http
+GET /api/v1/agents/available
+Authorization: Bearer {jwt_token}
+Query Parameters:
+- role_type: sales_agent
+- skills: b2b_saas,enterprise_sales
+- min_capacity: 3
+- sort_by: workload_asc
+
+Response (200 OK):
+{
+  "role_type": "sales_agent",
+  "available_agents": [
+    {
+      "agent_id": "uuid",
+      "full_name": "Sam Peterson",
+      "status": "online",
+      "current_workload": 8,
+      "available_capacity": 7,
+      "skills_match": ["b2b_saas", "enterprise_sales"],
+      "avg_response_time_hours": 2.5,
+      "client_satisfaction": 4.7,
+      "languages": ["english", "spanish"]
+    },
+    {
+      "agent_id": "uuid",
+      "full_name": "Alice Johnson",
+      "status": "online",
+      "current_workload": 5,
+      "available_capacity": 10,
+      "skills_match": ["b2b_saas"],
+      "avg_response_time_hours": 3.2,
+      "client_satisfaction": 4.5,
+      "languages": ["english"]
+    }
+  ],
+  "total_available": 12,
+  "total_capacity": 145
+}
+```
+
+**9. Get Client Lifecycle Timeline**
+```http
+GET /api/v1/agents/clients/{client_id}/timeline
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "client_id": "uuid",
+  "organization_name": "Teddy Corp",
+  "current_stage": "onboarding",
+  "current_agent": {
+    "agent_id": "uuid",
+    "full_name": "Rahul Kumar",
+    "role_type": "onboarding_specialist",
+    "assigned_since": "2025-10-10T15:00:00Z"
+  },
+  "lifecycle_timeline": [
+    {
+      "stage": "sales",
+      "agent": {
+        "agent_id": "uuid",
+        "full_name": "Sam Peterson",
+        "role_type": "sales_agent"
+      },
+      "start_date": "2025-10-05T10:15:00Z",
+      "end_date": "2025-10-10T14:00:00Z",
+      "duration_days": 5,
+      "completed_items": ["research", "demo", "nda_signed", "pricing_agreed"],
+      "handoff_quality_score": 95,
+      "client_satisfaction": 5
+    },
+    {
+      "stage": "onboarding",
+      "agent": {
+        "agent_id": "uuid",
+        "full_name": "Rahul Kumar",
+        "role_type": "onboarding_specialist"
+      },
+      "start_date": "2025-10-10T15:00:00Z",
+      "end_date": null,
+      "duration_days": 12,
+      "status": "in_progress",
+      "progress_percent": 60,
+      "next_milestone": "prd_approval",
+      "next_milestone_deadline": "2025-10-20T17:00:00Z"
+    }
+  ],
+  "future_stages": [
+    {
+      "stage": "support",
+      "role_type": "support_specialist",
+      "expected_start": "2025-10-24T00:00:00Z",
+      "assigned_agent": null
+    },
+    {
+      "stage": "success",
+      "role_type": "success_manager",
+      "expected_start": "2025-10-24T00:00:00Z",
+      "assigned_agent": null
+    }
+  ]
+}
+```
+
+**10. Supervise AI Agent Activity**
+```http
+GET /api/v1/agents/supervision/ai-activity
+Authorization: Bearer {supervisor_jwt_token}
+Query Parameters:
+- time_range: last_24h
+- alert_level: warning,critical
+- service: agent_orchestration,voice_agent
+
+Response (200 OK):
+{
+  "supervision_dashboard": {
+    "total_ai_conversations": 2547,
+    "requiring_attention": 23,
+    "escalated_to_human": 12,
+    "quality_issues": 11
+  },
+  "alerts": [
+    {
+      "alert_id": "uuid",
+      "severity": "critical",
+      "ai_agent_type": "voice_agent",
+      "client_id": "uuid",
+      "organization_name": "Beta Corp",
+      "issue": "High error rate (15%) in last 10 calls",
+      "detected_at": "2025-10-05T14:30:00Z",
+      "recommended_action": "Review call logs and update system prompt",
+      "supervisor_assigned": null
+    },
+    {
+      "alert_id": "uuid",
+      "severity": "warning",
+      "ai_agent_type": "chatbot",
+      "client_id": "uuid",
+      "organization_name": "Gamma Inc",
+      "issue": "Low CSAT score (3.2) for last 50 conversations",
+      "detected_at": "2025-10-05T13:00:00Z",
+      "recommended_action": "Analyze conversation patterns and refine responses",
+      "supervisor_assigned": {
+        "agent_id": "uuid",
+        "full_name": "Maria Garcia",
+        "role_type": "ai_supervisor"
+      }
+    }
+  ],
+  "top_issues": [
+    {"issue": "Low confidence responses", "occurrences": 45},
+    {"issue": "Tool execution failures", "occurrences": 23},
+    {"issue": "Sentiment drop during conversation", "occurrences": 18}
+  ]
+}
+```
+
+**Rate Limiting:**
+- 1000 API requests per minute per tenant
+- 50 handoffs per hour per agent
+- 20 specialist invitations per day per agent
+- 5 active specialist invitations per client (across all agents, prevents spam)
+- 100 availability updates per hour per agent
+
+#### Frontend Components
+
+**1. Agent Dashboard**
+- Component: `AgentDashboard.tsx`
+- Features:
+  - My active clients list (all roles)
+  - Pending handoffs to accept
+  - Pending specialist invitations
+  - Today's tasks and deadlines
+  - Quick actions (create handoff, update status)
+  - Performance metrics widget
+
+**2. Client Lifecycle View**
+- Component: `ClientLifecycleView.tsx`
+- Features:
+  - Visual timeline of client journey
+  - Stage indicators (Sales → Onboarding → Support → Success)
+  - Agent handoff history
+  - Context notes from previous agents
+  - Upcoming milestones
+  - Quick handoff button
+
+**3. Handoff Workflow Manager**
+- Component: `HandoffWorkflowManager.tsx`
+- Features:
+  - Initiate handoff form
+  - Context builder (notes, next actions, client prefs)
+  - Agent selector (auto or manual)
+  - Handoff approval queue
+  - Warm vs cold handoff toggle
+  - Handoff quality feedback
+
+**4. Specialist Invitation Panel**
+- Component: `SpecialistInvitationPanel.tsx`
+- Features:
+  - Invite specialist form (role, reason, context)
+  - Specialist availability checker
+  - Collaboration mode selector
+  - Estimated value calculator
+  - Invitation queue (sent/received)
+  - Quick accept/reject
+
+**5. Agent Workload Monitor**
+- Component: `AgentWorkloadMonitor.tsx`
+- Features:
+  - Real-time capacity gauge
+  - Active clients grid
+  - Queue length by role
+  - SLA compliance tracker
+  - Performance metrics (response time, CSAT)
+  - Workload balancing recommendations
+
+**6. AI Supervision Dashboard**
+- Component: `AISupervisionDashboard.tsx`
+- Features:
+  - AI activity overview (conversations, escalations)
+  - Alert feed (critical, warning, info)
+  - Quality issue tracker
+  - Conversation drill-down
+  - Quick intervention tools (update prompt, pause config)
+  - AI performance trends
+
+**7. Multi-Role Agent Profile**
+- Component: `MultiRoleAgentProfile.tsx`
+- Features:
+  - Role badges with primary indicator
+  - Skills and certifications per role
+  - Performance metrics by role
+  - Capacity settings per role
+  - Availability scheduler
+  - Role request form (add new roles)
+
+**8. Team View (Manager)**
+- Component: `TeamViewDashboard.tsx`
+- Features:
+  - Team capacity heatmap
+  - Agent status grid (online, busy, offline)
+  - Workload distribution chart
+  - Pending handoffs across team
+  - Performance leaderboard
+  - Agent assignment controls
+
+**State Management:**
+- Redux Toolkit for agent state
+- React Query for API data
+- WebSocket for real-time updates (availability, handoffs)
+- Local storage for dashboard preferences
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Sales Agent**
+   - Role: Manages assisted signups, conducts demos, negotiates pricing, initiates handoffs
+   - Access: Assisted signup, research, demos, NDA, pricing, proposal
+   - Permissions: create:assisted_accounts, read:research, create:demos, approve:pricing, initiate:handoff
+   - Workflows: Create assisted account → Research → Demo → NDA → Pricing → Proposal → Handoff to Onboarding
+   - Multi-role: Can also be Sales Specialist (voice, enterprise, vertical-specific)
+
+2. **Onboarding Specialist**
+   - Role: Guides client through PRD creation, config setup, integration setup, initial launch
+   - Access: PRD builder, automation engine, configuration, all client data
+   - Permissions: read:all_client_data, collaborate:prd, review:configs, handoff:to_support
+   - Workflows: Accept handoff from Sales → PRD collaboration → Config review → Integration setup → Week 1 support → Handoff to Support + Success
+   - Duration: Typically 1-2 weeks per client
+
+3. **Support Specialist**
+   - Role: Dedicated ongoing support for technical issues, bug fixes, config updates
+   - Access: All services (read), agent orchestration (debug), monitoring, support tickets
+   - Permissions: read:all_services, debug:conversations, update:configs, escalate:to_engineering
+   - Workflows: Accept handoff from Onboarding → Monitor client health → Respond to tickets → Ongoing support → Escalate complex issues
+   - Long-term: Assigned to client for lifetime or contract duration
+
+4. **Success Manager**
+   - Role: Drives adoption, monitors KPIs, conducts QBRs, identifies expansion opportunities
+   - Access: Analytics, customer success, all client metrics, usage data
+   - Permissions: read:analytics, conduct:qbrs, identify:opportunities, invite:specialists
+   - Workflows: Accept handoff from Onboarding → Monitor KPIs → Conduct QBRs → Identify upsell/crosssell → Invite Sales Specialist → Drive renewals
+   - Long-term: Assigned to client for lifetime
+
+5. **Sales Specialist (Cross-sell/Upsell)**
+   - Role: Invited by Success Manager for expansion opportunities (voice, new products, enterprise features)
+   - Access: Client history, current usage, analytics, pricing, proposals
+   - Permissions: read:client_data, create:expansion_proposals, negotiate:upsell
+   - Workflows: Receive invitation from Success Manager → Review client context → Pitch expansion → Create proposal → Close deal → Hand back to Success Manager
+   - Temporary: Joins for specific expansion opportunity, then exits
+
+6. **AI Supervisor**
+   - Role: Monitors AI agent quality, reviews escalations, tunes prompts, approves config changes
+   - Access: All AI conversations, monitoring dashboards, config management, analytics
+   - Permissions: read:all_ai_activity, review:escalations, update:prompts, approve:config_changes
+   - Workflows: Monitor AI quality → Review alerts → Investigate issues → Tune prompts → Approve updates → Continuous optimization
+
+7. **Platform Engineer (Human Agent System)**
+   - Role: Manages agent roles, permissions, handoff workflows, system health
+   - Access: Admin panel, all agents, system configurations
+   - Permissions: admin:agents, manage:roles, configure:handoffs, monitor:system
+   - Workflows: Register agents → Assign roles → Configure handoffs → Monitor performance → Troubleshoot issues
+
+**AI Agents:**
+
+1. **Agent Routing AI**
+   - Responsibility: Auto-assigns clients to best available agent based on workload, skills, performance
+   - Tools: Workload analyzer, skill matcher, performance scorer
+   - Autonomy: Fully autonomous for standard assignments
+   - Escalation: Platform Engineer review for custom routing rules
+
+2. **Handoff Quality AI**
+   - Responsibility: Analyzes handoff quality, suggests improvements, alerts on missing context
+   - Tools: NLP for context analysis, quality scorers, feedback aggregators
+   - Autonomy: Fully autonomous
+   - Escalation: None (suggestions only)
+
+3. **Workload Balancer AI**
+   - Responsibility: Monitors agent capacity, redistributes work, prevents burnout
+   - Tools: Capacity trackers, SLA monitors, reassignment engine
+   - Autonomy: Suggests reassignments, requires agent approval
+   - Escalation: Manager intervention for urgent reassignments
+
+**Approval Workflows:**
+1. Agent Registration → Platform Engineer approval required
+2. Client Assignment → Auto-approved (AI routing) or manual (manager assigned)
+3. Handoff Initiation → Auto-created, receiving agent acceptance required
+4. Specialist Invitation → Auto-sent, specialist acceptance required
+5. Role Addition → Platform Engineer approval for new role types
+6. AI Supervision Actions → AI Supervisor approval for prompt updates, auto-applied for config rollbacks
 
 ---
 
