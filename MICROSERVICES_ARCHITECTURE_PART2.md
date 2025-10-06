@@ -2469,9 +2469,9 @@ Response (201 Created):
     "confidence_score": 0.85
   },
   "recommended_services": {
-    "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot", "Instagram chatbot"],
-    "voicebot_types": ["Phone call (inbound/outbound)"],
-    "rationale": "Instagram chatbot recommended due to high social engagement. Website chatbot for 24/7 coverage. Phone voicebot for existing call volume."
+    "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot", "Instagram chatbot", "CRM chatbot"],
+    "voicebot_types": ["Phone call (inbound/outbound)", "WhatsApp voice"],
+    "rationale": "Instagram chatbot recommended due to high social engagement. Website chatbot for 24/7 coverage. CRM chatbot for sales team integration. Phone voicebot for existing call volume. WhatsApp voice for mobile-first customer base."
   },
   "status": "pending_review",
   "created_at": "2025-10-06T10:00:00Z"
@@ -2570,8 +2570,8 @@ Request Body:
       "call_volume": null  // null = agrees with prediction (450)
     },
     "service_confirmations": {
-      "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot"],  // Confirms 2 of 3 recommended
-      "voicebot_types": ["Phone call (inbound/outbound)"]  // Confirms recommendation
+      "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot"],  // Confirms 2 of 4 recommended
+      "voicebot_types": ["Phone call (inbound/outbound)"]  // Confirms 1 of 2 recommended
     },
     "additional_requirements": "Need integration with existing Zendesk ticketing system. Also require Spanish language support.",
     "corrections_needed": "Our evening traffic is higher than research shows - we need 24/7 coverage prioritized."

@@ -2588,6 +2588,33 @@ Response (200 OK - JSON):
       }
     }
   },
+  "business_prioritization": {
+    "priority_score": 85,
+    "priority_tier": "high",
+    "scoring_factors": {
+      "predicted_chat_volume": 1400,
+      "predicted_call_volume": 450,
+      "marketing_spend_estimated": 23000,
+      "growth_trajectory": "+23% MoM",
+      "deal_size_potential": 250000,
+      "weights_applied": {
+        "volume": "30%",
+        "marketing_spend": "25%",
+        "growth": "20%",
+        "deal_size": "15%",
+        "engagement": "10%"
+      }
+    },
+    "recommendation": "high_priority",
+    "rationale": "Strong volume predictions (1400 chats/month, 450 calls/month) combined with $23K/month marketing spend indicates serious growth trajectory. Series B funding and 23% MoM growth suggest budget availability and expansion mindset. Estimated deal size $250K+ justifies dedicated resource allocation.",
+    "invest_decision": true,
+    "suggested_actions": [
+      "Assign dedicated onboarding specialist (not shared pool)",
+      "Fast-track to NDA within 48 hours",
+      "Schedule executive-level demo with CEO/VP Ops",
+      "Allocate premium support tier (24hr SLA)"
+    ]
+  },
   "recommendations": [
     "Target decision makers: John Smith (CEO) and Jane Doe (VP Ops) for pilot discussions",
     "Leverage Series B funding news as conversation starter about scaling operations",
@@ -3015,13 +3042,32 @@ Response (200 OK):
    - Autonomy: Fully autonomous
    - Escalation: Human review for high-stakes recommendations (>$100K contracts)
 
-4. **Research Chat Agent (RAG-powered)**
+4. **Business Prioritization Agent**
+   - Responsibility: Calculates priority score (0-100) based on predicted volumes, marketing spend, growth indicators, and deal size potential
+   - Tools: ML scoring model (weighted algorithm), decision matrix, volume estimators, deal size calculator
+   - Scoring Algorithm:
+     - Predicted chat/call volume (30% weight)
+     - Marketing spend indicators (25% weight)
+     - Growth trajectory (20% weight)
+     - Estimated deal size (15% weight)
+     - Engagement signals (10% weight)
+   - Priority Tiers:
+     - Critical (90-100): Immediate executive demo, 24hr SLA, dedicated specialist
+     - High (70-89): Fast-track to NDA within 48hrs, premium support
+     - Medium (50-69): Standard 72hr SLA, shared resource pool
+     - Low (<50): Automated nurture sequence, self-service onboarding
+   - Autonomy: Fully autonomous for scoring and tier assignment
+   - Escalation: Alerts Sales Manager for critical-priority clients (score >= 90)
+   - Output: priority_score, priority_tier, invest_decision, suggested_actions
+   - Impact: Drives agent assignment prioritization, SLA tier, and resource allocation decisions
+
+5. **Research Chat Agent (RAG-powered)**
    - Responsibility: Answers questions about research findings in natural language
    - Tools: LLM (GPT-4), Qdrant semantic search on research data, source citation generator
    - Autonomy: Fully autonomous for Q&A
    - Escalation: None (read-only access to research data)
 
-5. **Volume Prediction Agent**
+6. **Volume Prediction Agent**
    - Responsibility: Predicts actual chat/call volumes based on collected data (historical trends, marketing spend, website traffic, seasonal factors) to assess client prioritization and resource investment
    - Tools: ML prediction models, time-series analysis, Google Ads/Meta Ads spend estimators, LLM for confidence scoring
    - Autonomy: Fully autonomous for volume predictions
@@ -3786,7 +3832,7 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 - Demo Generator (consumes demo_approved + client_agreed_pilot events)
 - **Research Engine** (retrieves client's registered business address for NDA template population)
 - Configuration Management (NDA templates, client business classifications)
-- Pricing Model Generator (triggers pricing calculation after NDA signing)
+- **PRD Builder** (triggers PRD creation session after NDA signing)
 - External APIs: AdobeSign, DocuSign, SendGrid (email delivery)
 
 **Data Storage:**
