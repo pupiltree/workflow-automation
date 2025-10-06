@@ -2288,6 +2288,7 @@ Request Body:
   "client_id": "uuid",
   "client_name": "Acme Corp",
   "industry": "e-commerce",
+  "product_types": ["chatbot", "voicebot"],
   "research_scope": {
     "primary_sources": ["instagram", "google_maps", "reviews"],
     "deep_research": ["reddit", "industry_forums"],
@@ -2301,6 +2302,7 @@ Request Body:
 Response (201 Created):
 {
   "job_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "queued",
   "estimated_completion": "2025-10-06T12:00:00Z",
   "created_at": "2025-10-04T10:30:00Z",
@@ -2322,6 +2324,7 @@ Response (200 OK):
 {
   "job_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "in_progress",
   "progress": {
     "primary_research": "completed",
@@ -2349,6 +2352,7 @@ Response (200 OK - JSON):
 {
   "job_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "research_completed_at": "2025-10-05T15:30:00Z",
   "branding": {
     "company_name": "Acme Corp",
@@ -2791,6 +2795,7 @@ Topic: research_events
   "event_type": "client_feedback_received",
   "job_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "ready_for_demo": true,
   "timestamp": "2025-10-05T18:30:00Z"
 }
@@ -3384,6 +3389,7 @@ Topic: demo_events
   "event_type": "client_feedback_received",
   "demo_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "feedback_id": "uuid",
   "sentiment": "very_positive",
   "timestamp": "2025-10-04T14:31:00Z"
@@ -3417,6 +3423,7 @@ Topic: demo_events
   "event_type": "demo_approved",
   "demo_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "timestamp": "2025-10-04T15:00:00Z"
 }
 ```
@@ -3772,6 +3779,7 @@ Content-Type: application/json
 Request Body:
 {
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "business_type": "e-commerce",
   "deal_size_estimate": 250000,
   "template_id": "standard_saas_nda_v3",
@@ -3806,6 +3814,7 @@ Note: The `business_address` is automatically populated from Research Engine dat
 Response (201 Created):
 {
   "nda_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "generated",
   "document_url": "https://storage.workflow.com/ndas/acme-nda-2025-10-04.pdf",
   "signature_workflow_id": "adobesign_xyz123",
@@ -3975,6 +3984,7 @@ Topic: nda_events
   "event_type": "nda_fully_signed",
   "nda_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "signed_at": "2025-10-07T09:15:00Z",
   "effective_date": "2025-10-07",
   "expiration_date": "2027-10-07"
@@ -4158,6 +4168,7 @@ Request Body:
 {
   "client_id": "uuid",
   "nda_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "use_case": {
     "type": "customer_support",
     "complexity": "medium",
@@ -4181,13 +4192,24 @@ Response (201 Created):
 {
   "pricing_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "generated",
   "cost_breakdown": {
-    "llm_costs_monthly": 850.00,
-    "infrastructure_monthly": 320.00,
-    "voice_costs_monthly": 84.00,
-    "integration_costs_monthly": 45.00,
-    "total_cost_monthly": 1299.00
+    "chatbot_costs_monthly": {
+      "llm_costs": 620.00,
+      "infrastructure": 180.00,
+      "integration_costs": 45.00,
+      "subtotal": 845.00
+    },
+    "voicebot_costs_monthly": {
+      "llm_costs": 230.00,
+      "infrastructure": 140.00,
+      "stt_costs": 48.00,
+      "tts_costs": 36.00,
+      "sip_trunk_costs": 20.00,
+      "subtotal": 474.00
+    },
+    "total_cost_monthly": 1319.00
   },
   "pricing_tiers": [
     {
@@ -4631,6 +4653,7 @@ Request Body:
   "client_id": "uuid",
   "pricing_id": "uuid",
   "prd_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "template_id": "saas_sow_v2",
   "proposal_type": "statement_of_work",
   "custom_sections": [
@@ -4647,6 +4670,7 @@ Response (201 Created):
 {
   "proposal_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "draft",
   "document_url": "https://proposals.workflow.com/acme-sow-2025-10-09",
   "edit_url": "https://proposals.workflow.com/edit/uuid",
@@ -4841,6 +4865,7 @@ Topic: proposal_events
   "event_type": "proposal_sent",
   "proposal_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "timestamp": "2025-10-09T12:00:00Z"
 }
 ```

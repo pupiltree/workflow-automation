@@ -455,6 +455,7 @@ Topic: prd_events
   "event_type": "prd_feedback_received",
   "prd_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "ready_for_approval": false,
   "timestamp": "2025-10-10T12:00:00Z"
 }
@@ -1636,6 +1637,7 @@ Topic: config_events
 {
   "event_type": "config_deployed",
   "config_id": "uuid",
+  "product_type": "chatbot",
   "deployment_id": "uuid",
   "environment": "production",
   "version": 3,
@@ -1897,6 +1899,7 @@ Request Body:
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "What is the capital of France?"}
   ],
+  "product_type": "chatbot",
   "model_preference": "balanced",  // cheap | balanced | premium
   "max_tokens": 500,
   "temperature": 0.7,
@@ -2359,6 +2362,7 @@ Request Body:
 {
   "template_id": "research_completed_outreach",
   "recipient_email": "client@example.com",
+  "product_types": ["chatbot", "voicebot"],
   "variables": {
     "client_name": "Jane Smith",
     "company_name": "Example Corp",
@@ -2385,6 +2389,7 @@ Topic: outreach_events
   "email_id": "uuid",
   "recipient_email": "client@example.com",
   "template_id": "research_completed_outreach",
+  "product_types": ["chatbot", "voicebot"],
   "sent_at": "2025-10-06T10:30:00Z"
 }
 ```
@@ -2431,7 +2436,8 @@ Request Body:
 {
   "client_id": "uuid",
   "organization_id": "uuid",
-  "research_job_id": "uuid"
+  "research_job_id": "uuid",
+  "product_types": ["chatbot", "voicebot"]
 }
 
 Response (201 Created):
@@ -2463,6 +2469,7 @@ Topic: outreach_events
   "client_id": "uuid",
   "organization_id": "uuid",
   "research_job_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "assigned_reviewer": "sales_agent_uuid",
   "timestamp": "2025-10-06T10:00:00Z"
 }
@@ -2589,6 +2596,7 @@ Topic: client_events
   "draft_id": "uuid",
   "client_id": "uuid",
   "organization_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "validation_response": {
     "research_findings_accurate": true,
     "volume_corrections": {

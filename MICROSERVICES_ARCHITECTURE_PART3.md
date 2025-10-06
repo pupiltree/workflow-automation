@@ -154,6 +154,7 @@ Request Body:
 Response (201 Created):
 {
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "thread_id": "uuid",
   "status": "active",
   "agent_response": {
@@ -190,6 +191,7 @@ Request Body:
 Response (200 OK):
 {
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "message_id": "uuid",
   "agent_response": {
     "message": "Thank you! I've found your order ORD-78945. It's currently in transit and expected to arrive on October 15th. Would you like me to send tracking details to your email?",
@@ -269,6 +271,7 @@ Topic: escalation_events
 {
   "event_type": "conversation_escalated",
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "escalation_id": "uuid",
   "trigger": "user_requested",
   "assigned_agent_id": "uuid",
@@ -840,6 +843,7 @@ Request Body:
 Response (202 Accepted):
 {
   "call_id": "uuid",
+  "product_type": "voicebot",
   "status": "initiating",
   "sip_session_id": "uuid",
   "estimated_connect_time": "5 seconds"
@@ -850,6 +854,7 @@ Topic: voice_events
 {
   "event_type": "call_initiated",
   "call_id": "uuid",
+  "product_type": "voicebot",
   "phone_number": "+15551234567",
   "timestamp": "2025-10-11T11:00:00Z"
 }
@@ -863,6 +868,7 @@ Authorization: Bearer {jwt_token}
 Response (200 OK):
 {
   "call_id": "uuid",
+  "product_type": "voicebot",
   "status": "in_progress",
   "phone_number": "+15551234567",
   "direction": "outbound",
@@ -930,6 +936,7 @@ Topic: voice_events
 {
   "event_type": "call_transferred",
   "call_id": "uuid",
+  "product_type": "voicebot",
   "transfer_type": "hot",
   "target_agent_id": "uuid",
   "timestamp": "2025-10-11T11:02:30Z"
@@ -1021,6 +1028,7 @@ Topic: voice_events
 {
   "event_type": "call_ended",
   "call_id": "uuid",
+  "product_type": "voicebot",
   "duration_seconds": 295,
   "resolution_status": "resolved",
   "timestamp": "2025-10-11T11:05:00Z"
