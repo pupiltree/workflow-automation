@@ -4576,6 +4576,31 @@ Response (200 OK):
 4. Pricing Experiment Launch → VP Sales approval required
 5. Experiment Winner Rollout → Auto-approved if statistically significant at 95% confidence
 
+#### Kafka Events
+
+Event Published to Kafka:
+Topic: pricing_events
+```json
+{
+  "event_type": "pricing_approved",
+  "pricing_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "selected_tier": "professional",
+  "final_monthly_price": 3499.00,
+  "contract_value_annual": 41988.00,
+  "margin_actual_percent": 40.0,
+  "approved_by": "uuid",
+  "approved_at": "2025-10-09T14:00:00Z",
+  "timestamp": "2025-10-09T14:00:00Z"
+}
+```
+
+**Consumer Actions:**
+- **Proposal Generator**: Triggers proposal generation with approved pricing
+- **Monitoring Engine**: Track pricing approval rates and conversion metrics
+
 ---
 
 ### 5. Proposal & Agreement Draft Generator Service
@@ -5104,6 +5129,32 @@ Client → Server Events:
 5. Pricing Section Edits → Finance Manager approval required
 6. Proposal Finalization (>$500K Deal) → VP Sales approval required
 7. Client-Requested Changes (Legal Impact) → Legal Counsel approval required
+
+#### Kafka Events
+
+Event Published to Kafka:
+Topic: proposal_events
+```json
+{
+  "event_type": "proposal_signed",
+  "proposal_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "pricing_id": "uuid",
+  "prd_id": "uuid",
+  "signed_by": "client_stakeholder_uuid",
+  "signed_at": "2025-10-10T14:00:00Z",
+  "esignature_provider": "adobesign",
+  "document_url": "https://storage.workflow.com/signed/acme-sow-signed.pdf",
+  "timestamp": "2025-10-10T14:00:00Z"
+}
+```
+
+**Consumer Actions:**
+- **Automation Engine**: Triggers YAML configuration generation for both chatbot and voicebot products
+- **Customer Success Service**: Initiates onboarding workflow
+- **Monitoring Engine**: Track proposal-to-signature conversion rates
 
 ---
 

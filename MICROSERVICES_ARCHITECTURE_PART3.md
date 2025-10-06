@@ -35,12 +35,12 @@
 - Horizontal scalability: 1000+ conversations per pod
 
 **Dependencies:**
-- Automation Engine (YAML config source)
-- Configuration Management (config distribution)
-- LLM Gateway Service (model inference)
-- RAG Pipeline Service (knowledge retrieval)
-- CRM Integration Service (tool execution)
-- Supabase PostgreSQL (state checkpoints, conversation logs)
+- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (YAML config source)
+- **Configuration Management** *[See Service 10 below]* (config distribution)
+- **LLM Gateway Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 16]* (model inference)
+- **RAG Pipeline Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 17]* (knowledge retrieval)
+- **CRM Integration Service** (tool execution)
+- **Supabase PostgreSQL** (state checkpoints, conversation logs)
 
 **Data Storage:**
 - PostgreSQL: Conversation threads, checkpoints, PII data, analytics events
@@ -744,10 +744,10 @@ Auto-rollback triggered within 60 seconds
 - Uptime: 99.9%
 
 **Dependencies:**
-- Automation Engine (YAML configs)
-- Agent Orchestration Service (business logic)
-- Configuration Management (voice-specific configs)
-- External: LiveKit Cloud/Self-hosted, Deepgram, ElevenLabs, Twilio/Telnyx
+- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (YAML configs)
+- **Agent Orchestration Service** *[See Service 8 above]* (business logic for cross-product coordination)
+- **Configuration Management** *[See Service 10 below]* (voice-specific configs)
+- **External**: LiveKit Cloud/Self-hosted, Deepgram, ElevenLabs, Twilio/Telnyx
 
 **Data Storage:**
 - PostgreSQL: Call metadata, transcripts, analytics
@@ -1377,11 +1377,11 @@ Response (201 Created):
 - 99.99% uptime (critical for hot-reload)
 
 **Dependencies:**
-- Automation Engine (generates configs)
-- Agent Orchestration Service (consumes configs)
-- Voice Agent Service (consumes configs)
-- S3 (config storage)
-- Kafka (config update events)
+- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (generates configs)
+- **Agent Orchestration Service** *[See Service 8 above]* (consumes configs)
+- **Voice Agent Service** *[See Service 9 above]* (consumes configs)
+- **S3** (config storage)
+- **Kafka** (config update events)
 
 **Data Storage:**
 - S3: YAML config files (versioned, immutable)
@@ -1400,6 +1400,7 @@ Response (200 OK):
 {
   "config_id": "uuid",
   "organization_id": "uuid",
+  "product_type": "chatbot",
   "version": 4,
   "yaml_content": "...",  // Full YAML config
   "metadata": {
@@ -1422,6 +1423,7 @@ Response (200 OK):
   "config_id": "uuid",
   "tenant_slug": "acme-corp",
   "organization_id": "uuid",
+  "product_type": "chatbot",
   "version": 4,
   "yaml_content": "...",
   "cached": true
@@ -1439,6 +1441,7 @@ Response (200 OK):
 {
   "config_id": "uuid",
   "organization_id": "uuid",
+  "product_type": "chatbot",
   "version": 4,
   "yaml_content": "...",
   "status": "active"
@@ -1503,6 +1506,7 @@ Authorization: Bearer {jwt_token}
 Response (200 OK):
 {
   "config_id": "uuid",
+  "product_type": "chatbot",
   "versions": [
     {
       "version": 4,
@@ -1539,6 +1543,7 @@ Request Body:
 Response (200 OK):
 {
   "config_id": "uuid",
+  "product_type": "chatbot",
   "rolled_back_from": 4,
   "rolled_back_to": 3,
   "active_version": 3,

@@ -34,12 +34,12 @@
 - Multi-client knowledge isolation (no data leakage)
 
 **Dependencies:**
-- **NDA Generator** (consumes nda_fully_signed event to trigger PRD session)
-- **Demo Generator** (demo data provides use case context for PRD)
-- **Research Engine** (volume predictions inform PRD volume requirements)
-- Agent Orchestration Service (village knowledge retrieval)
-- **Pricing Model Generator** (PRD approval triggers pricing generation via prd_approved event)
-- Analytics Service (historical KPI data for benchmarking)
+- **NDA Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 3]* (consumes nda_fully_signed event to trigger PRD session)
+- **Demo Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 2]* (demo data provides use case context for PRD)
+- **Research Engine** *[See MICROSERVICES_ARCHITECTURE.md Service 1]* (volume predictions inform PRD volume requirements)
+- **Agent Orchestration Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 8]* (village knowledge retrieval)
+- **Pricing Model Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 4]* (PRD approval triggers pricing generation via prd_approved event)
+- **Analytics Service** (historical KPI data for benchmarking)
 
 **Data Storage:**
 - PostgreSQL: PRD metadata, versions, client feedback, approval status
@@ -758,6 +758,15 @@ Topic: collaboration_events
 }
 ```
 
+**Kafka Topic Documentation:**
+- **Topic Name**: `collaboration_events`
+- **Purpose**: Tracks human agent collaboration sessions with clients on PRD documents
+- **Producers**: PRD Builder Service
+- **Consumers**: Monitoring Engine, Analytics Service, Customer Success Service
+- **Event Types**: `help_requested`, `agent_joined_session`, `canvas_edited`, `collaboration_ended`
+- **Retention**: 30 days
+- **Partitioning**: By organization_id for ordering guarantees
+
 **12. Get Active Collaboration Sessions (Agent Dashboard)**
 ```http
 GET /api/v1/prd/collaborate/active
@@ -1056,12 +1065,12 @@ Server → Client Events:
 - 99.9% config availability
 
 **Dependencies:**
-- **Proposal Generator** (consumes proposal_signed event to trigger YAML config generation)
-- **PRD Builder** (provides PRD data for config population)
-- Agent Orchestration Service (loads YAML configs for chatbot runtime)
-- Voice Agent Service (loads YAML configs for voicebot runtime)
-- Configuration Management Service (stores and distributes configs)
-- GitHub API (issue creation, status tracking)
+- **Proposal Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 5]* (consumes proposal_signed event to trigger YAML config generation)
+- **PRD Builder** *[See Service 6 above]* (provides PRD data for config population)
+- **Agent Orchestration Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 8]* (loads YAML configs for chatbot runtime)
+- **Voice Agent Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 9]* (loads YAML configs for voicebot runtime)
+- **Configuration Management Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 10]* (stores and distributes configs)
+- **GitHub API** (issue creation, status tracking)
 
 **Technical Architecture by Product Type:**
 
