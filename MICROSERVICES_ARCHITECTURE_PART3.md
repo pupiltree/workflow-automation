@@ -210,7 +210,13 @@ Response (200 OK):
           "execution_time_ms": 345
         }
       ],
-      "escalation_suggested": false
+      "escalation_suggested": false,
+      "personalization_applied": {
+        "cohort": "active_power_users",
+        "system_prompt_override": true,
+        "experiment_id": "uuid",
+        "variant_id": "v3"
+      }
     }
   },
   "conversation_state": {
@@ -680,10 +686,11 @@ Auto-rollback triggered within 60 seconds
 **AI Agents:**
 
 1. **LangGraph Agent (Primary)**
-   - Responsibility: Conducts conversations, invokes tools, manages state
+   - Responsibility: Conducts conversations, invokes tools, manages state, applies personalization
    - Tools: Dynamic (loaded from YAML config)
    - Autonomy: Fully autonomous within config constraints
    - Escalation: Human handoff triggered by config rules (sentiment, complexity, user request)
+   - Personalization Integration: Fetches cohort-based overrides from Hyperpersonalization Engine before generating responses
 
 2. **Memory Management Agent**
    - Responsibility: Compresses context, manages checkpoints, retrieves long-term memory
@@ -702,6 +709,12 @@ Auto-rollback triggered within 60 seconds
    - Tools: Recommendation engines, product catalogs, CRM data
    - Autonomy: Suggests only (user approval required)
    - Escalation: None
+
+5. **Personalization Context Agent (NEW)**
+   - Responsibility: Fetches user cohort, lifecycle stage, and experiment assignments from Hyperpersonalization Engine
+   - Tools: Hyperpersonalization Engine API, Redis cache
+   - Autonomy: Fully autonomous
+   - Escalation: None (falls back to base config if unavailable)
 
 **Approval Workflows:**
 1. Conversation Start → Auto-approved
@@ -812,6 +825,25 @@ Auto-rollback triggered within 60 seconds
      tts_provider: elevenlabs
      voice_id: "sarah_professional"
      turn_detection_threshold_ms: 300
+     # Client-configurable voice parameters (matching visual UI)
+     background_sound:
+       type: "office"  # office | cafe | silence | custom
+       custom_url: null
+     input_min_characters: 10
+     punctuation_boundaries: [".", "!", "?", "..."]
+     model_settings:
+       model: "gpt-4"
+       clarity_similarity: 0.75
+       speed: 1.0
+       style_exaggeration: 0
+       optimize_streaming_latency: 4
+       use_speaker_boost: true
+       auto_mode: false
+     max_tokens: 150
+     stop_speaking_plan:
+       number_of_words: 3
+       voice_seconds: 0.5
+       back_off_seconds: 2
    ```
 
 4. **Cross-Product Communication**
@@ -1531,13 +1563,15 @@ Response (200 OK):
 **6. Rollback to Previous Version**
 ```http
 POST /api/v1/configs/{config_id}/rollback
-Authorization: Bearer {platform_admin_jwt}
+Authorization: Bearer {platform_admin_jwt OR client_config_manager_jwt}
 Content-Type: application/json
 
 Request Body:
 {
   "target_version": 3,
-  "reason": "Version 4 causing high error rate"
+  "reason": "Version 4 causing high error rate",
+  "initiated_by": "client_user",  // 'client_user' | 'platform_engineer'
+  "user_id": "uuid"  // Client user ID if client-initiated
 }
 
 Response (200 OK):
@@ -1547,7 +1581,8 @@ Response (200 OK):
   "rolled_back_from": 4,
   "rolled_back_to": 3,
   "active_version": 3,
-  "kafka_event_published": true
+  "kafka_event_published": true,
+  "initiated_by": "client_user"
 }
 
 Event Published to Kafka:
@@ -1559,7 +1594,177 @@ Topic: config_events
   "from_version": 4,
   "to_version": 3,
   "reason": "high_error_rate",
+  "initiated_by": "client_user",
   "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+
+**7. Compare Config Versions**
+```http
+POST /api/v1/configs/{config_id}/versions/compare
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "version_a": 3,
+  "version_b": 4
+}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "product_type": "chatbot",
+  "version_a": 3,
+  "version_b": 4,
+  "diff": {
+    "added": {
+      "tools": [
+        {
+          "name": "initiate_refund",
+          "description": "Process customer refund requests"
+        }
+      ]
+    },
+    "removed": {},
+    "modified": {
+      "system_prompt": {
+        "old": "You are a helpful assistant...",
+        "new": "You are a helpful and empathetic assistant..."
+      }
+    }
+  },
+  "breaking_changes": false,
+  "risk_assessment": {
+    "risk_level": "low",
+    "reasons": ["Added new tool without removing existing functionality"]
+  },
+  "visual_diff_url": "https://s3.amazonaws.com/workflow-configs/diffs/config-uuid-v3-v4.html"
+}
+```
+
+**8. Preview Configuration Changes**
+```http
+POST /api/v1/configs/{config_id}/preview
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "config_id": "uuid",
+  "changes": {
+    "system_prompt": "You are a casual and friendly assistant...",
+    "voice_settings": {
+      "speed": 1.2
+    }
+  },
+  "test_scenarios": [
+    {
+      "user_message": "I need a refund",
+      "expected_behavior": "Should trigger refund tool"
+    }
+  ]
+}
+
+Response (200 OK):
+{
+  "preview_id": "uuid",
+  "config_id": "uuid",
+  "sandbox_url": "wss://sandbox.workflow.ai/preview/{preview_id}",
+  "expires_at": "2025-10-20T12:00:00Z",  // 1 hour expiry
+  "test_results": [
+    {
+      "scenario": "I need a refund",
+      "agent_response": "I'd be happy to help you with a refund. Let me process that for you...",
+      "tool_called": "initiate_refund",
+      "success": true
+    }
+  ],
+  "validation": {
+    "valid": true,
+    "warnings": [],
+    "errors": []
+  }
+}
+```
+
+**9. Create/Manage Config Branches**
+```http
+POST /api/v1/configs/{config_id}/branches
+Authorization: Bearer {client_config_manager_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "branch_name": "staging",
+  "base_version": 4,
+  "description": "Testing new empathy-focused prompts before production"
+}
+
+Response (201 Created):
+{
+  "branch_id": "uuid",
+  "config_id": "uuid",
+  "branch_name": "staging",
+  "base_version": 4,
+  "current_version": 4,
+  "created_at": "2025-10-20T10:00:00Z",
+  "status": "active"
+}
+
+# Merge branch to main
+POST /api/v1/configs/{config_id}/branches/{branch_name}/merge
+Authorization: Bearer {client_config_manager_jwt}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "branch_name": "staging",
+  "merged_into": "main",
+  "new_version": 5,
+  "changes_applied": ["system_prompt", "voice_settings"]
+}
+```
+
+**10. Get Config Change History (Client UI)**
+```http
+GET /api/v1/configs/{config_id}/history
+Authorization: Bearer {client_jwt}
+Query Parameters:
+- limit: 50
+- offset: 0
+- author_type: 'client_user' | 'ai_agent' | 'all'
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "product_type": "chatbot",
+  "total_changes": 156,
+  "changes": [
+    {
+      "change_id": "uuid",
+      "version": "v5",
+      "author": "john@acme.com",
+      "author_type": "client_user",
+      "change_type": "system_prompt",
+      "commit_message": "Made tone more casual for better customer engagement",
+      "risk_level": "low",
+      "applied_at": "2025-10-20T10:30:00Z",
+      "rolled_back": false
+    },
+    {
+      "change_id": "uuid",
+      "version": "v4",
+      "author": "AI Config Agent",
+      "author_type": "ai_agent",
+      "change_type": "tool",
+      "commit_message": "Added initiate_refund tool based on client feedback",
+      "risk_level": "medium",
+      "approved_by": "admin@acme.com",
+      "applied_at": "2025-10-20T10:00:00Z",
+      "rolled_back": false
+    }
+  ]
 }
 ```
 
@@ -1679,19 +1884,1371 @@ Topic: config_events
 
 ---
 
+## 19. Client Configuration Portal Service
+
+#### Objectives
+- **Primary Purpose**: Enable clients to self-configure deployed chatbot/voicebot products via conversational AI and visual dashboard with version control and member-based permissions
+- **Business Value**: 80% reduction in configuration support tickets, instant config changes, client autonomy, improved time-to-value
+- **Product Scope**: Supports both chatbot and voicebot product configuration with product-specific UI controls
+- **Scope Boundaries**:
+  - **Does**: Conversational config via AI agent, visual config dashboard, member permission management, version control UI, change classification, config preview/testing, rollback management
+  - **Does Not**: Generate initial configs (Automation Engine does), validate schemas (Configuration Management does), implement tools (developers do)
+
+#### Requirements
+
+**Functional Requirements:**
+1. Natural language configuration via conversational AI agent
+2. Visual configuration dashboard with product-specific controls (chatbot vs voicebot)
+3. Member-based permission system for configuration changes
+4. Git-style version control with commit messages and rollback
+5. Change classification (system_prompt, tool, voice_param, integration, etc.)
+6. Real-time configuration preview and testing sandbox
+7. Automated change risk assessment with approval workflows
+8. Human agent coordination for complex configuration needs
+
+**Non-Functional Requirements:**
+- Configuration change application: <2 minutes from request to live deployment
+- Conversational response time: <3s for classification and preview generation
+- Support 10,000+ organizations with isolated configuration access
+- 99.9% uptime for configuration portal
+- Version history retention: 1 year minimum
+
+**Dependencies:**
+- **Configuration Management Service** *[See Service 10 above]* (stores/distributes configs, validates schemas)
+- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (initial config generation)
+- **Organization Management Service** *[See MICROSERVICES_ARCHITECTURE.md Service 0]* (member roles and permissions)
+- **Agent Orchestration Service** *[See Service 8 above]* (applies chatbot config changes)
+- **Voice Agent Service** *[See Service 9 above]* (applies voicebot config changes)
+- **LLM Gateway Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 16]* (powers conversational config agent)
+
+**Data Storage:**
+- PostgreSQL: Config change log, member permissions, version metadata, approval workflows
+- S3: Version snapshots, config diff visualizations
+- Redis: Conversational state (chat context), config draft cache
+
+#### Features
+
+**Must-Have:**
+1. ✅ Conversational configuration agent with change classification
+2. ✅ Visual dashboard for chatbot configuration (system prompt, tools, integrations)
+3. ✅ Visual dashboard for voicebot configuration (voice parameters, model settings, stop speaking plan)
+4. ✅ Member permission matrix (Admin, Config Manager, Viewer, Developer roles)
+5. ✅ Git-style version control with commit messages
+6. ✅ Side-by-side diff viewer (before/after comparison)
+7. ✅ One-click rollback to previous versions
+8. ✅ Configuration testing sandbox with preview
+9. ✅ Change risk assessment (low/medium/high) with automated approval for low-risk changes
+10. ✅ Human agent escalation for complex configuration requests
+
+**Nice-to-Have:**
+11. 🔄 AI-powered configuration optimization suggestions
+12. 🔄 Configuration templates marketplace (share configs across organizations)
+13. 🔄 Automated regression testing for config changes
+14. 🔄 Configuration import/export (JSON/YAML)
+15. 🔄 Multi-environment support (dev/staging/production branches)
+
+**Feature Interactions:**
+- Client requests config change via chat → Agent classifies → Shows preview → Client approves → Hot-reload applied
+- Visual slider changed (voicebot speed) → Immediate preview in test call → Save creates new version
+- Risky change detected → Requires organization admin approval → Sends notification
+- Configuration error after deployment → Auto-rollback triggered → Platform engineer alerted
+
+#### Conversational Configuration Agent Architecture
+
+**LangGraph Agent Implementation:**
+
+```python
+class ConfigurationAgentState(TypedDict):
+    messages: List[BaseMessage]
+    config_id: str
+    organization_id: str
+    product_type: str  # chatbot | voicebot
+    current_config: Dict[str, Any]
+    detected_changes: List[Dict[str, Any]]
+    classification_confidence: float
+    preview_generated: bool
+    approval_status: str  # pending | approved | rejected
+    conversation_id: str
+
+class ConfigurationAgent:
+    """LangGraph agent for conversational configuration"""
+
+    def __init__(self):
+        self.tools = [
+            classify_configuration_request,
+            generate_system_prompt_update,
+            search_available_tools,
+            create_github_tool_request,
+            update_voice_parameters,
+            preview_configuration_change,
+            validate_configuration,
+            apply_configuration_change
+        ]
+
+        # Two-node workflow: agent + tools
+        self.graph = StateGraph(ConfigurationAgentState)
+        self.graph.add_node("agent", self.agent_node)
+        self.graph.add_node("tools", ToolNode(self.tools))
+
+        # Routing logic
+        self.graph.add_conditional_edges(
+            "agent",
+            self.should_continue,
+            {"tools": "tools", "end": END}
+        )
+        self.graph.add_edge("tools", "agent")
+        self.graph.set_entry_point("agent")
+```
+
+**Change Classification Model:**
+
+```yaml
+change_types:
+  system_prompt_change:
+    keywords: ["tone", "casual", "professional", "friendly", "instructions", "behavior", "personality"]
+    confidence_threshold: 0.85
+    risk_level: low
+
+  tool_change:
+    keywords: ["add tool", "remove tool", "enable", "disable", "refund", "payment", "integration"]
+    confidence_threshold: 0.90
+    risk_level: medium
+    requires_tool_lookup: true
+
+  voice_parameter_change:
+    keywords: ["speed", "slower", "faster", "clarity", "latency", "voice", "interruption"]
+    confidence_threshold: 0.88
+    risk_level: low
+
+  external_service_change:
+    keywords: ["salesforce", "zendesk", "integration", "connect", "api", "webhook"]
+    confidence_threshold: 0.92
+    risk_level: high
+
+  escalation_rule_change:
+    keywords: ["escalate", "human", "transfer", "handoff", "trigger"]
+    confidence_threshold: 0.87
+    risk_level: medium
+```
+
+#### API Specification
+
+**1. Conversational Configuration Chat**
+```http
+POST /api/v1/client-config/chat
+Authorization: Bearer {client_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "config_id": "uuid",
+  "message": "Make the voicebot speak slower and add a refund tool",
+  "conversation_id": "uuid",  // Maintains context across messages
+  "product_type": "voicebot"
+}
+
+Response (200 OK):
+{
+  "response": "I'll help you with that. I've detected two changes:\n\n1. **Voice speed adjustment** (slower)\n   - Current: 1.0x speed\n   - Proposed: 0.7x speed\n   \n2. **Adding refund tool**\n   - Found 'initiate_refund' in our catalog\n   - Status: Implemented and ready\n   \nWould you like me to apply these changes?",
+  "detected_changes": [
+    {
+      "type": "voice_parameter_change",
+      "parameter": "speed",
+      "current_value": 1.0,
+      "proposed_value": 0.7,
+      "confidence": 0.95,
+      "risk_level": "low"
+    },
+    {
+      "type": "tool_change",
+      "action": "add",
+      "tool_name": "initiate_refund",
+      "tool_status": "implemented",
+      "confidence": 0.88,
+      "risk_level": "medium"
+    }
+  ],
+  "preview_url": "https://config.workflow.com/preview/uuid",
+  "requires_approval": false,  // Auto-approved for this user's role
+  "conversation_id": "uuid"
+}
+```
+
+**2. Visual Configuration Update**
+```http
+POST /api/v1/client-config/visual/update
+Authorization: Bearer {client_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "config_id": "uuid",
+  "product_type": "voicebot",
+  "changes": {
+    "voice_settings": {
+      "background_sound": {
+        "type": "office",  // office | cafe | silence | custom
+        "custom_url": null
+      },
+      "input_min_characters": 10,
+      "punctuation_boundaries": [".", "!", "?", "..."],
+      "model_settings": {
+        "model": "gpt-4",
+        "clarity_similarity": 0.75,
+        "speed": 0.8,
+        "style_exaggeration": 0,
+        "optimize_streaming_latency": 3,
+        "use_speaker_boost": true,
+        "auto_mode": false
+      },
+      "max_tokens": 150,
+      "stop_speaking_plan": {
+        "number_of_words": 5,
+        "voice_seconds": 0.7,
+        "back_off_seconds": 3
+      }
+    }
+  },
+  "commit_message": "Adjusted voice speed and interruption handling for better user experience",
+  "apply_immediately": false  // If false, creates draft for review
+}
+
+Response (200 OK):
+{
+  "version": "v48",
+  "status": "pending_approval",  // pending_approval | draft | applied
+  "preview_url": "https://config.workflow.com/preview/uuid",
+  "test_call_url": "https://config.workflow.com/test-call/uuid",  // Voicebot testing
+  "validation": {
+    "valid": true,
+    "warnings": [],
+    "estimated_impact": "Low - voice parameter changes only",
+    "affected_conversations": 0  // No active conversations affected
+  },
+  "diff": {
+    "voice_settings.speed": {"old": 1.0, "new": 0.8},
+    "voice_settings.stop_speaking_plan.number_of_words": {"old": 3, "new": 5}
+  },
+  "created_at": "2025-10-15T14:23:00Z"
+}
+```
+
+**3. Get Version History**
+```http
+GET /api/v1/client-config/{config_id}/versions
+Authorization: Bearer {client_jwt}
+Query Parameters:
+- limit: 20 (default)
+- offset: 0
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "product_type": "chatbot",
+  "current_version": "v48",
+  "versions": [
+    {
+      "version": "v48",
+      "commit_message": "Changed tone to casual, added refund tool",
+      "author": {
+        "user_id": "uuid",
+        "email": "jane@acme.com",
+        "role": "organization_admin"
+      },
+      "changes": [
+        {"type": "system_prompt_change", "field": "tone", "old_value": "professional", "new_value": "casual"},
+        {"type": "tool_change", "action": "add", "tool_name": "initiate_refund"}
+      ],
+      "risk_level": "low",
+      "applied_at": "2025-10-15T14:23:00Z",
+      "rollback_available": true
+    },
+    {
+      "version": "v47",
+      "commit_message": "Added escalation rule for frustrated customers",
+      "author": {
+        "user_id": "uuid",
+        "email": "john@acme.com",
+        "role": "config_manager"
+      },
+      "changes": [
+        {"type": "escalation_rule_change", "trigger": "sentiment_negative_3_turns", "action": "add"}
+      ],
+      "risk_level": "medium",
+      "applied_at": "2025-10-14T11:15:00Z",
+      "rollback_available": true
+    }
+  ],
+  "total_versions": 48,
+  "pagination": {
+    "has_more": true,
+    "next_offset": 20
+  }
+}
+```
+
+**4. Rollback to Previous Version**
+```http
+POST /api/v1/client-config/{config_id}/rollback
+Authorization: Bearer {client_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "target_version": "v47",
+  "reason": "New voice speed causing customer complaints",
+  "notify_team": true  // Notify all config managers
+}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "rolled_back_from": "v48",
+  "rolled_back_to": "v47",
+  "new_current_version": "v49",  // Rollback creates new version
+  "commit_message": "Rollback to v47: New voice speed causing customer complaints",
+  "applied_at": "2025-10-15T15:00:00Z",
+  "kafka_event_published": true,
+  "estimated_propagation_time": "60 seconds"
+}
+```
+
+**5. Get Member Configuration Permissions**
+```http
+GET /api/v1/client-config/permissions
+Authorization: Bearer {client_jwt}
+Query Parameters:
+- organization_id: uuid
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "members": [
+    {
+      "user_id": "uuid",
+      "email": "jane@acme.com",
+      "role": "organization_admin",
+      "config_permissions": {
+        "view_config": true,
+        "edit_system_prompt": true,
+        "add_remove_tools": true,
+        "modify_integrations": true,
+        "change_voice_params": true,
+        "deploy_to_production": true,
+        "rollback_versions": true,
+        "manage_permissions": true
+      }
+    },
+    {
+      "user_id": "uuid",
+      "email": "john@acme.com",
+      "role": "config_manager",
+      "config_permissions": {
+        "view_config": true,
+        "edit_system_prompt": true,
+        "add_remove_tools": true,
+        "modify_integrations": false,
+        "change_voice_params": true,
+        "deploy_to_production": false,
+        "rollback_versions": true,
+        "manage_permissions": false
+      }
+    }
+  ]
+}
+```
+
+**6. Update Member Permissions**
+```http
+PUT /api/v1/client-config/permissions/{user_id}
+Authorization: Bearer {org_admin_jwt}  // Only org admins can modify permissions
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "config_permissions": {
+    "view_config": true,
+    "edit_system_prompt": true,
+    "add_remove_tools": false,  // Revoke tool management
+    "modify_integrations": false,
+    "change_voice_params": true,
+    "deploy_to_production": false,
+    "rollback_versions": false,  // Revoke rollback capability
+    "manage_permissions": false
+  }
+}
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "config_permissions": {...},
+  "updated_at": "2025-10-15T15:10:00Z",
+  "updated_by": "uuid"
+}
+```
+
+#### Database Schema
+
+```sql
+-- Config change audit log
+CREATE TABLE config_change_log (
+  change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  config_id UUID NOT NULL,
+  version VARCHAR(20) NOT NULL,
+  author_id UUID NOT NULL,
+  author_type VARCHAR(20) NOT NULL,  -- 'client_user' | 'platform_agent' | 'ai_agent'
+  author_email VARCHAR(255),
+  change_type VARCHAR(50),  -- 'system_prompt' | 'tool' | 'voice_param' | 'integration' | 'escalation_rule' | 'hybrid'
+  changes JSONB NOT NULL,
+  commit_message TEXT,
+  risk_level VARCHAR(20),  -- 'low' | 'medium' | 'high'
+  approved_by UUID,
+  approved_at TIMESTAMP,
+  applied_at TIMESTAMP,
+  rolled_back BOOLEAN DEFAULT false,
+  rollback_reason TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  INDEX idx_config_version (config_id, version),
+  INDEX idx_config_applied (config_id, applied_at),
+  FOREIGN KEY (config_id) REFERENCES configurations(config_id)
+);
+
+-- Member configuration permissions
+CREATE TABLE organization_member_config_permissions (
+  permission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  config_permissions JSONB NOT NULL,  -- Permission matrix
+  created_by UUID,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(organization_id, user_id),
+  INDEX idx_org_permissions (organization_id),
+  FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+  FOREIGN KEY (user_id) REFERENCES auth.users(user_id)
+);
+
+-- Conversational config sessions
+CREATE TABLE config_conversation_sessions (
+  conversation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  config_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  organization_id UUID NOT NULL,
+  product_type VARCHAR(20) NOT NULL,  -- 'chatbot' | 'voicebot'
+  messages JSONB[],  -- Conversation history
+  detected_changes JSONB[],
+  status VARCHAR(20),  -- 'active' | 'pending_approval' | 'completed' | 'abandoned'
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  INDEX idx_config_conversations (config_id, started_at),
+  FOREIGN KEY (config_id) REFERENCES configurations(config_id)
+);
+
+-- Configuration draft versions (before applying)
+CREATE TABLE config_drafts (
+  draft_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  config_id UUID NOT NULL,
+  proposed_changes JSONB NOT NULL,
+  diff JSONB,
+  commit_message TEXT,
+  created_by UUID NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP,  -- Drafts expire after 7 days
+  applied BOOLEAN DEFAULT false,
+  applied_at TIMESTAMP,
+  INDEX idx_config_drafts (config_id, created_at),
+  FOREIGN KEY (config_id) REFERENCES configurations(config_id)
+);
+```
+
+#### Kafka Events
+
+```json
+// Published when client requests configuration change
+{
+  "event_type": "client_config_change_requested",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "voicebot",
+  "requested_by": "client_user_id",
+  "requested_via": "conversational_agent",  // conversational_agent | visual_dashboard
+  "changes": [
+    {
+      "type": "voice_parameter_change",
+      "parameter": "speed",
+      "old_value": 1.0,
+      "new_value": 0.8
+    }
+  ],
+  "risk_level": "low",
+  "auto_approved": true,
+  "version": "v48",
+  "timestamp": "2025-10-15T14:00:00Z"
+}
+```
+
+```json
+// Published when configuration is successfully applied
+{
+  "event_type": "client_config_applied",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "chatbot",
+  "version": "v48",
+  "changes": [...],
+  "applied_by": "uuid",
+  "commit_message": "Changed tone to casual",
+  "hot_reload_required": true,
+  "timestamp": "2025-10-15T14:01:00Z"
+}
+```
+
+```json
+// Published when configuration is rolled back
+{
+  "event_type": "client_config_rolled_back",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "voicebot",
+  "rolled_back_from": "v48",
+  "rolled_back_to": "v47",
+  "new_version": "v49",
+  "reason": "New voice speed causing customer complaints",
+  "rolled_back_by": "uuid",
+  "timestamp": "2025-10-15T15:00:00Z"
+}
+```
+
+#### Frontend Components (React/Next.js)
+
+**Routes:**
+- `/dashboard/config` - Main configuration dashboard
+- `/dashboard/config/chat` - Conversational configuration interface
+- `/dashboard/config/visual/chatbot` - Visual chatbot configuration panel
+- `/dashboard/config/visual/voicebot` - Visual voicebot configuration panel (matches provided images)
+- `/dashboard/config/versions` - Version history timeline (git-style)
+- `/dashboard/config/permissions` - Member permission management
+- `/dashboard/config/preview` - Configuration testing sandbox
+
+**Key Components:**
+
+```tsx
+// ConfigChatInterface.tsx
+<ConfigChatInterface
+  configId={configId}
+  productType={productType}
+  onChangeDetected={(changes) => showPreview(changes)}
+  onApprovalRequired={(changes) => requestApproval(changes)}
+/>
+
+// VoicebotConfigPanel.tsx (matches provided images)
+<VoicebotConfigPanel
+  config={config}
+  sections={[
+    {
+      title: "Additional Configuration",
+      fields: [
+        { type: "select", name: "background_sound", label: "Background Sound", options: ["Office", "Cafe", "Silence", "Custom"] },
+        { type: "text", name: "background_sound_url", label: "Background Sound URL", placeholder: "https://www.soundjay.com/" },
+        { type: "slider", name: "input_min_characters", label: "Input Min Characters", min: 10, max: 100, default: 10 }
+      ]
+    },
+    {
+      title: "Model Settings",
+      fields: [
+        { type: "select", name: "model", label: "Model" },
+        { type: "slider", name: "clarity_similarity", label: "Clarity + Similarity", min: 0, max: 1, default: 0.75 },
+        { type: "slider", name: "speed", label: "Speed", min: 0, max: 2, default: 1 },
+        { type: "slider", name: "style_exaggeration", label: "Style Exaggeration", min: 0, max: 1, default: 0 },
+        { type: "slider", name: "optimize_streaming_latency", label: "Optimize Streaming Latency", min: 0, max: 4, default: 4 },
+        { type: "toggle", name: "use_speaker_boost", label: "Use Speaker Boost" },
+        { type: "toggle", name: "auto_mode", label: "Auto Mode" }
+      ]
+    },
+    {
+      title: "Stop Speaking Plan",
+      fields: [
+        { type: "slider", name: "number_of_words", label: "Number of words", min: 0, max: 10, default: 3 },
+        { type: "slider", name: "voice_seconds", label: "Voice seconds", min: 0, max: 1, step: 0.1, default: 0.5 },
+        { type: "slider", name: "back_off_seconds", label: "Back off seconds", min: 0, max: 10, default: 2 }
+      ]
+    }
+  ]}
+  onSave={(changes) => applyConfigChanges(changes)}
+  onPreview={() => openTestCall()}
+/>
+
+// VersionHistoryTimeline.tsx
+<VersionHistoryTimeline
+  configId={configId}
+  versions={versions}
+  onRollback={(version) => rollbackToVersion(version)}
+  onDiffView={(v1, v2) => showDiffViewer(v1, v2)}
+/>
+
+// PermissionMatrix.tsx
+<PermissionMatrix
+  organizationId={organizationId}
+  members={members}
+  permissions={permissionSchema}
+  onUpdatePermissions={(userId, permissions) => updateMemberPermissions(userId, permissions)}
+  canEdit={currentUser.role === 'organization_admin'}
+/>
+```
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Organization Admin (Client)**
+   - Role: Full configuration control, permission management
+   - Access: All configuration features
+   - Permissions: All config_permissions enabled
+   - Workflows: Changes config via chat/visual UI, manages team permissions, reviews version history
+
+2. **Config Manager (Client)**
+   - Role: Day-to-day configuration management
+   - Access: Most configuration features except deployment and permission management
+   - Permissions: View, edit prompts/voice params, rollback (no deployment, no permission management)
+   - Workflows: Adjusts chatbot tone, modifies voice settings, tests changes
+
+3. **Config Viewer (Client)**
+   - Role: Read-only config access
+   - Access: View-only dashboard
+   - Permissions: view_config only
+   - Workflows: Reviews current configuration, views change history
+
+4. **Support Agent (Platform)**
+   - Role: Assists clients with complex configuration requests
+   - Access: Join client config sessions, create GitHub tool requests
+   - Permissions: read:client_configs, create:github_issues, join:config_sessions
+   - Workflows: Receives escalation from config agent, helps client configure advanced features, creates tool requests
+
+**AI Agents:**
+
+1. **Configuration Assistant Agent**
+   - Responsibility: Classifies configuration requests, generates previews, validates changes
+   - Tools: LLM for intent classification, tool catalog search, config diff generator, schema validator
+   - Autonomy: Fully autonomous for low-risk changes (auto-apply), requests approval for medium/high risk
+   - Escalation: Human support agent for unrecognized requests or failed classifications
+
+2. **Config Validation Agent**
+   - Responsibility: Validates configuration changes before deployment, detects breaking changes
+   - Tools: JSON Schema validator, conflict detector, impact analyzer
+   - Autonomy: Fully autonomous validation
+   - Escalation: Platform engineer alert for validation failures or high-risk changes
+
+**Approval Workflows:**
+1. Low-risk changes (voice params, tone adjustments) → Auto-approved
+2. Medium-risk changes (tool additions, escalation rules) → Organization Admin approval
+3. High-risk changes (integration modifications, tool removals) → Organization Admin + Platform Engineer approval
+4. Failed changes (validation errors) → Auto-rollback + Support Agent notification
+
+---
+
+## 20. Hyperpersonalization Engine Service
+
+#### Objectives
+- **Primary Purpose**: AI-driven personalization of chatbot/voicebot responses based on customer lifecycle stage, cohort behavior, and real-time experimentation
+- **Business Value**: Increase conversion rates by 25%, reduce churn by 15%, optimize engagement per customer segment
+- **Inspired By**: JustWords.ai approach to lifecycle marketing hyperpersonalization
+- **Scope Boundaries**:
+  - **Does**: Customer cohort segmentation, dynamic response personalization, A/B/N testing at scale, lifecycle stage automation, engagement optimization
+  - **Does Not**: Replace core agent logic, modify tool execution, handle PII storage (Agent Orchestration does)
+
+#### Requirements
+
+**Functional Requirements:**
+1. Segment customers into cohorts based on lifecycle stage, usage patterns, engagement levels
+2. Dynamically modify chatbot/voicebot responses per cohort without changing base config
+3. Run 50-100 message variations simultaneously with multi-armed bandit optimization
+4. Automate lifecycle-stage-specific messaging (trial, active, at-risk, renewal)
+5. Learn individual user preferences and adapt messaging over time
+6. Track engagement metrics (CTR, conversion rate, session duration) per variant
+7. Auto-optimize variant weights based on success metrics
+
+**Non-Functional Requirements:**
+- Personalization decision: <50ms (must not impact conversation latency)
+- Support 1M+ active customer profiles
+- Experimentation throughput: 10,000+ variants tested daily
+- 99.9% uptime for personalization engine
+
+**Dependencies:**
+- **Agent Orchestration Service** *[See Service 8 above]* (consumes personalization rules for chatbot)
+- **Voice Agent Service** *[See Service 9 above]* (consumes personalization rules for voicebot)
+- **Analytics Service** *[See Service 12 above]* (provides engagement metrics for optimization)
+- **Customer Success Service** *[See Service 13 above]* (lifecycle stage data)
+- **LLM Gateway Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 16]* (generates variant messaging)
+
+**Data Storage:**
+- PostgreSQL: Cohort definitions, personalization rules, experiment configurations
+- Redis: Real-time user cohort assignments, variant weights
+- Pinecone: Individual user preference embeddings
+- ClickHouse: Engagement event logs (time-series), A/B test results
+
+#### Features
+
+**Must-Have:**
+1. ✅ Customer cohort segmentation engine (behavioral clustering)
+2. ✅ Lifecycle stage automation (trial/active/at-risk/renewal messaging)
+3. ✅ Dynamic response personalization per cohort
+4. ✅ Multi-armed bandit experimentation (Thompson Sampling)
+5. ✅ Real-time variant weight optimization
+6. ✅ Engagement metrics tracking (CTR, conversion, session duration)
+7. ✅ Individual user preference learning (collaborative filtering)
+
+**Nice-to-Have:**
+8. 🔄 Predictive churn scoring (identify at-risk customers before lifecycle stage change)
+9. 🔄 Cross-product personalization (chatbot learns from voicebot interactions)
+10. 🔄 Seasonal/temporal messaging adjustments (holiday campaigns, product launches)
+11. 🔄 Sentiment-driven personalization (adjust tone based on customer mood)
+
+**Feature Interactions:**
+- User starts conversation → Personalization Engine assigns cohort → Returns personalized system prompt override → Agent uses modified prompt
+- Variant performs well (high CTR) → Weight increased automatically → More users see successful variant
+- User moves from "trial" to "active" lifecycle stage → Messaging shifts from educational to efficiency-focused
+- Experiment reaches statistical significance → Winning variant promoted to default
+
+#### Personalization Architecture
+
+**Customer Cohort Definitions:**
+
+```yaml
+customer_cohorts:
+  - cohort_id: "new_trial_users"
+    lifecycle_stage: "trial"
+    filters:
+      days_since_signup: { min: 0, max: 14 }
+      engagement_level: "exploring"
+      feature_adoption: { max: 3 }
+    size_estimate: 1200
+    personalization_strategy: "educational_nurture"
+
+  - cohort_id: "active_power_users"
+    lifecycle_stage: "active"
+    filters:
+      monthly_usage: { min: 1000, metric: "conversations" }
+      engagement_level: "high"
+      subscription_tier: "professional"
+    size_estimate: 450
+    personalization_strategy: "upsell_premium_features"
+
+  - cohort_id: "at_risk_churners"
+    lifecycle_stage: "active"
+    filters:
+      engagement_trend: "declining_30d"
+      engagement_level: "low"
+      support_tickets: { min: 2, timeframe: "30d" }
+    size_estimate: 180
+    personalization_strategy: "retention_intervention"
+
+  - cohort_id: "renewal_approaching"
+    lifecycle_stage: "active"
+    filters:
+      days_until_renewal: { min: 0, max: 30 }
+      contract_value: { min: 50000 }
+    size_estimate: 90
+    personalization_strategy: "renewal_value_reinforcement"
+```
+
+**Dynamic Response Personalization Rules:**
+
+```yaml
+personalization_rules:
+  - trigger: "cohort == new_trial_users"
+    modifications:
+      system_prompt_override: |
+        You are an enthusiastic guide helping new users discover chatbot capabilities.
+        Use an educational, patient tone. Highlight ease-of-use and quick wins.
+        Proactively offer helpful tips and examples. End responses with encouraging CTAs.
+      response_templates:
+        greeting: "Welcome to Acme Chatbot! I'm here to help you get started. What would you like to build today?"
+        feature_highlight: ["ease_of_use", "template_library", "drag_drop_builder", "24/7_support"]
+        cta_priority: "schedule_onboarding_call"
+      show_examples: true
+      tone_keywords: ["easy", "simple", "guide", "show you", "let me help"]
+
+  - trigger: "cohort == active_power_users"
+    modifications:
+      system_prompt_override: |
+        You are an efficient expert assistant for power users. Be concise and technical.
+        Assume user knowledge. Highlight advanced features and API capabilities.
+        Focus on efficiency and ROI. Use data-driven language.
+      response_templates:
+        greeting: "Ready to optimize your workflows? What can I help you build?"
+        feature_highlight: ["api_access", "custom_integrations", "advanced_analytics", "webhook_automation"]
+        cta_priority: "upgrade_to_enterprise"
+      show_usage_stats: true
+      show_api_docs: true
+      tone_keywords: ["optimize", "advanced", "integrate", "automate", "scale"]
+
+  - trigger: "cohort == at_risk_churners"
+    modifications:
+      system_prompt_override: |
+        You are an empathetic problem-solver focused on demonstrating value.
+        Acknowledge challenges. Share success stories from similar companies.
+        Offer proactive help. Highlight competitive advantages and ROI.
+      response_templates:
+        greeting: "I noticed you might need some help. I'm here to make sure you're getting the most value from Acme Chatbot."
+        feature_highlight: ["success_stories", "roi_metrics", "cost_savings", "support_commitment"]
+        cta_priority: "talk_to_success_manager"
+      offer_incentive: "20_percent_discount_renewal"
+      show_success_metrics: true
+      tone_keywords: ["value", "help", "success", "support", "partnership"]
+```
+
+**Multi-Armed Bandit Experimentation:**
+
+```yaml
+experiments:
+  - experiment_id: "greeting_optimization_trial_users"
+    cohort: "new_trial_users"
+    target_metric: "conversation_completion_rate"
+    secondary_metrics: ["feature_adoption_rate", "time_to_first_action"]
+
+    variants:
+      - variant_id: "friendly_casual"
+        system_prompt_override: |
+          Start conversations with warm, casual greetings. Use friendly emojis sparingly.
+          Make users feel welcomed and excited to explore.
+        initial_weight: 0.25
+        current_weight: 0.32  # Auto-adjusted based on performance
+        trials: 1543
+        conversions: 1122
+        conversion_rate: 0.727
+
+      - variant_id: "professional_direct"
+        system_prompt_override: |
+          Start with direct, value-focused messaging. Get straight to business.
+          Emphasize time savings and efficiency.
+        initial_weight: 0.25
+        current_weight: 0.18  # Underperforming, weight reduced
+        trials: 987
+        conversions: 658
+        conversion_rate: 0.666
+
+      - variant_id: "educational_helpful"
+        system_prompt_override: |
+          Begin by offering helpful tips and guidance. Act as a patient teacher.
+          Use step-by-step explanations. Reference documentation proactively.
+        initial_weight: 0.25
+        current_weight: 0.38  # Best performing, weight increased
+        trials: 2011
+        conversions: 1587
+        conversion_rate: 0.789
+
+      - variant_id: "personalized_contextual"
+        system_prompt_override: |
+          Reference user's company, industry, or previous interactions contextually.
+          Make conversation feel tailored and relevant.
+        initial_weight: 0.25
+        current_weight: 0.12  # Low sample size, still exploring
+        trials: 421
+        conversions: 298
+        conversion_rate: 0.708
+
+    optimization_algorithm: "thompson_sampling"
+    min_sample_size_per_variant: 1000
+    confidence_level: 0.95
+    auto_promote_winner: true  // Promote to default when significance reached
+    status: "running"
+    started_at: "2025-10-01T00:00:00Z"
+```
+
+**Lifecycle Stage Automation:**
+
+```yaml
+lifecycle_automations:
+  - stage: "trial_day_1"
+    trigger: "user_signed_up"
+    day_offset: 0
+    personalization:
+      tone: "enthusiastic, welcoming"
+      focus: "onboarding, quick wins"
+      cta: "explore_templates"
+      message_examples:
+        - "Welcome! Let me show you how to build your first chatbot in under 5 minutes."
+        - "Great to have you here! What type of chatbot are you interested in creating?"
+
+  - stage: "trial_day_7"
+    trigger: "user_signed_up"
+    day_offset: 7
+    personalization:
+      tone: "encouraging, value-focused"
+      focus: "success_stories, roi"
+      cta: "schedule_demo_call"
+      message_examples:
+        - "You're halfway through your trial! Companies like yours see 40% cost reduction in month 1."
+        - "Let's build something impactful together. Ready to see advanced features?"
+
+  - stage: "trial_day_13"
+    trigger: "user_signed_up"
+    day_offset: 13
+    personalization:
+      tone: "urgent, conversion-focused"
+      focus: "plan_comparison, easy_upgrade"
+      cta: "upgrade_now"
+      message_examples:
+        - "Your trial ends in 24 hours. Upgrade now to keep your chatbots live!"
+        - "Don't lose your progress! Click here to choose your plan."
+
+  - stage: "active_month_6"
+    trigger: "subscription_activated"
+    day_offset: 180
+    personalization:
+      tone: "consultative, upsell"
+      focus: "advanced_features, enterprise_benefits"
+      cta: "upgrade_to_enterprise"
+      message_examples:
+        - "You're using 80% of your Professional plan. Unlock unlimited conversations with Enterprise."
+        - "Ready to scale? Enterprise gives you API access, priority support, and custom integrations."
+
+  - stage: "renewal_month_11"
+    trigger: "subscription_activated"
+    day_offset: 330
+    personalization:
+      tone: "grateful, value_reinforcement"
+      focus: "impact_metrics, partnership"
+      cta: "renew_early"
+      message_examples:
+        - "Amazing year together! You've automated 10,000 conversations and saved 200+ support hours."
+        - "Let's plan 2026. Early renewal gets you 15% off + priority access to new features."
+```
+
+#### API Specification
+
+**1. Evaluate Personalization**
+```http
+POST /api/v1/personalization/evaluate
+Authorization: Bearer {platform_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "chatbot",
+  "conversation_context": {
+    "lifecycle_stage": "trial",
+    "days_since_signup": 3,
+    "previous_interactions": 7,
+    "engagement_score": 0.72,
+    "features_used": ["template_builder", "test_mode"],
+    "support_tickets": 0
+  },
+  "message_intent": "greeting"  // greeting | feature_request | support | upsell
+}
+
+Response (200 OK):
+{
+  "cohort": "new_trial_users",
+  "cohort_confidence": 0.94,
+  "personalization_strategy": "educational_nurture",
+  "recommended_modifications": {
+    "tone": "educational, patient, encouraging",
+    "features_to_highlight": ["template_library", "drag_drop_builder", "quick_start_guides"],
+    "cta": "explore_demo_templates",
+    "show_examples": true,
+    "experiment_variant": "educational_helpful"
+  },
+  "system_prompt_override": "You are an enthusiastic guide helping new users discover chatbot capabilities. Use an educational, patient tone...",
+  "response_templates": {
+    "greeting": "Welcome back! Ready to continue building your chatbot?",
+    "encouragement": "You're doing great! You've already explored templates and tested your bot."
+  },
+  "confidence": 0.89,
+  "experiment_id": "greeting_optimization_trial_users",
+  "variant_weight": 0.38,
+  "cached": true,
+  "cache_ttl": 300  // 5 minute cache
+}
+```
+
+**2. Track Engagement Event**
+```http
+POST /api/v1/personalization/events
+Authorization: Bearer {platform_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "voicebot",
+  "event_type": "conversion",  // conversion | ctr | session_complete | feature_adopted | churn_signal
+  "cohort": "active_power_users",
+  "experiment_id": "greeting_optimization_trial_users",
+  "variant_id": "educational_helpful",
+  "context": {
+    "session_duration": 420,  // seconds
+    "messages_exchanged": 12,
+    "cta_clicked": true,
+    "feature_adopted": "api_integration"
+  },
+  "timestamp": "2025-10-15T14:30:00Z"
+}
+
+Response (202 Accepted):
+{
+  "event_id": "uuid",
+  "status": "queued_for_processing",
+  "variant_weight_will_update": true,
+  "estimated_processing_time": "30 seconds"
+}
+```
+
+**3. Get Cohort Assignment**
+```http
+GET /api/v1/personalization/cohorts/{user_id}
+Authorization: Bearer {platform_jwt}
+Query Parameters:
+- organization_id: uuid
+
+Response (200 OK):
+{
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "current_cohort": "new_trial_users",
+  "lifecycle_stage": "trial",
+  "cohort_assigned_at": "2025-10-12T10:00:00Z",
+  "cohort_metadata": {
+    "days_since_signup": 3,
+    "engagement_level": "exploring",
+    "feature_adoption_count": 2,
+    "predicted_churn_risk": 0.15
+  },
+  "personalization_strategy": "educational_nurture",
+  "active_experiments": [
+    {
+      "experiment_id": "greeting_optimization_trial_users",
+      "variant_assigned": "educational_helpful",
+      "assigned_at": "2025-10-12T10:00:00Z"
+    }
+  ]
+}
+```
+
+**4. Create Experiment**
+```http
+POST /api/v1/personalization/experiments
+Authorization: Bearer {platform_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "experiment_name": "CTA Optimization for At-Risk Users",
+  "cohort_id": "at_risk_churners",
+  "target_metric": "retention_rate",
+  "secondary_metrics": ["session_duration", "support_ticket_resolution"],
+  "variants": [
+    {
+      "variant_name": "discount_offer",
+      "system_prompt_override": "Offer 20% renewal discount proactively. Emphasize partnership and support.",
+      "initial_weight": 0.33
+    },
+    {
+      "variant_name": "success_manager_intro",
+      "system_prompt_override": "Introduce dedicated success manager. Offer personalized help and quarterly reviews.",
+      "initial_weight": 0.33
+    },
+    {
+      "variant_name": "feature_unlock",
+      "system_prompt_override": "Unlock premium features temporarily. Show value through hands-on experience.",
+      "initial_weight": 0.34
+    }
+  ],
+  "min_sample_size": 500,
+  "confidence_level": 0.95,
+  "auto_promote_winner": false,  // Manual review required for high-value cohort
+  "duration_days": 30
+}
+
+Response (201 Created):
+{
+  "experiment_id": "uuid",
+  "status": "pending_approval",  // High-value cohort requires approval
+  "estimated_sample_size": 180,
+  "estimated_duration": "16 days",
+  "approval_required_from": "platform_admin",
+  "created_at": "2025-10-15T15:00:00Z"
+}
+```
+
+**5. Get Experiment Results**
+```http
+GET /api/v1/personalization/experiments/{experiment_id}/results
+Authorization: Bearer {platform_jwt}
+
+Response (200 OK):
+{
+  "experiment_id": "uuid",
+  "experiment_name": "greeting_optimization_trial_users",
+  "cohort_id": "new_trial_users",
+  "status": "completed",
+  "winner": "educational_helpful",
+  "statistical_significance": true,
+  "confidence_level": 0.97,
+  "started_at": "2025-10-01T00:00:00Z",
+  "completed_at": "2025-10-14T18:00:00Z",
+  "variants": [
+    {
+      "variant_id": "friendly_casual",
+      "trials": 1543,
+      "conversions": 1122,
+      "conversion_rate": 0.727,
+      "confidence_interval": [0.705, 0.749],
+      "lift_vs_control": "+9.3%"
+    },
+    {
+      "variant_id": "professional_direct",
+      "trials": 987,
+      "conversions": 658,
+      "conversion_rate": 0.666,
+      "confidence_interval": [0.636, 0.696],
+      "lift_vs_control": "0% (control)"
+    },
+    {
+      "variant_id": "educational_helpful",
+      "trials": 2011,
+      "conversions": 1587,
+      "conversion_rate": 0.789,
+      "confidence_interval": [0.769, 0.809],
+      "lift_vs_control": "+18.5%",
+      "winner": true
+    },
+    {
+      "variant_id": "personalized_contextual",
+      "trials": 421,
+      "conversions": 298,
+      "conversion_rate": 0.708,
+      "confidence_interval": [0.665, 0.751],
+      "lift_vs_control": "+6.3%"
+    }
+  ],
+  "recommendation": "Promote 'educational_helpful' to default. Consider combining with 'personalized_contextual' elements."
+}
+```
+
+#### Database Schema
+
+```sql
+-- Customer cohorts
+CREATE TABLE customer_cohorts (
+  cohort_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_name VARCHAR(100) NOT NULL,
+  lifecycle_stage VARCHAR(50),  -- trial | active | at_risk | renewal
+  filters JSONB NOT NULL,  -- Cohort membership criteria
+  personalization_strategy VARCHAR(100),
+  size_estimate INTEGER,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  active BOOLEAN DEFAULT true
+);
+
+-- User cohort assignments (real-time)
+CREATE TABLE user_cohort_assignments (
+  assignment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  organization_id UUID NOT NULL,
+  cohort_id UUID NOT NULL,
+  lifecycle_stage VARCHAR(50),
+  assigned_at TIMESTAMP DEFAULT NOW(),
+  cohort_metadata JSONB,  // Engagement scores, feature adoption, etc.
+  INDEX idx_user_cohort (user_id, assigned_at DESC),
+  INDEX idx_org_cohort (organization_id, cohort_id),
+  FOREIGN KEY (cohort_id) REFERENCES customer_cohorts(cohort_id)
+);
+
+-- Personalization rules
+CREATE TABLE personalization_rules (
+  rule_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_id UUID,
+  trigger_condition TEXT,  -- SQL-like condition
+  modifications JSONB NOT NULL,  // System prompt overrides, feature highlights, etc.
+  priority INTEGER DEFAULT 0,
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  INDEX idx_cohort_rules (cohort_id, priority),
+  FOREIGN KEY (cohort_id) REFERENCES customer_cohorts(cohort_id)
+);
+
+-- Experiments
+CREATE TABLE personalization_experiments (
+  experiment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_name VARCHAR(200) NOT NULL,
+  cohort_id UUID NOT NULL,
+  target_metric VARCHAR(100),
+  secondary_metrics JSONB,
+  min_sample_size INTEGER,
+  confidence_level DECIMAL(3,2),
+  optimization_algorithm VARCHAR(50) DEFAULT 'thompson_sampling',
+  auto_promote_winner BOOLEAN DEFAULT false,
+  status VARCHAR(50),  -- draft | pending_approval | running | completed | cancelled
+  started_at TIMESTAMP,
+  completed_at TIMESTAMP,
+  created_by UUID,
+  INDEX idx_experiment_status (status, started_at),
+  FOREIGN KEY (cohort_id) REFERENCES customer_cohorts(cohort_id)
+);
+
+-- Experiment variants
+CREATE TABLE experiment_variants (
+  variant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_id UUID NOT NULL,
+  variant_name VARCHAR(100),
+  system_prompt_override TEXT,
+  response_templates JSONB,
+  initial_weight DECIMAL(5,4),
+  current_weight DECIMAL(5,4),
+  trials INTEGER DEFAULT 0,
+  conversions INTEGER DEFAULT 0,
+  conversion_rate DECIMAL(5,4),
+  INDEX idx_experiment_variants (experiment_id),
+  FOREIGN KEY (experiment_id) REFERENCES personalization_experiments(experiment_id)
+);
+
+-- Engagement events (time-series in ClickHouse for performance)
+-- PostgreSQL stores aggregated summaries only
+CREATE TABLE engagement_event_summary (
+  summary_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_id UUID,
+  variant_id UUID,
+  cohort_id UUID,
+  date DATE NOT NULL,
+  hour INTEGER,  -- 0-23 for hourly aggregation
+  event_type VARCHAR(50),
+  event_count INTEGER,
+  total_conversions INTEGER,
+  avg_session_duration DECIMAL(10,2),
+  INDEX idx_experiment_summary (experiment_id, date, hour),
+  FOREIGN KEY (experiment_id) REFERENCES personalization_experiments(experiment_id)
+);
+
+-- Individual user preferences (learned over time)
+CREATE TABLE user_preferences (
+  user_id UUID PRIMARY KEY,
+  organization_id UUID NOT NULL,
+  preference_vector VECTOR(384),  // Embedding for collaborative filtering
+  learned_preferences JSONB,  // Explicit preferences (tone, verbosity, etc.)
+  last_updated TIMESTAMP DEFAULT NOW(),
+  INDEX idx_org_users (organization_id)
+);
+```
+
+#### Integration with Agent Orchestration & Voice Agent
+
+**Modified Agent Workflow (with Personalization):**
+
+```python
+# In Agent Orchestration Service (Service 8) - Before generating response
+
+async def generate_response(user_id, organization_id, message, config):
+    # 1. Fetch personalization context
+    personalization = await personalization_engine.evaluate(
+        user_id=user_id,
+        organization_id=organization_id,
+        product_type="chatbot",
+        conversation_context={
+            "lifecycle_stage": get_lifecycle_stage(user_id),
+            "days_since_signup": get_days_since_signup(user_id),
+            "engagement_score": get_engagement_score(user_id)
+        },
+        message_intent=classify_intent(message)
+    )
+
+    # 2. Apply personalization overrides
+    if personalization:
+        # Override system prompt dynamically
+        system_prompt = personalization.system_prompt_override or config.system_prompt
+
+        # Filter/prioritize tools based on cohort
+        available_tools = filter_tools_by_cohort(
+            all_tools=config.tools,
+            cohort=personalization.cohort
+        )
+
+        # Inject personalized response templates
+        response_templates = personalization.response_templates
+    else:
+        # Use base config
+        system_prompt = config.system_prompt
+        available_tools = config.tools
+        response_templates = {}
+
+    # 3. Generate response with personalized context
+    response = await llm_gateway.generate(
+        system_prompt=system_prompt,
+        user_message=message,
+        tools=available_tools,
+        response_templates=response_templates
+    )
+
+    # 4. Track engagement event for experiment optimization
+    if personalization and personalization.experiment_id:
+        await personalization_engine.track_event(
+            user_id=user_id,
+            event_type="message_generated",
+            experiment_id=personalization.experiment_id,
+            variant_id=personalization.variant_id,
+            context={"response_length": len(response)}
+        )
+
+    return response
+```
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Marketing Manager (Client)**
+   - Role: Defines lifecycle campaigns, reviews experiment results
+   - Access: Experiment dashboard, cohort analytics
+   - Permissions: create:experiments, read:analytics, approve:high_value_cohorts
+   - Workflows: Creates A/B tests for messaging, reviews performance, adjusts cohort strategies
+
+2. **Customer Success Manager (Platform)**
+   - Role: Monitors cohort health, identifies at-risk customers
+   - Access: Cohort assignments, lifecycle stage transitions
+   - Permissions: read:all_cohorts, create:retention_campaigns, update:lifecycle_stages
+   - Workflows: Reviews at-risk cohort daily, launches retention experiments, coordinates with sales
+
+**AI Agents:**
+
+1. **Cohort Assignment Agent**
+   - Responsibility: Assigns users to cohorts based on behavior, updates assignments in real-time
+   - Tools: Behavioral clustering algorithms, engagement scoring models
+   - Autonomy: Fully autonomous cohort assignment
+   - Escalation: None
+
+2. **Experiment Optimization Agent**
+   - Responsibility: Adjusts variant weights using Thompson Sampling, promotes winners automatically
+   - Tools: Multi-armed bandit algorithms, statistical significance testing
+   - Autonomy: Autonomous weight adjustment, approval required for winner promotion in high-value cohorts
+   - Escalation: Marketing Manager approval for promoting experiment winners
+
+**Approval Workflows:**
+1. Standard experiments (trial users) → Auto-approved
+2. High-value cohort experiments (enterprise customers) → Marketing Manager approval required
+3. Winner promotion (trial users) → Auto-promoted when significant
+4. Winner promotion (high-value cohorts) → Marketing Manager approval required
+
+---
+
 ## Inter-Service Communication Patterns
 
 ### Event-Driven (Primary)
 
 **Kafka Topics:**
 - `auth_events`: User signed up, email verified, user logged in, password reset, assisted account created, assisted account claimed, claim link sent, claim link resent, assisted account expired, assisted account access granted, account ownership transferred
-- `org_events`: Organization created, member invited, member joined, member removed, role updated
+- `org_events`: Organization created, member invited, member joined, member removed, role updated, config permissions updated
 - `agent_events`: Agent registered, client assigned to agent, handoff initiated, handoff accepted, handoff rejected, specialist invited, specialist joined, specialist handoff back, agent status updated, agent availability changed, workload redistributed
 - `collaboration_events`: Help requested, agent joined session, canvas edited, collaboration ended
 - `client_events`: Research completed, NDA signed, pilot agreed
 - `demo_events`: Demo generated, approved, failed
 - `prd_events`: PRD created, approved, updated, feedback received
-- `config_events`: Config generated, deployed, hot-reloaded
+- `config_events`: Config generated, deployed, hot-reloaded, config updated by client, config rollback, config version compared, config preview generated, config branch created
 - `conversation_events`: Started, escalated, completed
 - `voice_events`: Call initiated, transferred, ended
 - `cross_product_events`: Voicebot paused, chatbot paused, image processed, data shared
@@ -1700,6 +3257,7 @@ Topic: config_events
 - `escalation_events`: Human handoff triggered
 - `outreach_events`: Email sent, email opened, email clicked, manual ticket created
 - `research_events`: Research started, research completed, research failed
+- `personalization_events`: Cohort assigned, experiment variant assigned, engagement tracked, message variant performance updated
 
 ---
 
@@ -2032,6 +3590,234 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
 **Consumer Actions:**
 - **Agent Orchestration: Hot-reload config for active sessions** (CRITICAL FLOW)
 - **Voice Agent: Hot-reload config for new calls** (CRITICAL FLOW)
+
+3. **client_config_change_requested** (NEW)
+```json
+{
+  "event_type": "client_config_change_requested",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "chatbot",
+  "change_type": "system_prompt",
+  "requested_by_user_id": "uuid",
+  "request_source": "conversational_ai",
+  "change_classification": {
+    "type": "system_prompt_change",
+    "confidence": 0.92,
+    "detected_changes": [
+      {
+        "field": "system_prompt",
+        "old_value": "You are a helpful assistant...",
+        "new_value": "You are a casual and friendly assistant..."
+      }
+    ]
+  },
+  "risk_level": "low",
+  "approval_required": false,
+  "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Configuration Management: Process change and create new version
+- Client Configuration Portal: Update UI status
+
+4. **client_config_change_applied** (NEW)
+```json
+{
+  "event_type": "client_config_change_applied",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "voicebot",
+  "version": "v5",
+  "change_type": "voice_parameter_change",
+  "applied_by_user_id": "uuid",
+  "commit_message": "Increased voice speed for better user experience",
+  "changes_summary": ["voice_config.speed: 1.0 → 1.2"],
+  "hot_reload_triggered": true,
+  "timestamp": "2025-10-20T11:05:00Z"
+}
+```
+**Consumer Actions:**
+- Agent Orchestration/Voice Agent: Hot-reload with new config version
+- Analytics: Track client self-service configuration changes
+
+5. **config_rollback** (ENHANCED)
+```json
+{
+  "event_type": "config_rollback",
+  "config_id": "uuid",
+  "product_type": "chatbot",
+  "organization_id": "uuid",
+  "from_version": 4,
+  "to_version": 3,
+  "reason": "high_error_rate",
+  "initiated_by": "client_user",
+  "initiated_by_user_id": "uuid",
+  "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Agent Orchestration/Voice Agent: Hot-reload to previous version
+- Monitoring: Alert on client-initiated rollbacks (indicates issue)
+
+6. **config_preview_generated** (NEW)
+```json
+{
+  "event_type": "config_preview_generated",
+  "preview_id": "uuid",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "product_type": "chatbot",
+  "sandbox_url": "wss://sandbox.workflow.ai/preview/uuid",
+  "expires_at": "2025-10-20T12:00:00Z",
+  "created_by_user_id": "uuid",
+  "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Client Configuration Portal: Provide sandbox testing link to client
+
+7. **config_branch_created** (NEW)
+```json
+{
+  "event_type": "config_branch_created",
+  "branch_id": "uuid",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "branch_name": "staging",
+  "base_version": 4,
+  "created_by_user_id": "uuid",
+  "description": "Testing new empathy-focused prompts",
+  "timestamp": "2025-10-20T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- Configuration Management: Track branch lifecycle
+- Analytics: Monitor branch usage patterns
+
+---
+
+### org_events (ENHANCED)
+
+**Producers:** Organization Management & Authentication Service
+**Consumers:** Analytics Service, Monitoring Engine, Client Configuration Portal Service
+
+**Event Types (existing events not shown, only new additions):**
+
+8. **member_config_permissions_updated** (NEW)
+```json
+{
+  "event_type": "member_config_permissions_updated",
+  "organization_id": "uuid",
+  "user_id": "uuid",
+  "updated_by": "uuid",
+  "old_permissions": {
+    "can_view_configs": true,
+    "can_edit_system_prompt": false,
+    "max_risk_level": "low"
+  },
+  "new_permissions": {
+    "can_view_configs": true,
+    "can_edit_system_prompt": true,
+    "can_edit_voice_params": true,
+    "can_rollback_versions": true,
+    "max_risk_level": "medium"
+  },
+  "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Client Configuration Portal: Update permission checks for user
+- Analytics: Track permission change patterns
+
+---
+
+### personalization_events (NEW)
+
+**Producers:** Hyperpersonalization Engine (Service 20)
+**Consumers:** Agent Orchestration Service, Analytics Service, Monitoring Engine
+
+**Event Types:**
+
+1. **user_cohort_assigned**
+```json
+{
+  "event_type": "user_cohort_assigned",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "cohort_id": "active_power_users",
+  "lifecycle_stage": "active",
+  "assignment_reason": "monthly_usage_threshold_exceeded",
+  "previous_cohort": "new_trial_users",
+  "timestamp": "2025-10-20T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- Agent Orchestration: Apply cohort-specific system prompt overrides
+- Analytics: Track cohort transitions
+
+2. **experiment_variant_assigned**
+```json
+{
+  "event_type": "experiment_variant_assigned",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "experiment_id": "uuid",
+  "variant_id": "v3",
+  "variant_name": "empathetic_tone",
+  "assignment_algorithm": "thompson_sampling",
+  "expected_reward": 0.78,
+  "timestamp": "2025-10-20T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- Agent Orchestration: Use variant-specific message template
+- Analytics: Track variant performance
+
+3. **engagement_event_tracked**
+```json
+{
+  "event_type": "engagement_event_tracked",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "experiment_id": "uuid",
+  "variant_id": "v3",
+  "event_type_detail": "message_sent",
+  "engagement_metrics": {
+    "click_through": true,
+    "session_duration_seconds": 180,
+    "conversion": false
+  },
+  "timestamp": "2025-10-20T10:05:00Z"
+}
+```
+**Consumer Actions:**
+- Hyperpersonalization Engine: Update variant weights with Thompson Sampling
+- Analytics: Calculate experiment lift
+
+4. **message_variant_performance_updated**
+```json
+{
+  "event_type": "message_variant_performance_updated",
+  "experiment_id": "uuid",
+  "variant_id": "v3",
+  "organization_id": "uuid",
+  "performance_metrics": {
+    "total_impressions": 1500,
+    "click_through_rate": 0.23,
+    "conversion_rate": 0.08,
+    "average_session_duration": 165
+  },
+  "weight_updated": {
+    "old_weight": 0.15,
+    "new_weight": 0.22
+  },
+  "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Analytics: Display experiment performance dashboard
+- Monitoring: Alert if variant performance degrades
 
 ---
 
@@ -2673,6 +4459,88 @@ This microservices architecture provides a **production-ready foundation** for a
 **Phase 3 (Months 9-12):** Runtime services (Agent Orchestration, Voice, Monitoring)
 **Phase 4 (Months 13-16):** Support services (Analytics, Customer Success, CRM Integration)
 **Phase 5 (Months 17-20):** Production hardening (Security, compliance, multi-region)
+**Phase 6 (Months 21-24):** Client Self-Service & Personalization (Client Configuration Portal, Hyperpersonalization Engine)
+
+#### Phase 6 Detailed Sprint Plan (Months 21-24)
+
+**Sprint 21 (Weeks 81-82): Client Configuration Portal - Foundation**
+- Database schema: config_change_log, organization_member_config_permissions, config_permission_matrix
+- Organization Management API enhancements for config permissions
+- Basic permission validation middleware
+- Success criteria: Admin can assign config permissions to team members
+
+**Sprint 22 (Weeks 83-84): Conversational Configuration Agent**
+- LangGraph two-node configuration agent implementation
+- Change classification model (system_prompt, tool, voice_param, integration, escalation_rule)
+- Tool implementations: classify_configuration_request, generate_system_prompt_update, search_available_tools
+- Success criteria: Agent can classify and apply simple system prompt changes via chat
+
+**Sprint 23 (Weeks 85-86): Visual Configuration Dashboard**
+- React components: ConfigurationDashboard, ChatbotConfigPanel, VoicebotConfigPanel
+- Voice parameter controls matching UI images (speed, clarity, stop speaking plan)
+- Real-time config preview generation
+- Success criteria: Client can visually adjust voicebot parameters and see instant preview
+
+**Sprint 24 (Weeks 87-88): Version Control & Rollback**
+- Git-style versioning with commit messages
+- Config diff visualization (visual_diff_url generation)
+- Rollback API with client permission support
+- Branch management (dev/staging/prod)
+- Success criteria: Client can rollback to previous config version with one click
+
+**Sprint 25 (Weeks 89-90): Config Preview & Testing**
+- Sandbox environment for config testing (1-hour expiry)
+- WebSocket preview sessions
+- Test scenario execution
+- Config validation before deployment
+- Success criteria: Client can test config changes in sandbox before applying to production
+
+**Sprint 26 (Weeks 91-92): Hyperpersonalization Engine - Cohort Management**
+- Database schema: customer_cohorts, cohort_rules, cohort_assignments
+- Cohort segmentation logic (trial, active, at-risk, renewal)
+- Lifecycle stage automation (day 1, day 7, day 13, month 6, month 11)
+- Success criteria: Users automatically assigned to cohorts based on behavior
+
+**Sprint 27 (Weeks 93-94): Multi-Armed Bandit Experimentation**
+- Thompson Sampling algorithm implementation
+- Experiment framework: variant creation, assignment, tracking
+- A/B/N testing support (50-100 message variants)
+- Real-time weight optimization based on engagement
+- Success criteria: System automatically optimizes message variants based on CTR
+
+**Sprint 28 (Weeks 95-96): Personalization Integration**
+- Agent Orchestration Service integration (fetch cohort context before response)
+- Dynamic system prompt overrides per cohort
+- Response template injection based on experiment assignment
+- Engagement event tracking
+- Success criteria: Chatbot applies personalized system prompts based on user cohort
+
+**Sprint 29 (Weeks 97-98): Client Config Event System**
+- Kafka event schemas: client_config_change_requested, client_config_change_applied
+- Hot-reload integration with client-initiated changes
+- Config change audit trail
+- Risk-based approval workflows (low/medium/high)
+- Success criteria: Client config changes trigger hot-reload without service restart
+
+**Sprint 30 (Weeks 99-100): Human Agent Coordination**
+- Config help request system (complex changes escalate to support)
+- Agent assistance chat interface
+- Automated GitHub ticket creation for new tool requests
+- Success criteria: Complex config requests automatically create support tickets
+
+**Sprint 31 (Weeks 101-102): Analytics & Monitoring**
+- Client self-service config change metrics
+- Experiment performance dashboards (CTR, conversion, session duration)
+- Cohort transition analytics
+- Rollback rate monitoring
+- Success criteria: Platform team can monitor client config health and experiment lift
+
+**Sprint 32 (Weeks 103-104): Production Hardening & Documentation**
+- Load testing: 1000+ concurrent config changes
+- Security review: permission enforcement, SQL injection prevention
+- API documentation for Client Configuration Portal
+- Client training materials and video tutorials
+- Success criteria: 500+ clients can self-configure without platform support
 
 ### Success Metrics
 
@@ -2687,6 +4555,13 @@ This microservices architecture provides a **production-ready foundation** for a
 - 90%+ client satisfaction (CSAT >4.5)
 - 50% reduction in time-to-deployment (PRD → production)
 - 10× increase in concurrent client capacity
+
+**Client Self-Service (Phase 6):**
+- 80% of config changes done by clients without platform support
+- <5 minutes average time for config change (request → applied)
+- 95% config change success rate (no rollbacks needed)
+- 30% improvement in engagement metrics via personalization
+- 50+ A/B experiments running concurrently per organization
 
 ### Technical Debt Prevention
 

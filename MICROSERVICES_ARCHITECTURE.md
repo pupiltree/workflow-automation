@@ -351,9 +351,34 @@ CREATE TABLE team_memberships (
   organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('admin', 'member', 'viewer')),
   permissions JSONB DEFAULT '{}',  -- Custom permissions per role
+  config_permissions JSONB DEFAULT '{}',  -- Product configuration permissions (from Client Configuration Portal)
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, organization_id)
 );
+
+-- config_permission_matrix (maps organization roles to config permissions)
+CREATE TABLE config_permission_matrix (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'member', 'viewer', 'config_manager', 'config_viewer', 'developer')),
+  permissions JSONB NOT NULL,  -- Detailed permission matrix for product configuration
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(organization_id, role)
+);
+
+-- Default permission matrix structure (JSONB):
+-- {
+--   "can_view_configs": true,
+--   "can_edit_system_prompt": false,
+--   "can_edit_tools": false,
+--   "can_edit_voice_params": false,
+--   "can_edit_integrations": false,
+--   "can_rollback_versions": false,
+--   "can_deploy_configs": false,
+--   "can_manage_permissions": false,
+--   "max_risk_level": "low"  // low | medium | high
+-- }
 
 -- audit_logs table
 CREATE TABLE audit_logs (
@@ -605,6 +630,17 @@ Request Body:
     "research": ["read", "write"],
     "demos": ["read", "write"],
     "analytics": ["read", "write"]
+  },
+  "config_permissions": {
+    "can_view_configs": true,
+    "can_edit_system_prompt": true,
+    "can_edit_tools": true,
+    "can_edit_voice_params": true,
+    "can_edit_integrations": true,
+    "can_rollback_versions": true,
+    "can_deploy_configs": true,
+    "can_manage_permissions": true,
+    "max_risk_level": "high"
   }
 }
 
@@ -618,6 +654,17 @@ Response (200 OK):
     "research": ["read", "write"],
     "demos": ["read", "write"],
     "analytics": ["read", "write"]
+  },
+  "config_permissions": {
+    "can_view_configs": true,
+    "can_edit_system_prompt": true,
+    "can_edit_tools": true,
+    "can_edit_voice_params": true,
+    "can_edit_integrations": true,
+    "can_rollback_versions": true,
+    "can_deploy_configs": true,
+    "can_manage_permissions": true,
+    "max_risk_level": "high"
   },
   "updated_at": "2025-10-04T11:30:00Z",
   "updated_by": "uuid"
