@@ -6,10 +6,11 @@
 ## 6. PRD Builder Engine Service
 
 #### Objectives
-- **Primary Purpose**: AI-powered generation of comprehensive Product Requirement Documents (PRDs) through conversational interface with cross-questioning and village knowledge integration
+- **Primary Purpose**: AI-powered generation of comprehensive Product Requirement Documents (PRDs) for chatbot and voicebot products through conversational interface with cross-questioning and village knowledge integration
 - **Business Value**: Reduces PRD creation from 20+ hours to 2-3 hours, leverages multi-client learnings, ensures completeness through AI-driven edge case analysis
+- **Product Differentiation**: Supports both chatbot (LangGraph-based) and voicebot (LiveKit-based) product types with product-specific requirements, sprint planning, and integration architecture
 - **Scope Boundaries**:
-  - **Does**: Generate PRDs via webchat UI, integrate village knowledge, suggest new objectives, design A/B flows, plan integrations and escalations
+  - **Does**: Generate PRDs via webchat UI, integrate village knowledge, suggest new objectives, design A/B flows, plan integrations and escalations, differentiate chatbot vs voicebot requirements
   - **Does Not**: Write code, deploy solutions, manage infrastructure
 
 #### Requirements
@@ -89,12 +90,15 @@ Request Body:
 {
   "client_id": "uuid",
   "proposal_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],  // Required: chatbot | voicebot | both
   "initial_context": {
     "business_type": "e-commerce",
     "use_cases": ["customer_support", "lead_qualification"],
     "current_tools": ["salesforce", "zendesk", "shopify"],
     "team_size": 15,
-    "customer_volume_monthly": 5000
+    "customer_volume_monthly": 5000,
+    "chatbot_channels": ["website", "whatsapp"],  // Only if chatbot in product_types
+    "voicebot_channels": ["inbound_calls", "outbound_calls"]  // Only if voicebot in product_types
   },
   "enable_village_knowledge": true
 }
@@ -103,13 +107,15 @@ Response (201 Created):
 {
   "session_id": "uuid",
   "prd_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "active",
   "webchat_url": "https://prd.workflow.com/chat/uuid",
   "ai_agent": {
     "name": "PRD Builder Assistant",
-    "capabilities": ["cross_questioning", "objective_suggestion", "flow_design", "knowledge_integration"]
+    "capabilities": ["cross_questioning", "objective_suggestion", "flow_design", "knowledge_integration"],
+    "product_context": "Building PRD for chatbot (LangGraph) and voicebot (LiveKit) products"
   },
-  "initial_message": "I'll help you build a comprehensive PRD. Let's start by understanding your customer support objectives. What are the top 3 pain points you're trying to solve?",
+  "initial_message": "I'll help you build a comprehensive PRD for your chatbot and voicebot products. Let's start with chatbot requirements. What are the top 3 customer support pain points you want to solve via web chat?",
   "created_at": "2025-10-10T09:00:00Z"
 }
 ```
@@ -264,10 +270,11 @@ Response (200 OK - JSON):
 {
   "prd_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "in_progress",
   "completion_percent": 75,
   "sections": {
-    "executive_summary": "This PRD outlines the implementation of AI-powered customer support automation for Acme Corp...",
+    "executive_summary": "This PRD outlines the implementation of AI-powered customer support automation (chatbot via LangGraph and voicebot via LiveKit) for Acme Corp...",
     "objectives": [
       {
         "objective_id": "uuid",
@@ -295,10 +302,12 @@ Response (200 OK - JSON):
       }
     ],
     "integration_architecture": {
+      "product_type": "chatbot",  // Integrations are chatbot-specific (voicebots don't use external integrations)
       "existing_tools": ["salesforce", "zendesk", "shopify"],
       "new_integrations_needed": [
         {
           "tool": "sentiment_api",
+          "product_compatibility": ["chatbot"],  // Only applies to chatbot product
           "purpose": "Real-time CSAT measurement",
           "priority": "high",
           "estimated_effort": "2 sprints"
@@ -328,16 +337,18 @@ Response (200 OK - JSON):
         {"data_type": "customer_pii", "client_consent": "pending", "alternative": "Use anonymized IDs"}
       ]
     },
-    "sprint_roadmap": {
+    "sprint_roadmap_chatbot": {
+      "product_type": "chatbot",
+      "framework": "LangGraph two-node workflow (agent + tools)",
       "sprint_1_2": {
         "goal": "Basic chatbot with intent classification",
         "automation_target": "20%",
-        "deliverables": ["intent_classifier", "zendesk_integration", "basic_responses"]
+        "deliverables": ["intent_classifier", "zendesk_integration", "basic_responses", "langgraph_setup"]
       },
       "sprint_3_4": {
         "goal": "A/B flow implementation",
         "automation_target": "40%",
-        "deliverables": ["ab_framework", "kpi_tracking", "shopify_integration"]
+        "deliverables": ["ab_framework", "kpi_tracking", "shopify_integration", "external_integrations"]
       },
       "sprint_5_12": {
         "goal": "Advanced personalization and optimization",
@@ -345,6 +356,26 @@ Response (200 OK - JSON):
         "deliverables": ["sentiment_analysis", "upsell_engine", "workflow_optimization"]
       },
       "month_12_target": "95% automation for Tier 1 queries"
+    },
+    "sprint_roadmap_voicebot": {
+      "product_type": "voicebot",
+      "framework": "LiveKit VoicePipelineAgent (STT-LLM-TTS)",
+      "sprint_1_2": {
+        "goal": "Basic voicebot with LiveKit integration",
+        "automation_target": "15%",
+        "deliverables": ["livekit_setup", "deepgram_stt", "elevenlabs_tts", "basic_call_handling"]
+      },
+      "sprint_3_4": {
+        "goal": "Advanced voice features",
+        "automation_target": "35%",
+        "deliverables": ["barge_in_support", "sentiment_detection", "call_transfer", "sip_integration"]
+      },
+      "sprint_5_12": {
+        "goal": "Voice optimization and analytics",
+        "automation_target": "75%",
+        "deliverables": ["latency_optimization", "voice_analytics", "multi_language_support"]
+      },
+      "month_12_target": "90% automation for inbound call handling"
     },
     "log_events": [
       {"event": "user_query_received", "purpose": "Track uptime and volume"},
@@ -465,6 +496,7 @@ Topic: prd_events
 {
   "event_type": "prd_approved",
   "prd_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "organization_id": "uuid",
   "approved_by_user_id": "uuid",
   "timestamp": "2025-10-10T14:00:00Z"
@@ -1026,6 +1058,42 @@ Server → Client Events:
 - Configuration Management Service (stores and distributes configs)
 - GitHub API (issue creation, status tracking)
 
+**Technical Architecture by Product Type:**
+
+1. **Chatbot Products** (LangGraph-based):
+   - **Runtime Service**: Agent Orchestration Service
+   - **Framework**: LangGraph two-node workflow (agent node + tools node)
+   - **Architecture Reference**: https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
+   - **YAML Config Features**:
+     - StateGraph implementation with checkpointing
+     - `external_integrations` field (Salesforce, Zendesk, etc.)
+     - Dynamic tool loading from YAML
+     - PostgreSQL-backed state persistence
+   - **Config Consumption**: Agent Orchestration Service reads chatbot YAML configs
+   - **Documentation**: See MICROSERVICES_ARCHITECTURE_PART3.md (Agent Orchestration Service)
+
+2. **Voicebot Products** (LiveKit-based):
+   - **Runtime Service**: Voice Agent Service
+   - **Framework**: LiveKit Agents (Python SDK) with VoicePipelineAgent
+   - **Architecture Components**:
+     - STT Pipeline: Deepgram Nova-3 streaming transcription
+     - LLM Integration: Same as chatbot but optimized for voice latency
+     - TTS Pipeline: ElevenLabs Flash v2.5 with dual streaming
+     - SIP Integration: Twilio (primary), Telnyx (failover)
+   - **YAML Config Features**:
+     - NO `external_integrations` field (voice-only channel)
+     - SIP endpoint configured separately via SIP trunk provisioning
+     - Voice-specific config: STT/TTS providers, voice_id, turn detection
+     - Tool execution via LiveKit agent callbacks
+   - **Config Consumption**: Voice Agent Service reads voicebot YAML configs
+   - **Documentation**: See MICROSERVICES_ARCHITECTURE_PART3.md (Voice Agent Service)
+
+3. **Hybrid Deployments**:
+   - Requires **separate YAML configs** for chatbot and voicebot
+   - PRD includes distinct sprint roadmaps per product type
+   - Shared PRD objectives but product-specific implementations
+   - Cross-product communication via `cross_product_events` Kafka topic
+
 **Data Storage:**
 - PostgreSQL: Config metadata, versions, GitHub issue mapping, validation logs
 - S3: YAML config files, config snapshots
@@ -1068,7 +1136,7 @@ Request Body:
   "prd_id": "uuid",
   "client_id": "uuid",
   "config_name": "acme_support_bot",
-  "config_type": "chatbot",
+  "product_type": "chatbot",  // Required: chatbot | voicebot
   "environment": "staging"
 }
 
@@ -1085,6 +1153,7 @@ Topic: config_events
 {
   "event_type": "config_generation_started",
   "config_id": "uuid",
+  "product_type": "chatbot",
   "client_id": "uuid",
   "timestamp": "2025-10-10T14:05:00Z"
 }
@@ -1106,6 +1175,7 @@ Response (200 OK - JSON):
   "parsed_config": {
     "config_metadata": {
       "config_id": "uuid",
+      "product_type": "chatbot",
       "client_id": "uuid",
       "version": 1,
       "environment": "staging",
@@ -1161,6 +1231,7 @@ Response (200 OK - JSON):
     "integrations": [
       {
         "integration_name": "salesforce_crm",
+        "product_compatibility": ["chatbot"],
         "type": "input_channel",
         "status": "implemented",
         "config": {
@@ -1170,11 +1241,13 @@ Response (200 OK - JSON):
       },
       {
         "integration_name": "whatsapp_business",
+        "product_compatibility": ["chatbot"],
         "type": "input_channel",
         "status": "implemented"
       },
       {
         "integration_name": "sentiment_api",
+        "product_compatibility": ["chatbot", "voicebot"],
         "type": "utility",
         "status": "missing",
         "github_issue": "https://github.com/workflow/integrations/issues/89"
