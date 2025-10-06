@@ -461,7 +461,8 @@ Topic: prd_events
 {
   "event_type": "prd_approved",
   "prd_id": "uuid",
-  "client_id": "uuid",
+  "organization_id": "uuid",
+  "approved_by_user_id": "uuid",
   "timestamp": "2025-10-10T14:00:00Z"
 }
 ```
