@@ -37,6 +37,112 @@ Human agents work **alongside AI**, not **instead of AI**. Humans supervise, rev
 
 ---
 
+## Role Definitions & Authentication Model
+
+This section clarifies the distinction between **organizational roles** (client-facing) and **operational roles** (human agents working the platform):
+
+### Organizational Roles (Client-Side)
+These are roles assigned to users within **client organizations**:
+- **Organization Admin**: Client company administrator (e.g., Jane Smith from Example Corp)
+- **Organization Member**: Standard user within client company
+- **Organization Viewer**: Read-only access to client company data
+
+### Operational Roles (Platform-Side Human Agents)
+These are roles assigned to **human agents** who operate the platform on behalf of clients:
+- **Platform Admin**: Full system access, can manage all organizations, agents, and configurations (rare, primarily for platform engineers)
+- **Sales Agent**: Creates assisted signups, manages sales pipeline, demos, NDAs, proposals
+- **Onboarding Specialist**: Conducts client onboarding, PRD creation, implementation setup
+- **Support Specialist**: Handles support tickets, escalations, technical issues
+- **Success Manager**: Monitors KPIs, conducts QBRs, identifies upsell/cross-sell opportunities
+- **Sales Specialist**: Invited dynamically for upsell/cross-sell during success stage
+- **AI Supervisor**: Monitors AI agent quality, tunes configurations, handles edge cases
+- **Platform Engineer**: Infrastructure management, deployment, system administration
+
+### Key Distinctions
+- **Platform Admin ≠ Sales Agent**: Platform Admin is a system administrator role (infrastructure, full access); Sales Agent is an operational role (sales workflow, limited to assigned clients)
+- **Multi-Role Support**: A single human can have multiple operational roles (e.g., Sam can be both Sales Agent AND Onboarding Specialist)
+- **Permission Model**: Operational roles have granular permissions defined in Human Agent Management Service (0.5), not organizational permissions
+
+### Authentication Architecture
+All users (both client organization users AND platform human agents) authenticate through the **Organization Management & Authentication Service (0)**:
+
+**For Client Organization Users:**
+- Stored in `auth.users` table with `user_type: 'client'`
+- Linked to specific organization via `organization_id`
+- Role field contains: `admin`, `member`, `viewer`
+- Multi-tenant isolation enforced via Row-Level Security (RLS)
+
+**For Platform Human Agents:**
+- Stored in `auth.users` table with `user_type: 'agent'`
+- Linked to `agent_profiles` table in Human Agent Management Service
+- Role field contains: `platform_admin`, `sales_agent`, `onboarding_specialist`, etc.
+- Can have multiple roles stored in `agent_profiles.roles` (JSON array)
+- Permissions stored in `agent_profiles.permissions` (JSON object)
+- JWT tokens include `user_type: 'agent'` and `agent_id` for cross-service authorization
+
+**JWT Token Structure for Human Agents:**
+```json
+{
+  "user_id": "uuid",
+  "user_type": "agent",
+  "agent_id": "uuid",
+  "email": "sam@workflow.com",
+  "primary_role": "sales_agent",
+  "all_roles": ["sales_agent", "onboarding_specialist"],
+  "permissions": {
+    "assisted_signup": ["create", "read", "update"],
+    "research_engine": ["read", "trigger"],
+    "demo_generator": ["read", "create", "approve"]
+  },
+  "organization_id": null,  // Agents don't belong to client orgs
+  "exp": 1728392400
+}
+```
+
+**Authorization Flow for Assisted Signup (Fixed - No Circular Dependency):**
+
+**Authentication happens in Kong API Gateway (not in services):**
+
+1. **Sales Agent Login** → Org Management Service authenticates → Returns JWT with:
+   ```json
+   {
+     "user_id": "uuid",
+     "user_type": "agent",
+     "agent_id": "uuid",
+     "primary_role": "sales_agent",
+     "exp": 1728392400
+   }
+   ```
+
+2. **Sales Agent calls** `POST /api/v1/auth/assisted-signup` → Request goes through **Kong API Gateway**
+
+3. **Kong API Gateway Authorization:**
+   - Validates JWT signature and expiration
+   - Extracts `user_type` and `agent_id` from JWT
+   - If `user_type === 'agent'`:
+     - Calls `GET /api/v1/agents/{agent_id}/permissions` (Human Agent Management Service)
+     - Receives permissions JSON: `{"assisted_signup": ["create", "read", "update"]}`
+     - Checks if `assisted_signup.create` exists in permissions
+   - If authorized: Injects `X-Agent-ID` and `X-Agent-Permissions` headers, forwards to Org Management
+   - If unauthorized: Returns 403 Forbidden BEFORE reaching Org Management
+
+4. **Org Management Service receives pre-authorized request:**
+   - Trusts Kong's authorization (headers: `X-Agent-ID`, `X-Agent-Permissions`)
+   - Creates assisted account
+   - Publishes `assisted_account_created` event to Kafka
+
+5. **Human Agent Management Service (Kafka consumer):**
+   - Listens to `assisted_account_created` event
+   - Auto-assigns client to creating agent
+   - Publishes `client_assigned_to_agent` event
+
+**No Circular Dependency:**
+- Org Management NEVER calls Human Agent Management
+- Kong API Gateway handles permission checks BEFORE routing
+- Services remain decoupled and stateless
+
+---
+
 ## Architecture Overview
 
 ### System Architecture Diagram (Text Description)
@@ -85,6 +191,31 @@ Data Layer:
 - Redis: Caching, session state, rate limiting, auth tokens
 - TimescaleDB: Time-series metrics and analytics
 ```
+
+### Database Architecture Model
+
+**Shared Core Database (Supabase PostgreSQL):**
+- **auth.users** table: ALL users (clients + agents) with `user_type` discriminator
+- **organizations** table: Client company organizations
+- **team_memberships** table: Client organization memberships
+- **agent_profiles** table: Human agent profiles (links to auth.users via user_id FK)
+
+**Per-Service Databases (Dedicated PostgreSQL instances):**
+- Agent Orchestration: conversations, checkpoints, thread_states
+- PRD Builder: prd_documents, prd_versions, feedback
+- Support Engine: tickets, ticket_messages, escalations
+- Analytics: aggregated_metrics, usage_reports
+
+**Cross-Service Foreign Keys:**
+- **Shared Core → Per-Service:** Use `user_id`, `organization_id`, `agent_id` as references
+- **No FK constraints across databases:** Services validate references via API calls
+- **Example:** PRD Builder stores `organization_id` but validates existence by calling Org Management API `/api/v1/organizations/{id}`
+
+**Multi-Tenant Isolation Strategy:**
+1. **Shared Core:** Row-Level Security (RLS) on `organization_id` for client data
+2. **Per-Service:** Application-level filtering on `organization_id`/`tenant_id`
+3. **Agents:** Can access all organizations (RLS policy allows `user_type='agent'`)
+4. **Vector DBs:** Namespace-per-tenant in Qdrant (e.g., `tenant_{org_id}`)
 
 ### Communication Patterns
 
@@ -168,6 +299,87 @@ Data Layer:
 **Data Storage:**
 - PostgreSQL: Users, organizations, memberships, roles, permissions, audit logs
 - Redis: Session tokens, email verification codes, rate limiting
+
+**Database Schema:**
+
+```sql
+-- auth.users table (shared by both client users and human agents)
+CREATE TABLE auth.users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  user_type TEXT NOT NULL CHECK (user_type IN ('client', 'agent')),
+  organization_id UUID REFERENCES organizations(id),  -- NULL for agents
+  role TEXT NOT NULL,  -- 'admin'|'member'|'viewer' for clients; 'sales_agent'|'platform_admin' etc for agents
+  email_verified BOOLEAN DEFAULT FALSE,
+  account_status TEXT DEFAULT 'active' CHECK (account_status IN ('active', 'assisted_unclaimed', 'claimed', 'suspended', 'deleted')),
+  claim_token TEXT UNIQUE,  -- For assisted signup accounts only
+  claim_token_expires_at TIMESTAMPTZ,
+  created_by_agent_id UUID REFERENCES auth.users(id),  -- For assisted signup, references agent who created account
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  last_login_at TIMESTAMPTZ
+);
+
+-- Row-Level Security (RLS) for multi-tenancy
+ALTER TABLE auth.users ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Clients can only see users in their organization
+CREATE POLICY users_tenant_isolation ON auth.users
+  FOR SELECT
+  USING (
+    user_type = 'client' AND organization_id = current_setting('app.current_organization_id')::UUID
+    OR user_type = 'agent'  -- Agents can see all
+  );
+
+-- organizations table
+CREATE TABLE organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  website TEXT,
+  industry TEXT,
+  company_size TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- team_memberships table (links users to organizations with roles)
+CREATE TABLE team_memberships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'member', 'viewer')),
+  permissions JSONB DEFAULT '{}',  -- Custom permissions per role
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, organization_id)
+);
+
+-- audit_logs table
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  organization_id UUID REFERENCES organizations(id),
+  action TEXT NOT NULL,  -- 'login', 'signup', 'assisted_account_created', 'account_claimed', etc.
+  resource_type TEXT,  -- 'user', 'organization', 'team_membership'
+  resource_id UUID,
+  metadata JSONB,
+  ip_address INET,
+  user_agent TEXT,
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Indexes:**
+```sql
+CREATE INDEX idx_users_email ON auth.users(email);
+CREATE INDEX idx_users_organization_id ON auth.users(organization_id);
+CREATE INDEX idx_users_user_type ON auth.users(user_type);
+CREATE INDEX idx_users_claim_token ON auth.users(claim_token) WHERE claim_token IS NOT NULL;
+CREATE INDEX idx_users_created_by_agent ON auth.users(created_by_agent_id) WHERE created_by_agent_id IS NOT NULL;
+CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+```
 
 #### Features
 
@@ -551,11 +763,12 @@ Response (200 OK):
 }
 ```
 
-**11. Assisted Signup - Create Account on Behalf of Client (Platform Admin Only)**
+**11. Assisted Signup - Create Account on Behalf of Client (Platform Admin or Sales Agent)**
 ```http
 POST /api/v1/auth/assisted-signup
-Authorization: Bearer {admin_jwt_token}
+Authorization: Bearer {jwt_token}
 Content-Type: application/json
+X-User-Role: platform_admin | sales_agent
 
 Request Body:
 {
@@ -565,9 +778,14 @@ Request Body:
   "company_website": "https://example.com",
   "industry": "e-commerce",
   "company_size": "10-50",
-  "created_by": "platform_admin_user_id",
+  "created_by_agent_id": "uuid",  // Human agent ID (sales_agent or platform_admin)
   "notes": "Lead from conference, requested demo"
 }
+
+Authorization Logic:
+- Platform Admin: Full access, no restrictions
+- Sales Agent: Requires 'assisted_signup' permission with 'create' action in agent permissions
+- Verification: Check Human Agent Management Service for role and permissions before proceeding
 
 Response (201 Created):
 {
@@ -579,7 +797,9 @@ Response (201 Created):
   "claim_url": "https://app.workflow.com/claim/CLAIM-ABC123-XYZ789",
   "temporary_access_token": "temp_eyJhbGciOiJIUzI1NiIs...",
   "expires_at": "2025-11-04T10:30:00Z",
-  "created_by": "platform_admin_user_id",
+  "created_by_agent_id": "uuid",
+  "created_by_agent_name": "Sam Peterson",
+  "created_by_agent_role": "sales_agent",
   "created_at": "2025-10-05T10:30:00Z",
   "dashboard_url": "https://app.workflow.com/example-corp",
   "message": "Account created. Client can claim within 30 days using the claim link."
@@ -592,17 +812,33 @@ Topic: auth_events
   "user_id": "uuid",
   "organization_id": "uuid",
   "client_email": "client@example.com",
-  "created_by": "platform_admin_user_id",
+  "created_by_agent_id": "uuid",
+  "created_by_agent_role": "sales_agent",
   "claim_token": "CLAIM-ABC123-XYZ789",
   "expires_at": "2025-11-04T10:30:00Z",
   "timestamp": "2025-10-05T10:30:00Z"
 }
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "client_assigned_to_agent",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "agent_id": "uuid",
+  "agent_name": "Sam Peterson",
+  "agent_role": "sales_agent",
+  "assignment_type": "auto_on_assisted_signup",
+  "lifecycle_stage": "sales",
+  "timestamp": "2025-10-05T10:30:00Z"
+}
 ```
 
-**12. Get Assisted Account Details (Platform Admin Only)**
+**12. Get Assisted Account Details (Platform Admin or Sales Agent)**
 ```http
 GET /api/v1/auth/assisted-accounts/{user_id}
-Authorization: Bearer {admin_jwt_token}
+Authorization: Bearer {jwt_token}
+X-User-Role: platform_admin | sales_agent
 
 Response (200 OK):
 {
@@ -674,11 +910,12 @@ Topic: auth_events
 }
 ```
 
-**14. Resend Claim Link (Platform Admin Only)**
+**14. Resend Claim Link (Platform Admin or Sales Agent)**
 ```http
 POST /api/v1/auth/assisted-accounts/{user_id}/resend-claim
-Authorization: Bearer {admin_jwt_token}
+Authorization: Bearer {jwt_token}
 Content-Type: application/json
+X-User-Role: platform_admin | sales_agent
 
 Request Body:
 {
@@ -706,11 +943,12 @@ Topic: auth_events
 }
 ```
 
-**15. Manage Assisted Account (Platform Admin Temporary Access)**
+**15. Manage Assisted Account (Platform Admin or Sales Agent Temporary Access)**
 ```http
 POST /api/v1/auth/assisted-accounts/{user_id}/access
-Authorization: Bearer {admin_jwt_token}
+Authorization: Bearer {jwt_token}
 Content-Type: application/json
+X-User-Role: platform_admin | sales_agent
 
 Request Body:
 {
@@ -744,16 +982,22 @@ Topic: auth_events
 }
 ```
 
-**16. List All Assisted Accounts (Platform Admin Only)**
+**16. List All Assisted Accounts (Platform Admin or Sales Agent)**
 ```http
 GET /api/v1/auth/assisted-accounts
-Authorization: Bearer {admin_jwt_token}
+Authorization: Bearer {jwt_token}
+X-User-Role: platform_admin | sales_agent
 Query Parameters:
 - status: unclaimed|claimed|expired (optional)
+- agent_id: {uuid} (optional, filter by assigned agent - auto-applied for sales_agent role)
 - page: 1
 - limit: 50
 - sort_by: created_at|expires_at|claimed_at
 - order: asc|desc
+
+Authorization Logic:
+- Platform Admin: Can view all assisted accounts across all agents
+- Sales Agent: Can only view accounts assigned to them (agent_id auto-filtered)
 
 Response (200 OK):
 {
@@ -1013,6 +1257,114 @@ Response (200 OK):
 - PostgreSQL: Agent profiles, roles, permissions, handoff history, activity logs
 - Redis: Real-time agent availability, queue state, active assignments
 - TimescaleDB: Agent performance metrics, SLA tracking
+
+**Database Schema:**
+
+```sql
+-- agent_profiles table (extends auth.users where user_type='agent')
+CREATE TABLE agent_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  agent_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),  -- Separate agent ID for tracking
+  roles JSONB NOT NULL,  -- Array of role objects with skills, certifications, languages
+  -- Example: [{"role_type": "sales_agent", "primary": true, "skills": ["b2b_saas"], ...}]
+  permissions JSONB NOT NULL DEFAULT '{}',  -- Granular permissions per service
+  -- Example: {"assisted_signup": ["create", "read"], "demo_generator": ["read", "approve"]}
+  capacity JSONB NOT NULL,  -- Max concurrent clients, handoffs, availability hours
+  -- Example: {"max_concurrent_clients": 15, "max_active_handoffs": 3, "availability_hours": "09:00-18:00 EST"}
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+  availability TEXT DEFAULT 'offline' CHECK (availability IN ('online', 'busy', 'offline', 'away')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- client_assignments table (tracks which clients are assigned to which agents)
+CREATE TABLE client_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,  -- References client user_id from auth.users
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  assigned_role TEXT NOT NULL,  -- Which role is handling this client (sales_agent, onboarding_specialist, etc.)
+  lifecycle_stage TEXT NOT NULL,  -- sales, onboarding, support, success
+  assigned_at TIMESTAMPTZ DEFAULT NOW(),
+  assignment_type TEXT NOT NULL,  -- auto_on_assisted_signup, handoff, manual, specialist_invitation
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'transferred')),
+  completed_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'
+);
+
+-- handoffs table (tracks client handoffs between agents/roles)
+CREATE TABLE handoffs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  from_agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  from_role TEXT NOT NULL,
+  to_agent_id UUID REFERENCES agent_profiles(agent_id),  -- NULL until accepted
+  to_role TEXT NOT NULL,
+  lifecycle_stage_from TEXT NOT NULL,
+  lifecycle_stage_to TEXT NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'completed')),
+  handoff_type TEXT NOT NULL,  -- standard, dual (parallel support+success), specialist_invitation
+  context_notes TEXT,
+  client_prefs JSONB,
+  technical_requirements JSONB,
+  initiated_at TIMESTAMPTZ DEFAULT NOW(),
+  accepted_at TIMESTAMPTZ,
+  rejected_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  rejection_reason TEXT
+);
+
+-- specialist_invitations table (tracks specialist invitations for upsell/cross-sell)
+CREATE TABLE specialist_invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  invited_by_agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  specialist_agent_id UUID REFERENCES agent_profiles(agent_id),  -- NULL until accepted
+  specialist_role TEXT NOT NULL,  -- sales_specialist, technical_specialist, etc.
+  invitation_reason TEXT NOT NULL,  -- upsell, cross_sell, technical_consultation, iteration
+  opportunity_type TEXT,  -- voice_addon, premium_tier, custom_integration, etc.
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'completed')),
+  invited_at TIMESTAMPTZ DEFAULT NOW(),
+  accepted_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,  -- When specialist exits after completing work
+  outcome JSONB  -- Results: {deal_closed: true, revenue: 50000, next_steps: "..."}
+);
+
+-- agent_activity_logs table (tracks all agent actions)
+CREATE TABLE agent_activity_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  client_id UUID,
+  organization_id UUID REFERENCES organizations(id),
+  action_type TEXT NOT NULL,  -- client_assigned, handoff_initiated, demo_created, ticket_resolved, etc.
+  action_role TEXT NOT NULL,  -- Which role was active during this action
+  service_name TEXT,  -- Which microservice was accessed
+  metadata JSONB DEFAULT '{}',
+  duration_seconds INTEGER,  -- Time spent on this action
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Indexes:**
+```sql
+CREATE INDEX idx_agent_profiles_user_id ON agent_profiles(user_id);
+CREATE INDEX idx_agent_profiles_agent_id ON agent_profiles(agent_id);
+CREATE INDEX idx_agent_profiles_status ON agent_profiles(status);
+CREATE INDEX idx_client_assignments_client_id ON client_assignments(client_id);
+CREATE INDEX idx_client_assignments_agent_id ON client_assignments(agent_id);
+CREATE INDEX idx_client_assignments_lifecycle_stage ON client_assignments(lifecycle_stage);
+CREATE INDEX idx_handoffs_client_id ON handoffs(client_id);
+CREATE INDEX idx_handoffs_from_agent ON handoffs(from_agent_id);
+CREATE INDEX idx_handoffs_to_agent ON handoffs(to_agent_id);
+CREATE INDEX idx_handoffs_status ON handoffs(status);
+CREATE INDEX idx_specialist_invitations_client_id ON specialist_invitations(client_id);
+CREATE INDEX idx_specialist_invitations_specialist_id ON specialist_invitations(specialist_agent_id);
+CREATE INDEX idx_agent_activity_logs_agent_id ON agent_activity_logs(agent_id);
+CREATE INDEX idx_agent_activity_logs_timestamp ON agent_activity_logs(timestamp DESC);
+```
 
 #### Features
 

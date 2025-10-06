@@ -405,6 +405,183 @@ Response (200 OK):
 - React Query for API data fetching
 - Optimistic UI updates for message sending
 
+---
+
+## Config Hot-Reload Strategy
+
+### Overview
+
+When tools/integrations are completed or config changes are pushed, services must reload configurations WITHOUT restarting and WITHOUT disrupting active conversations.
+
+### Hot-Reload Trigger
+
+**Event-Driven Reload:**
+```
+Developer closes GitHub issue (#156: "Implement initiate_refund tool")
+  ↓
+GitHub webhook → Automation Engine
+  ↓
+Automation Engine publishes to Kafka:
+Topic: config_events
+{
+  "event_type": "config_updated",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "updated_by": "github_issue_closed_webhook",
+  "changes": ["tool_attached:initiate_refund"],
+  "hot_reload_required": true,
+  "timestamp": "2025-10-20T10:00:00Z"
+}
+  ↓
+Agent Orchestration Service & Voice Agent Service (Kafka consumers) receive event
+```
+
+### Active Conversation Handling (CRITICAL)
+
+**Strategy: Version Pinning + Graceful Migration**
+
+#### For In-Flight Conversations:
+1. **Continue with Current Config Version:**
+   - Active conversations (mid-flow) continue using config version they started with
+   - Conversation state stores `config_version: "v3"` in checkpoint
+   - No mid-conversation config changes (prevents tool disappearing/appearing unexpectedly)
+
+2. **Config Version Tracking:**
+```python
+# Stored in conversation checkpoint
+{
+  "thread_id": "uuid",
+  "config_id": "uuid",
+  "config_version": "v3",  # Locked at conversation start
+  "conversation_state": {...},
+  "created_at": "2025-10-20T10:00:00Z"
+}
+```
+
+#### For New Conversations:
+1. **Use Latest Config Version:**
+   - New conversations (started AFTER hot-reload event) use config version v4
+   - `config_version: "v4"` stamped in checkpoint at conversation creation
+
+2. **Config Version Lookup:**
+```python
+# On conversation start
+if new_conversation:
+    config_version = get_latest_config_version(config_id)  # Returns "v4"
+else:
+    config_version = load_from_checkpoint(thread_id).config_version  # Returns "v3"
+```
+
+### Implementation Details
+
+**Service-Level Hot-Reload Process:**
+
+1. **Agent Orchestration Service receives `config_updated` event**
+
+2. **Background Config Fetch:**
+   - Call Configuration Management Service: `GET /api/v1/configs/{config_id}`
+   - Download new YAML config (v4)
+   - Parse and validate config schema
+   - Load new tools into tool registry
+
+3. **Version Registry Update:**
+```python
+# In-memory version registry
+config_versions = {
+    "uuid": {
+        "v3": {...},  # Old config still in memory for active conversations
+        "v4": {...}   # New config loaded
+    }
+}
+```
+
+4. **Active Conversation Check:**
+   - Query PostgreSQL: `SELECT COUNT(*) FROM conversations WHERE config_id = 'uuid' AND status = 'active'`
+   - If active conversations exist using v3:
+     - Keep v3 in memory (DO NOT unload)
+     - Log: "Config v3 retained for 12 active conversations"
+
+5. **Garbage Collection:**
+   - Monitor conversation completion events
+   - When last conversation using v3 completes:
+     - Wait 5 minutes (grace period)
+     - Unload v3 from memory
+     - Log: "Config v3 unloaded - no active conversations"
+
+### Breaking Config Changes
+
+**Non-Breaking Changes (Auto Hot-Reload):**
+- Tool added (e.g., `initiate_refund`)
+- Integration added
+- System prompt updated
+- Escalation rule tweaked
+
+**Breaking Changes (Require Manual Intervention):**
+- Tool removed (active conversations may be calling it)
+- Required PII field removed (violates schema)
+- Conversation flow restructured (state incompatible)
+
+**Breaking Change Detection:**
+```yaml
+# In config YAML metadata
+metadata:
+  version: "v4"
+  breaking_change: true  # Platform Engineer sets this manually
+  migration_required: true
+  migration_script: "migrate_v3_to_v4.py"
+```
+
+**Breaking Change Workflow:**
+1. Platform Engineer marks `breaking_change: true` in new config
+2. Hot-reload event includes `breaking_change: true`
+3. Services receive event but DO NOT auto-reload
+4. Platform Engineer dashboard shows alert: "Manual migration required for config_id={uuid}"
+5. Platform Engineer:
+   - Drains active conversations (soft block new conversations using v3)
+   - Runs migration script to upgrade checkpoints to v4 schema
+   - Manually triggers reload: `POST /api/v1/orchestration/reload-config/{config_id}`
+
+### Rollback Strategy
+
+**If Hot-Reload Fails (>10% error rate):**
+
+1. **Auto-Rollback Trigger:**
+```
+Hot-reload event processed → 15% of new conversations fail with errors
+  ↓
+Monitoring Engine detects spike in conversation_failed events
+  ↓
+Auto-rollback triggered within 60 seconds
+```
+
+2. **Rollback Process:**
+   - Publish `config_rollback` event to Kafka
+   - Services revert to previous config version (v3)
+   - New conversations use v3 again
+   - Alert Platform Engineer: "Config v4 rolled back due to high error rate"
+
+3. **Manual Investigation:**
+   - Platform Engineer reviews error logs
+   - Identifies root cause (e.g., tool syntax error in v4)
+   - Fixes config offline
+   - Re-deploys with fix validation
+
+### Monitoring & Alerts
+
+**Metrics to Track:**
+- `config_reload_success_rate` (target: >99%)
+- `active_conversations_per_config_version` (for GC decisions)
+- `config_reload_latency` (target: <5s)
+- `conversation_error_rate_post_reload` (auto-rollback threshold: >10%)
+
+**Alerts:**
+- Hot-reload failed for config_id={uuid}
+- Breaking change detected, manual intervention required
+- Config version v3 retained for >24 hours (possible memory leak)
+- Rollback triggered for config_id={uuid}
+
+---
+
 #### Stakeholders and Agents
 
 **Human Stakeholders:**
@@ -866,6 +1043,174 @@ Response (200 OK):
 
 ---
 
+## Voice Infrastructure Architecture (SIP Provider Details)
+
+### SIP Provider: Twilio Elastic SIP Trunking (Primary)
+
+**Why Twilio:**
+- 99.999% uptime SLA (vs. Telnyx 99.99%)
+- Global PSTN coverage (150+ countries)
+- Mature LiveKit integration libraries
+- Enterprise support (response < 1 hour)
+
+**Cost Structure:**
+- SIP trunk capacity: $2/month per channel
+- Inbound calls: $0.0085/minute (US)
+- Outbound calls: $0.0100/minute (US)
+- Phone numbers: $1/month per number
+- Estimated monthly cost (1000 concurrent calls): $2,000 + $510/hr usage
+
+### Configuration
+
+**SIP Trunk Provisioning:**
+```
+Trunk Name: workflow-prod-trunk-1
+SIP URI: sip:workflow.pstn.twilio.com
+Capacity: 1000 concurrent channels
+Authentication: IP ACL (LiveKit SIP bridge IPs)
+Codec Priority: PCMU (G.711), Opus
+```
+
+**Phone Number Pool:**
+- **Auto-Provisioning**: 100 numbers per tenant (configurable)
+- **Number Types**: Local (US), Toll-Free (800/888/etc.), International
+- **Assignment Strategy**: Geographic (match tenant headquarters location)
+- **Example**: Tenant "Acme Corp" (HQ: San Francisco) → +1 (415) xxx-xxxx
+
+**Inbound SIP URI Routing:**
+```
+PSTN Call → Twilio SIP Trunk → LiveKit SIP Bridge
+  ↓
+SIP INVITE with header: X-Tenant-Slug: acme-corp
+  ↓
+LiveKit SIP bridge extracts tenant_slug
+  ↓
+Configuration Management Service: GET /api/v1/tenants/acme-corp/config_id
+  ↓
+Returns: config_id = "uuid"
+  ↓
+Voice Agent Service initializes session with config_id
+  ↓
+STT → Agent Orchestration → TTS → Caller (PSTN)
+```
+
+**Outbound Call Flow:**
+```
+Voice Agent Service: POST /api/v1/voice/calls/initiate
+  ↓
+LiveKit creates SIP session
+  ↓
+LiveKit SIP bridge → Twilio SIP Trunk
+  ↓
+Twilio routes to PSTN (caller ID: tenant's phone number)
+  ↓
+Call connects to recipient +15551234567
+  ↓
+Voice conversation begins (STT → Agent → TTS)
+```
+
+### Failover Strategy: Telnyx (Secondary)
+
+**Automatic Failover Conditions:**
+- Twilio SIP trunk unavailable (>5 minutes)
+- Error rate >20% on Twilio
+- Manual failover trigger by Platform Engineer
+
+**Failover Process:**
+1. Monitoring Engine detects Twilio degradation
+2. Publishes `sip_provider_failover` event to Kafka
+3. Voice Agent Service receives event
+4. New calls routed to Telnyx SIP URI: `sip:workflow.sip.telnyx.com`
+5. Existing calls continue on Twilio (no mid-call transfer)
+6. Alert: "SIP provider failed over to Telnyx"
+
+**Telnyx Configuration:**
+```
+Trunk Name: workflow-backup-trunk
+Capacity: 500 concurrent channels (50% of primary)
+Cost: $0.0095/minute (slightly cheaper, lower capacity)
+Geographic: US-only (no international support)
+```
+
+### International Calling Support
+
+**Supported Countries (Tier 1 - Low Cost):**
+- US, Canada: $0.0100/min
+- UK, Germany, France: $0.0150/min
+- Australia: $0.0180/min
+
+**Supported Countries (Tier 2 - Medium Cost):**
+- India: $0.0250/min
+- Mexico: $0.0220/min
+- Brazil: $0.0300/min
+
+**Unsupported Countries:**
+- Cuba, North Korea, Syria (OFAC sanctions)
+- Countries with poor PSTN quality (fallback to chat only)
+
+**Compliance:**
+- **GDPR Call Recording**: Explicit consent banner ("This call will be recorded") before STT starts
+- **TCPA Compliance**: Outbound calls only to opted-in numbers, respect Do-Not-Call lists
+- **PCI-DSS**: Credit card numbers detected in voice → masked in transcript, not stored
+
+### Phone Number Management
+
+**Provisioning API:**
+```http
+POST /api/v1/voice/numbers/provision
+Authorization: Bearer {platform_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "tenant_id": "uuid",
+  "number_type": "local",  // local | toll_free | international
+  "area_code": "415",  // Optional, for local numbers
+  "quantity": 10
+}
+
+Response (201 Created):
+{
+  "numbers": [
+    {
+      "phone_number": "+14155551001",
+      "number_type": "local",
+      "tenant_id": "uuid",
+      "provisioned_at": "2025-10-20T10:00:00Z",
+      "monthly_cost_usd": 1.00
+    },
+    ...
+  ],
+  "total_monthly_cost_usd": 10.00
+}
+```
+
+**Number Rotation (Anti-Spam):**
+- Outbound campaign calls rotate through 10+ numbers
+- Prevents carrier spam flags on single number
+- Auto-rotation every 500 calls
+
+### Monitoring & SLAs
+
+**SIP Trunk Health Metrics:**
+- `sip_trunk_availability` (target: >99.99%)
+- `call_connect_success_rate` (target: >95%)
+- `call_quality_mos_score` (Mean Opinion Score, target: >4.0)
+- `sip_latency_ms` (target: <100ms for SIP negotiation)
+
+**Alerts:**
+- SIP trunk capacity >80% (scale up warning)
+- Call quality degradation (MOS < 3.5 for 5 minutes)
+- Failover to Telnyx triggered
+- International call to unsupported country attempted
+
+**Cost Budgeting:**
+- Daily limit per tenant: $500 (prevents runaway costs)
+- Alert at 80% of daily budget
+- Auto-pause outbound calls at 100% budget (emergency stop)
+
+---
+
 ## 10. Configuration Management Service
 
 #### Objectives
@@ -982,6 +1327,279 @@ Response (200 OK):
 - `analytics_events`: KPIs calculated, experiments completed
 - `monitoring_events`: Incidents created, resolved
 - `escalation_events`: Human handoff triggered
+- `outreach_events`: Email sent, email opened, email clicked, manual ticket created
+
+---
+
+## Event Schema Registry
+
+Complete mapping of Kafka topics to event types, schemas, producers, and consumers.
+
+### auth_events
+
+**Producers:** Organization Management & Authentication Service
+**Consumers:** Monitoring Engine, Analytics Service, Human Agent Management Service, Outbound Communication Service
+
+**Event Types:**
+
+1. **user_signed_up**
+```json
+{
+  "event_type": "user_signed_up",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "email": "user@example.com",
+  "user_type": "client",
+  "timestamp": "2025-10-06T10:00:00Z"
+}
+```
+
+2. **assisted_account_created**
+```json
+{
+  "event_type": "assisted_account_created",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "client_email": "client@example.com",
+  "created_by_agent_id": "uuid",
+  "created_by_agent_role": "sales_agent",
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "expires_at": "2025-11-04T10:30:00Z",
+  "timestamp": "2025-10-05T10:30:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Auto-assign client to creating agent
+- Outbound Communication: Send claim link email
+
+3. **assisted_account_claimed**
+```json
+{
+  "event_type": "assisted_account_claimed",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "email": "client@example.com",
+  "claim_token": "CLAIM-ABC123-XYZ789",
+  "claimed_at": "2025-10-10T09:15:00Z",
+  "timestamp": "2025-10-10T09:15:00Z"
+}
+```
+**Consumer Actions:**
+- Monitoring Engine: Track conversion metrics
+- Analytics: Update funnel statistics
+
+---
+
+### agent_events
+
+**Producers:** Human Agent Management Service
+**Consumers:** Analytics Service, Monitoring Engine, Organization Management Service
+
+**Event Types:**
+
+1. **client_assigned_to_agent**
+```json
+{
+  "event_type": "client_assigned_to_agent",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "agent_id": "uuid",
+  "agent_name": "Sam Peterson",
+  "agent_role": "sales_agent",
+  "assignment_type": "auto_on_assisted_signup",
+  "lifecycle_stage": "sales",
+  "timestamp": "2025-10-05T10:30:00Z"
+}
+```
+**Consumer Actions:**
+- Analytics: Track agent workload
+- Monitoring: Alert if agent capacity exceeded
+
+2. **handoff_initiated**
+```json
+{
+  "event_type": "handoff_initiated",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "from_agent_id": "uuid",
+  "from_role": "sales_agent",
+  "to_role": "onboarding_specialist",
+  "lifecycle_stage_from": "sales",
+  "lifecycle_stage_to": "onboarding",
+  "context_notes": "Client signed proposal, needs technical onboarding for e-commerce integration",
+  "timestamp": "2025-10-15T14:00:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Queue handoff for acceptance by onboarding agents
+- Analytics: Track handoff latency
+
+3. **handoff_accepted**
+```json
+{
+  "event_type": "handoff_accepted",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "accepted_by_agent_id": "uuid",
+  "accepted_by_agent_name": "Rahul Kumar",
+  "accepted_at": "2025-10-15T15:00:00Z",
+  "timestamp": "2025-10-15T15:00:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Update client assignment, mark handoff complete
+- Outbound Communication: Send handoff confirmation email to client
+
+4. **handoff_rejected**
+```json
+{
+  "event_type": "handoff_rejected",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "rejected_by_agent_id": "uuid",
+  "reason": "at_capacity",
+  "reassignment_queued": true,
+  "timestamp": "2025-10-15T15:00:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Auto-reassign to next available agent
+
+5. **specialist_invited**
+```json
+{
+  "event_type": "specialist_invited",
+  "invitation_id": "uuid",
+  "client_id": "uuid",
+  "invited_by_agent_id": "uuid",
+  "specialist_role": "sales_specialist",
+  "invitation_reason": "upsell_voice_addon",
+  "timestamp": "2025-10-20T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Queue invitation for specialist acceptance
+- Analytics: Track upsell opportunities
+
+---
+
+### prd_events
+
+**Producers:** PRD Builder Engine Service
+**Consumers:** Automation Engine, Analytics Service, Monitoring Engine
+
+**Event Types:**
+
+1. **prd_created**
+```json
+{
+  "event_type": "prd_created",
+  "prd_id": "uuid",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "prd_title": "E-commerce Payment Automation",
+  "status": "draft",
+  "timestamp": "2025-10-16T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- None (informational)
+
+2. **prd_approved**
+```json
+{
+  "event_type": "prd_approved",
+  "prd_id": "uuid",
+  "organization_id": "uuid",
+  "approved_by_user_id": "uuid",
+  "timestamp": "2025-10-17T14:00:00Z"
+}
+```
+**Consumer Actions:**
+- **Automation Engine: Trigger YAML config generation** (CRITICAL FLOW)
+- Analytics: Track PRD approval rate
+
+---
+
+### config_events
+
+**Producers:** Automation Engine, Configuration Management Service
+**Consumers:** Agent Orchestration Service, Voice Agent Service, Monitoring Engine
+
+**Event Types:**
+
+1. **config_generated**
+```json
+{
+  "event_type": "config_generated",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "prd_id": "uuid",
+  "status": "pending_deployment",
+  "missing_tools": ["initiate_refund", "check_inventory"],
+  "missing_integrations": ["shopify_api"],
+  "timestamp": "2025-10-17T15:00:00Z"
+}
+```
+**Consumer Actions:**
+- Automation Engine: Create GitHub issues for missing tools/integrations
+- Monitoring: Track config generation success rate
+
+2. **config_updated**
+```json
+{
+  "event_type": "config_updated",
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "updated_by": "github_issue_closed_webhook",
+  "changes": ["tool_attached:initiate_refund"],
+  "hot_reload_required": true,
+  "timestamp": "2025-10-20T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- **Agent Orchestration: Hot-reload config for active sessions** (CRITICAL FLOW)
+- **Voice Agent: Hot-reload config for new calls** (CRITICAL FLOW)
+
+---
+
+### outreach_events
+
+**Producers:** Outbound Communication Service
+**Consumers:** Human Agent Management Service, Analytics Service
+
+**Event Types:**
+
+1. **email_sent**
+```json
+{
+  "event_type": "email_sent",
+  "email_id": "uuid",
+  "recipient_email": "client@example.com",
+  "template_id": "research_completed_outreach",
+  "sent_at": "2025-10-06T10:30:00Z",
+  "timestamp": "2025-10-06T10:30:00Z"
+}
+```
+**Consumer Actions:**
+- Analytics: Track email delivery metrics
+
+2. **manual_outreach_ticket_created**
+```json
+{
+  "event_type": "manual_outreach_ticket_created",
+  "ticket_id": "uuid",
+  "client_id": "uuid",
+  "assigned_agent_id": "uuid",
+  "reason": "research_completed_no_auto_email",
+  "timestamp": "2025-10-06T10:30:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Add ticket to agent's queue
+
+---
 
 ### Synchronous REST (Secondary)
 

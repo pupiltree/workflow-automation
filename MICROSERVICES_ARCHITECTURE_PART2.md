@@ -1628,7 +1628,621 @@ Topic: config_reload
 
 ---
 
-*Due to length constraints, the remaining microservices (8-15) will be documented in MICROSERVICES_ARCHITECTURE_PART3.md*
+## 16. LLM Gateway Service
+
+#### Objectives
+- **Primary Purpose**: Centralized LLM inference with model routing, semantic caching, token monitoring, and cost optimization across all AI-powered services
+- **Business Value**: Reduces LLM costs by 40-60% through caching and smart routing, provides unified interface for multi-provider support, enables real-time cost tracking
+- **Scope Boundaries**:
+  - **Does**: Route requests to optimal models, cache semantically similar prompts, track token usage, provide fallback mechanisms, support streaming responses
+  - **Does Not**: Train models, fine-tune models, manage model deployment infrastructure
+
+#### Requirements
+
+**Functional Requirements:**
+1. Multi-provider support (OpenAI GPT-4/3.5, Anthropic Claude, Google Gemini, Azure OpenAI)
+2. Semantic caching with similarity threshold (e.g., 95% similar → cache hit)
+3. Model routing based on complexity, cost, latency requirements
+4. Token usage tracking per tenant, per service, per model
+5. Streaming response support for real-time conversations
+6. Fallback routing when primary model unavailable
+7. Rate limiting per provider API limits
+8. Cost budgeting and alerting
+
+**Non-Functional Requirements:**
+- Inference latency: <500ms P95 (excluding model processing time)
+- Cache hit rate: >40% (target 60%)
+- Support 10,000+ requests/second
+- 99.99% uptime (critical for all AI workflows)
+- Cost reduction: 40-60% vs. direct API calls
+
+**Dependencies:**
+- Agent Orchestration Service (primary consumer)
+- Voice Agent Service (real-time inference)
+- PRD Builder (document generation)
+- Demo Generator (content creation)
+- Redis (semantic cache storage)
+- Analytics Service (cost tracking)
+
+**Data Storage:**
+- Redis: Semantic cache (prompt embeddings + responses), rate limiting counters
+- PostgreSQL: Token usage logs, cost attribution per tenant
+- TimescaleDB: Time-series cost analytics, usage trends
+
+#### Features
+
+**Must-Have:**
+1. ✅ Multi-provider routing (OpenAI, Anthropic, Google)
+2. ✅ Semantic caching with embedding-based similarity
+3. ✅ Token usage tracking (per tenant, per service, per model)
+4. ✅ Streaming response support (SSE)
+5. ✅ Automatic fallback routing on provider failures
+6. ✅ Cost budgeting with alerts (daily/monthly limits)
+7. ✅ Model selection API (cheap, balanced, premium)
+8. ✅ Real-time cost dashboard
+
+**Nice-to-Have:**
+9. 🔄 Fine-tuned model deployment
+10. 🔄 A/B testing different models
+11. 🔄 Prompt optimization suggestions
+12. 🔄 Cost forecasting based on usage patterns
+
+#### API Specification
+
+**1. Chat Completion (Routed)**
+```http
+POST /api/v1/llm/chat
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+X-Service-Name: agent_orchestration
+Content-Type: application/json
+
+Request Body:
+{
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the capital of France?"}
+  ],
+  "model_preference": "balanced",  // cheap | balanced | premium
+  "max_tokens": 500,
+  "temperature": 0.7,
+  "stream": false,
+  "enable_cache": true
+}
+
+Response (200 OK):
+{
+  "id": "chatcmpl-uuid",
+  "model_used": "gpt-3.5-turbo",  // Actual model routed to
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 8,
+    "total_tokens": 33,
+    "estimated_cost_usd": 0.000066
+  },
+  "cache_hit": false,
+  "latency_ms": 420
+}
+```
+
+**2. Streaming Chat Completion**
+```http
+POST /api/v1/llm/chat
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "messages": [...],
+  "model_preference": "premium",
+  "stream": true
+}
+
+Response (200 OK - Server-Sent Events):
+data: {"delta": {"content": "The"}, "model_used": "gpt-4"}
+data: {"delta": {"content": " capital"}}
+data: {"delta": {"content": " of France is Paris."}}
+data: {"usage": {"total_tokens": 33, "estimated_cost_usd": 0.00099}, "finish_reason": "stop"}
+data: [DONE]
+```
+
+**3. Generate Embeddings**
+```http
+POST /api/v1/llm/embeddings
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "input": "Semantic search query text",
+  "model": "text-embedding-3-small"  // or text-embedding-ada-002
+}
+
+Response (200 OK):
+{
+  "embeddings": [[0.023, -0.015, 0.042, ...]],  // 1536-dim vector
+  "model_used": "text-embedding-3-small",
+  "usage": {
+    "prompt_tokens": 5,
+    "total_tokens": 5,
+    "estimated_cost_usd": 0.000001
+  }
+}
+```
+
+**4. Get Model Availability**
+```http
+GET /api/v1/llm/models
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "models": [
+    {
+      "id": "gpt-4",
+      "provider": "openai",
+      "tier": "premium",
+      "status": "available",
+      "cost_per_1k_tokens": 0.03,
+      "max_tokens": 8192,
+      "supports_streaming": true
+    },
+    {
+      "id": "gpt-3.5-turbo",
+      "provider": "openai",
+      "tier": "cheap",
+      "status": "available",
+      "cost_per_1k_tokens": 0.002,
+      "max_tokens": 4096,
+      "supports_streaming": true
+    },
+    {
+      "id": "claude-3-opus",
+      "provider": "anthropic",
+      "tier": "premium",
+      "status": "unavailable",  // Fallback routing active
+      "cost_per_1k_tokens": 0.015,
+      "max_tokens": 200000,
+      "supports_streaming": true
+    }
+  ]
+}
+```
+
+**5. Get Cost Analytics**
+```http
+GET /api/v1/llm/analytics/costs
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Query Parameters:
+- start_date: 2025-10-01
+- end_date: 2025-10-06
+- group_by: service | model | day
+
+Response (200 OK):
+{
+  "total_cost_usd": 142.35,
+  "total_tokens": 4750000,
+  "cache_hit_rate": 0.58,
+  "cost_saved_usd": 95.20,
+  "breakdown": [
+    {
+      "service_name": "agent_orchestration",
+      "model": "gpt-3.5-turbo",
+      "total_tokens": 2100000,
+      "cost_usd": 42.00,
+      "requests": 12450
+    },
+    {
+      "service_name": "voice_agent",
+      "model": "gpt-4",
+      "total_tokens": 850000,
+      "cost_usd": 76.50,
+      "requests": 3200
+    }
+  ],
+  "daily_trend": [
+    {"date": "2025-10-01", "cost_usd": 22.40, "tokens": 750000},
+    {"date": "2025-10-02", "cost_usd": 28.75, "tokens": 960000}
+  ]
+}
+```
+
+#### Model Routing Logic
+
+**Model Selection Strategy:**
+```
+User requests "cheap":
+  → Route to gpt-3.5-turbo (OpenAI) or Claude Instant (Anthropic)
+  → Fallback: Gemini Pro (Google)
+
+User requests "balanced":
+  → Route to gpt-4-turbo (OpenAI) or Claude Sonnet (Anthropic)
+  → Fallback: gpt-3.5-turbo
+
+User requests "premium":
+  → Route to gpt-4 (OpenAI) or Claude Opus (Anthropic)
+  → Fallback: gpt-4-turbo
+```
+
+**Semantic Caching:**
+```
+1. Generate embedding for incoming prompt
+2. Search Redis for similar embeddings (cosine similarity > 0.95)
+3. If cache hit:
+   a. Return cached response
+   b. Log cache hit, save cost
+   c. Increment cache_hit_rate metric
+4. If cache miss:
+   a. Call LLM provider
+   b. Store embedding + response in Redis (TTL: 24 hours)
+   c. Return response
+```
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Platform Engineer**
+   - Role: Monitors LLM costs, adjusts routing logic, manages API keys
+   - Access: Cost dashboards, model configuration
+   - Permissions: admin:llm_gateway, manage:api_keys, configure:routing
+   - Workflows: Reviews daily cost reports, adjusts budgets, optimizes caching
+
+**AI Agents:**
+
+1. **Cost Optimization Agent**
+   - Responsibility: Analyzes usage patterns, suggests model downgrades, identifies cache opportunities
+   - Tools: Analytics queries, cost calculators, usage pattern detectors
+   - Autonomy: Recommendations only, human approval required for routing changes
+   - Escalation: Alerts Platform Engineer when costs exceed budget
+
+2. **Fallback Routing Agent**
+   - Responsibility: Monitors provider health, switches to backup providers on failures
+   - Tools: Health check APIs, circuit breakers, retry logic
+   - Autonomy: Fully autonomous
+   - Escalation: Alerts on sustained provider outages (>5 minutes)
+
+---
+
+## 17. RAG Pipeline Service
+
+#### Objectives
+- **Primary Purpose**: Retrieval-Augmented Generation for knowledge injection across conversations, demos, and PRDs using vector search and graph-based reasoning
+- **Business Value**: Enables AI to leverage historical knowledge (village knowledge), improves response accuracy by 40%, reduces hallucinations
+- **Scope Boundaries**:
+  - **Does**: Ingest documents into vector DB, perform semantic search, rank results, inject context into LLM prompts, support GraphRAG
+  - **Does Not**: Generate responses (LLM Gateway does), train embedding models, manage document storage
+
+#### Requirements
+
+**Functional Requirements:**
+1. Document ingestion with chunking and embedding generation
+2. Semantic search across multi-tenant namespaces (Qdrant)
+3. Hybrid search (vector + keyword + graph traversal)
+4. Context ranking and relevance scoring
+5. Multi-hop reasoning with Neo4j graph traversal (GraphRAG)
+6. Knowledge base management (add, update, delete documents)
+7. Metadata filtering (date, source, document type)
+
+**Non-Functional Requirements:**
+- Search latency: <200ms P95
+- Support 10,000+ documents per tenant
+- Ingestion throughput: 1000 documents/hour
+- 99.9% uptime
+- Multi-tenant namespace isolation (zero data leakage)
+
+**Dependencies:**
+- LLM Gateway (embedding generation)
+- Agent Orchestration Service (primary consumer)
+- PRD Builder (village knowledge retrieval)
+- Qdrant (vector storage)
+- Neo4j (knowledge graph)
+
+**Data Storage:**
+- Qdrant: Vector embeddings with namespace-per-tenant isolation
+- Neo4j: Knowledge graphs (entities, relationships, concepts)
+- PostgreSQL: Document metadata, ingestion logs, tenant namespaces
+- S3: Original documents (PDF, markdown, text)
+
+#### Features
+
+**Must-Have:**
+1. ✅ Document ingestion with automatic chunking
+2. ✅ Semantic vector search (Qdrant)
+3. ✅ Multi-tenant namespace isolation
+4. ✅ Metadata filtering (date, source, type)
+5. ✅ Context ranking by relevance
+6. ✅ GraphRAG (Neo4j traversal for multi-hop reasoning)
+7. ✅ Knowledge base CRUD operations
+
+**Nice-to-Have:**
+8. 🔄 Automatic document summarization
+9. 🔄 Entity extraction and knowledge graph auto-population
+10. 🔄 Citation generation (source tracking)
+
+#### API Specification
+
+**1. Query Knowledge Base**
+```http
+POST /api/v1/rag/query
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "query": "How do other clients handle payment failures in e-commerce workflows?",
+  "namespace": "village_knowledge",  // tenant-specific namespace
+  "top_k": 5,
+  "filters": {
+    "document_type": ["prd", "demo"],
+    "industry": "e-commerce",
+    "date_range": {
+      "start": "2024-01-01",
+      "end": "2025-10-06"
+    }
+  },
+  "enable_graph_rag": true  // Use Neo4j for multi-hop reasoning
+}
+
+Response (200 OK):
+{
+  "results": [
+    {
+      "content": "For e-commerce payment failures, most clients implement a 3-step retry workflow...",
+      "score": 0.92,
+      "metadata": {
+        "source": "acme-corp-prd",
+        "document_type": "prd",
+        "industry": "e-commerce",
+        "created_at": "2024-08-15"
+      },
+      "chunk_id": "uuid"
+    },
+    {
+      "content": "Payment failure handling best practices include email notifications...",
+      "score": 0.87,
+      "metadata": {
+        "source": "demo-shopify-integration",
+        "document_type": "demo",
+        "industry": "e-commerce",
+        "created_at": "2024-09-20"
+      },
+      "chunk_id": "uuid"
+    }
+  ],
+  "graph_insights": [
+    {
+      "entity": "payment_retry_workflow",
+      "related_concepts": ["email_notification", "fallback_payment_method", "fraud_detection"],
+      "confidence": 0.85
+    }
+  ],
+  "latency_ms": 145
+}
+```
+
+**2. Ingest Document**
+```http
+POST /api/v1/rag/ingest
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "document_id": "prd-acme-corp-2025",
+  "content": "# PRD: Acme Corp E-commerce Automation\n\n## Payment Processing...",
+  "namespace": "village_knowledge",
+  "metadata": {
+    "document_type": "prd",
+    "industry": "e-commerce",
+    "client_id": "uuid",
+    "created_at": "2025-10-01"
+  },
+  "chunking_strategy": "semantic",  // semantic | fixed_size | paragraph
+  "chunk_size": 500
+}
+
+Response (202 Accepted):
+{
+  "job_id": "uuid",
+  "status": "processing",
+  "estimated_completion": "2025-10-06T10:35:00Z",
+  "chunks_to_process": 42
+}
+```
+
+**3. Get Ingestion Status**
+```http
+GET /api/v1/rag/ingest/{job_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "job_id": "uuid",
+  "status": "completed",
+  "chunks_processed": 42,
+  "chunks_total": 42,
+  "embeddings_generated": 42,
+  "graph_entities_extracted": 18,
+  "completed_at": "2025-10-06T10:33:00Z",
+  "namespace": "village_knowledge"
+}
+```
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Platform Engineer**
+   - Role: Manages knowledge bases, monitors ingestion jobs, optimizes search performance
+   - Access: All namespaces, ingestion logs, performance metrics
+   - Permissions: admin:rag_pipeline, manage:namespaces, configure:search
+   - Workflows: Reviews knowledge quality, tunes chunk sizes, manages graph schemas
+
+**AI Agents:**
+
+1. **Document Chunking Agent**
+   - Responsibility: Splits documents into optimal chunks, preserves context boundaries
+   - Tools: Semantic splitters, paragraph detectors, token counters
+   - Autonomy: Fully autonomous
+   - Escalation: Alerts on documents that cannot be chunked (malformed format)
+
+2. **Knowledge Graph Builder Agent**
+   - Responsibility: Extracts entities and relationships, populates Neo4j graph
+   - Tools: NER models, relation extractors, graph writers
+   - Autonomy: Fully autonomous
+   - Escalation: Manual review for low-confidence entity extractions (<70%)
+
+---
+
+## 18. Outbound Communication Service
+
+#### Objectives
+- **Primary Purpose**: Automated and manual email/SMS outreach for sales, onboarding reminders, claim links, and customer success communications
+- **Business Value**: Automates 80% of outreach emails, tracks engagement metrics, enables sales agents to focus on high-value conversations
+- **Scope Boundaries**:
+  - **Does**: Send emails/SMS, track opens/clicks, manage templates, create manual outreach tickets, schedule campaigns
+  - **Does Not**: Generate email content (AI does), make phone calls (Voice Agent does), manage CRM data (CRM Integration does)
+
+#### Requirements
+
+**Functional Requirements:**
+1. Automated email sending triggered by events (research_completed, account_claimed, etc.)
+2. Email template management with variable substitution
+3. Manual outreach ticket system for sales agents
+4. Email engagement tracking (opens, clicks, replies)
+5. SMS notifications for high-priority alerts
+6. Campaign scheduling and drip sequences
+7. Unsubscribe management and compliance (CAN-SPAM, GDPR)
+
+**Non-Functional Requirements:**
+- Email delivery latency: <5 seconds
+- Deliverability rate: >95%
+- Support 100,000+ emails/day
+- SMS delivery: <10 seconds
+- 99.9% uptime
+
+**Dependencies:**
+- Research Engine (consumes research_completed events)
+- Organization Management (consumes assisted_account_created events)
+- Human Agent Management (manual ticket assignment)
+- SendGrid (email delivery)
+- Twilio (SMS delivery)
+
+**Data Storage:**
+- PostgreSQL: Email templates, outreach tickets, engagement logs, unsubscribe lists
+- Redis: Rate limiting, email queue
+- S3: Email attachments
+
+#### API Specification
+
+**1. Send Automated Email**
+```http
+POST /api/v1/outreach/send-email
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "template_id": "research_completed_outreach",
+  "recipient_email": "client@example.com",
+  "variables": {
+    "client_name": "Jane Smith",
+    "company_name": "Example Corp",
+    "research_summary": "We analyzed your industry and identified 3 automation opportunities...",
+    "claim_link": "https://app.workflow.com/claim/CLAIM-ABC123"
+  },
+  "scheduled_at": null,  // Send immediately, or ISO timestamp for scheduling
+  "track_engagement": true
+}
+
+Response (200 OK):
+{
+  "email_id": "uuid",
+  "status": "sent",
+  "sent_at": "2025-10-06T10:30:00Z",
+  "tracking_enabled": true,
+  "estimated_delivery": "2025-10-06T10:30:05Z"
+}
+
+Event Published to Kafka:
+Topic: outreach_events
+{
+  "event_type": "email_sent",
+  "email_id": "uuid",
+  "recipient_email": "client@example.com",
+  "template_id": "research_completed_outreach",
+  "sent_at": "2025-10-06T10:30:00Z"
+}
+```
+
+**2. Create Manual Outreach Ticket**
+```http
+POST /api/v1/outreach/tickets
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "assigned_agent_id": "uuid",
+  "ticket_type": "manual_email",  // manual_email | phone_call | linkedin_message
+  "reason": "research_completed_no_auto_email",
+  "notes": "Client requires custom introduction due to previous relationship",
+  "priority": "high"
+}
+
+Response (201 Created):
+{
+  "ticket_id": "uuid",
+  "status": "open",
+  "assigned_agent": {
+    "agent_id": "uuid",
+    "agent_name": "Sam Peterson",
+    "agent_role": "sales_agent"
+  },
+  "created_at": "2025-10-06T10:30:00Z",
+  "due_date": "2025-10-07T18:00:00Z"
+}
+```
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Sales Agent**
+   - Role: Handles manual outreach tickets, reviews engagement metrics
+   - Access: Assigned tickets, email templates, engagement dashboards
+   - Permissions: create:manual_tickets, send:emails, view:engagement
+   - Workflows: Reviews open tickets, sends custom emails, tracks responses
+
+**AI Agents:**
+
+1. **Email Trigger Agent**
+   - Responsibility: Listens to Kafka events, triggers automated emails
+   - Tools: Kafka consumers, email sender API, template renderer
+   - Autonomy: Fully autonomous
+   - Escalation: Creates manual ticket if email delivery fails 3+ times
+
+---
+
+*Continued in MICROSERVICES_ARCHITECTURE_PART3.md with services 8-15*
 
 **Remaining Services:**
 8. Agent Orchestration Service
