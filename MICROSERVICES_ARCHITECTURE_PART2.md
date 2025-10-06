@@ -1505,6 +1505,9 @@ Topic: config_reload
   "reload_required": true,
   "timestamp": "2025-10-12T10:00:05Z"
 }
+
+**Note on Hot-Reload Implementation:**
+The hot-reload mechanism uses version pinning to ensure in-progress conversations continue with their original config version while new conversations use the updated config. This prevents breaking changes mid-conversation. Implementation details including version pinning logic, conversation state tracking, and config caching strategy are documented in **MICROSERVICES_ARCHITECTURE_PART3.md** (Agent Orchestration Service, lines 410-583).
 ```
 
 **Rate Limiting:**

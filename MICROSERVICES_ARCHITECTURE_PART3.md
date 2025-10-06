@@ -1535,6 +1535,7 @@ Topic: config_events
 - `monitoring_events`: Incidents created, resolved
 - `escalation_events`: Human handoff triggered
 - `outreach_events`: Email sent, email opened, email clicked, manual ticket created
+- `research_events`: Research started, research completed, research failed
 
 ---
 

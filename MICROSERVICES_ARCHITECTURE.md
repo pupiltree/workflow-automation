@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into 16 specialized microservices, leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
+This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **18 specialized microservices** (Services 0, 0.5, 1-16), leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
 
 **Key Architecture Principles:**
 - Event-driven communication via Apache Kafka for loose coupling and scalability
@@ -819,19 +819,8 @@ Topic: auth_events
   "timestamp": "2025-10-05T10:30:00Z"
 }
 
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "client_assigned_to_agent",
-  "client_id": "uuid",
-  "organization_id": "uuid",
-  "agent_id": "uuid",
-  "agent_name": "Sam Peterson",
-  "agent_role": "sales_agent",
-  "assignment_type": "auto_on_assisted_signup",
-  "lifecycle_stage": "sales",
-  "timestamp": "2025-10-05T10:30:00Z"
-}
+**Note on Client Assignment:**
+The Organization Management Service publishes ONLY the `assisted_account_created` event above. The Human Agent Management Service (Service #2) consumes this event and performs the agent assignment logic, then publishes the `client_assigned_to_agent` event to the `agent_events` topic. This event-driven architecture separates authentication concerns from agent assignment concerns.
 ```
 
 **12. Get Assisted Account Details (Platform Admin or Sales Agent)**
