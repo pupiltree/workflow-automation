@@ -2325,7 +2325,7 @@ CREATE POLICY tenant_isolation_configs ON configurations
 CREATE TABLE config_change_log (
   change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   config_id UUID NOT NULL,
-  version VARCHAR(20) NOT NULL,
+  version INT NOT NULL,
   author_id UUID NOT NULL,
   author_type VARCHAR(20) NOT NULL,  -- 'client_user' | 'platform_agent' | 'ai_agent'
   author_email VARCHAR(255),
@@ -2355,8 +2355,8 @@ CREATE TABLE organization_member_config_permissions (
   updated_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(organization_id, user_id),
   INDEX idx_org_permissions (organization_id),
-  FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
-  FOREIGN KEY (user_id) REFERENCES auth.users(user_id)
+  FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 
 -- Conversational config sessions

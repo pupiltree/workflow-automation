@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **20 specialized microservices** (Services 0, 0.5, 1-20), leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
+This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **22 specialized microservices** (Services 0, 0.5, 1-20), leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
 
 **Key Architecture Principles:**
 - Event-driven communication via Apache Kafka for loose coupling and scalability
@@ -1319,7 +1319,7 @@ CREATE TABLE client_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL,  -- References client user_id from auth.users
   organization_id UUID NOT NULL REFERENCES organizations(id),
-  agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  agent_id UUID NOT NULL REFERENCES agent_profiles(id),
   assigned_role TEXT NOT NULL,  -- Which role is handling this client (sales_agent, onboarding_specialist, etc.)
   lifecycle_stage TEXT NOT NULL,  -- sales, onboarding, support, success
   assigned_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1334,9 +1334,9 @@ CREATE TABLE handoffs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL,
   organization_id UUID NOT NULL REFERENCES organizations(id),
-  from_agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  from_agent_id UUID NOT NULL REFERENCES agent_profiles(id),
   from_role TEXT NOT NULL,
-  to_agent_id UUID REFERENCES agent_profiles(agent_id),  -- NULL until accepted
+  to_agent_id UUID REFERENCES agent_profiles(id),  -- NULL until accepted
   to_role TEXT NOT NULL,
   lifecycle_stage_from TEXT NOT NULL,
   lifecycle_stage_to TEXT NOT NULL,
@@ -1357,8 +1357,8 @@ CREATE TABLE specialist_invitations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL,
   organization_id UUID NOT NULL REFERENCES organizations(id),
-  invited_by_agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
-  specialist_agent_id UUID REFERENCES agent_profiles(agent_id),  -- NULL until accepted
+  invited_by_agent_id UUID NOT NULL REFERENCES agent_profiles(id),
+  specialist_agent_id UUID REFERENCES agent_profiles(id),  -- NULL until accepted
   specialist_role TEXT NOT NULL,  -- sales_specialist, technical_specialist, etc.
   invitation_reason TEXT NOT NULL,  -- upsell, cross_sell, technical_consultation, iteration
   opportunity_type TEXT,  -- voice_addon, premium_tier, custom_integration, etc.
@@ -1372,7 +1372,7 @@ CREATE TABLE specialist_invitations (
 -- agent_activity_logs table (tracks all agent actions)
 CREATE TABLE agent_activity_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  agent_id UUID NOT NULL REFERENCES agent_profiles(agent_id),
+  agent_id UUID NOT NULL REFERENCES agent_profiles(id),
   client_id UUID,
   organization_id UUID REFERENCES organizations(id),
   action_type TEXT NOT NULL,  -- client_assigned, handoff_initiated, demo_created, ticket_resolved, etc.

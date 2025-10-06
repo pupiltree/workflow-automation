@@ -1704,7 +1704,7 @@ Topic: config_events
 }
 
 Hot-Reload Event Published:
-Topic: config_reload
+Topic: config_events
 {
   "event_type": "config_updated",
   "config_id": "uuid",
