@@ -2115,16 +2115,16 @@ Response (200 OK):
 
 1. **Sales Agent**
    - Role: Manages assisted signups, conducts demos, negotiates pricing, initiates handoffs
-   - Access: Assisted signup, research, demos, NDA, pricing, proposal
-   - Permissions: create:assisted_accounts, read:research, create:demos, approve:pricing, initiate:handoff
-   - Workflows: Create assisted account → Research → Demo → NDA → Pricing → Proposal → Handoff to Onboarding
+   - Access: Assisted signup, research, demos, NDA, PRD, pricing, proposal
+   - Permissions: create:assisted_accounts, read:research, create:demos, collaborate:prd, approve:pricing, initiate:handoff
+   - Workflows: Create assisted account → Research → Demo → NDA → PRD → Pricing → Proposal → Handoff to Onboarding
    - Multi-role: Can also be Sales Specialist (voice, enterprise, vertical-specific)
 
 2. **Onboarding Specialist**
-   - Role: Guides client through PRD creation, config setup, integration setup, initial launch
-   - Access: PRD builder, automation engine, configuration, all client data
-   - Permissions: read:all_client_data, collaborate:prd, review:configs, handoff:to_support
-   - Workflows: Accept handoff from Sales → PRD collaboration → Config review → Integration setup → Week 1 support → Handoff to Support + Success
+   - Role: Guides client through config review, integration setup, initial launch
+   - Access: PRD builder (read-only), automation engine, configuration, all client data
+   - Permissions: read:all_client_data, read:prd, review:configs, deploy:configs, handoff:to_support
+   - Workflows: Accept handoff from Sales (PRD already completed) → Config review → Integration setup → Week 1 support → Handoff to Support + Success
    - Duration: Typically 1-2 weeks per client
 
 3. **Support Specialist**
@@ -2211,6 +2211,10 @@ Response (200 OK):
 7. Automated report generation with actionable insights
 8. Data enrichment via third-party APIs (Clearbit, Apollo, ZoomInfo)
 9. Duplicate detection and data deduplication
+10. **Legal data collection**: Client's registered business address for NDA template population
+11. **Volume metrics collection**: Current and historical chat volume, call volume, website traffic
+12. **Marketing intelligence**: Google Ads campaigns via Google Ads Transparency Center, Meta (Facebook/Instagram) ad campaigns via Meta Ads Library
+13. **Business volume prediction**: AI-powered prediction of actual chat/call volumes based on collected data to assess client prioritization and resource investment
 
 **Non-Functional Requirements:**
 - Research completion within 24-48 hours per client
@@ -2231,9 +2235,11 @@ Response (200 OK):
   - Financial news: TechCrunch API, YourStory, Crunchbase, PitchBook
   - Data enrichment: Clearbit, Hunter.io
   - Web scraping: Bright Data, ScrapingBee proxy services
+  - **Marketing intelligence**: Google Ads Transparency Center API, Meta Ads Library API
+  - **Business registry data**: For registered business addresses (jurisdiction-specific APIs)
 
 **Data Storage:**
-- PostgreSQL: Research metadata, job status, findings summaries
+- PostgreSQL: Research metadata, job status, findings summaries, **business address**, **volume metrics** (chat, call, website traffic - current & historical), **predicted volumes**, **ad campaign data**
 - S3/Object Storage: Raw scraped data, screenshots, documents
 - Qdrant: Semantic search on research findings for retrieval
 
@@ -2261,10 +2267,13 @@ Response (200 OK):
 17. 🔄 Automated SWOT analysis generation
 
 **Feature Interactions:**
-- Research completion → Auto-send outbound email (if email available) OR create manual outreach ticket
-- Client feedback on research → Triggers demo generation with confirmed requirements
-- Findings feed into PRD Builder for context
+- Research completion → Auto-generate requirements draft with research findings summary
+- Requirements draft → Human agent (Sales/SDR) reviews and approves draft for sending
+- Draft approved → Send requirements form to client (presenting research findings for validation)
+- Client validates/corrects findings → Triggers demo generation with confirmed requirements
+- Findings feed into PRD Builder for context (business address for NDA, predicted volumes for pricing)
 - Competitive insights inform pricing model
+- Client corrections flagged for sales review if major discrepancies detected
 
 #### API Specification
 
@@ -2463,12 +2472,79 @@ Response (200 OK - JSON):
     "non_work_hours_coverage": "none",
     "workflow_analysis": "Email-based, manual routing, no automation"
   },
+  "business_data": {
+    "registered_address": {
+      "street": "123 Business Ave, Suite 400",
+      "city": "San Francisco",
+      "state": "CA",
+      "postal_code": "94105",
+      "country": "USA",
+      "source": "business_registry",
+      "verified": true
+    },
+    "volume_metrics": {
+      "chat_volume": {
+        "current_monthly": 1250,
+        "historical": [
+          {"month": "2024-09", "volume": 1100},
+          {"month": "2024-08", "volume": 980},
+          {"month": "2024-07", "volume": 850}
+        ],
+        "growth_trend": "+23% MoM"
+      },
+      "call_volume": {
+        "current_monthly": 420,
+        "historical": [
+          {"month": "2024-09", "volume": 380},
+          {"month": "2024-08", "volume": 350}
+        ],
+        "growth_trend": "+11% MoM"
+      },
+      "website_traffic": {
+        "monthly_visitors": 45000,
+        "bounce_rate": 42,
+        "avg_session_duration": "3m 45s"
+      }
+    },
+    "marketing_intelligence": {
+      "google_ads": {
+        "active_campaigns": 3,
+        "estimated_monthly_spend": "$12000-$15000",
+        "top_keywords": ["e-commerce automation", "chatbot for retail", "AI customer service"],
+        "geographic_targets": ["US", "Canada", "UK"],
+        "source": "google_ads_transparency_center"
+      },
+      "meta_ads": {
+        "active_campaigns": 5,
+        "platforms": ["Facebook", "Instagram"],
+        "estimated_monthly_spend": "$8000-$10000",
+        "ad_creative_themes": ["product_demo", "customer_testimonials", "limited_time_offers"],
+        "source": "meta_ads_library"
+      }
+    },
+    "predicted_volumes": {
+      "chat_volume_prediction": {
+        "predicted_monthly": 1400,
+        "confidence_score": 0.85,
+        "prediction_basis": ["historical_trend", "marketing_spend", "website_traffic", "seasonal_factors"],
+        "range": {"min": 1200, "max": 1600}
+      },
+      "call_volume_prediction": {
+        "predicted_monthly": 450,
+        "confidence_score": 0.82,
+        "prediction_basis": ["historical_trend", "business_hours_coverage", "google_maps_rating"],
+        "range": {"min": 400, "max": 500}
+      }
+    }
+  },
   "recommendations": [
     "Target decision makers: John Smith (CEO) and Jane Doe (VP Ops) for pilot discussions",
     "Leverage Series B funding news as conversation starter about scaling operations",
-    "Implement 24/7 chatbot for after-hours coverage",
+    "Implement 24/7 chatbot for after-hours coverage (predicted volume: 1400 chats/month supports ROI)",
     "Automate response routing to reduce 4hr response time to <15min",
-    "Add SMS/WhatsApp channels based on customer preferences"
+    "Add SMS/WhatsApp channels based on customer preferences",
+    "Business address verified for NDA generation: 123 Business Ave, Suite 400, San Francisco, CA 94105",
+    "Marketing spend indicates high-growth trajectory - prioritize for dedicated onboarding specialist"
   ]
 }
 
@@ -2893,13 +2969,19 @@ Response (200 OK):
    - Autonomy: Fully autonomous for Q&A
    - Escalation: None (read-only access to research data)
 
-5. **Outbound Email Generation Agent**
+5. **Volume Prediction Agent**
+   - Responsibility: Predicts actual chat/call volumes based on collected data (historical trends, marketing spend, website traffic, seasonal factors) to assess client prioritization and resource investment
+   - Tools: ML prediction models, time-series analysis, Google Ads/Meta Ads spend estimators, LLM for confidence scoring
+   - Autonomy: Fully autonomous for volume predictions
+   - Escalation: Flags low-confidence predictions (<0.70) for sales agent review
+
+6. **Outbound Email Generation Agent**
    - Responsibility: Generates personalized outbound emails from research findings and proposed demo scope
    - Tools: LLM (GPT-4), email templates, personalization engine, research data accessors
    - Autonomy: Fully autonomous for email generation and sending (if email available)
    - Escalation: Creates manual outreach ticket if no email found in research
 
-6. **Client Feedback Analysis Agent**
+7. **Client Feedback Analysis Agent**
    - Responsibility: Analyzes client feedback, extracts requirements, updates demo scope
    - Tools: LLM (GPT-4), sentiment analysis, requirement extractors
    - Autonomy: Fully autonomous for feedback analysis
@@ -3602,12 +3684,13 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 
 **Functional Requirements:**
 1. Generate NDAs from templates based on client business type and deal size
-2. Integrate with e-signature platforms (AdobeSign, DocuSign, HelloSign)
-3. Automated sending after pilot agreement in client meeting
-4. Track signature status with automated reminders
-5. Store executed NDAs with audit trail
-6. Support multi-party NDAs (client + subcontractors)
-7. Version control for NDA templates
+2. **Populate client's registered business address** from Research Engine data for legal accuracy
+3. Integrate with e-signature platforms (AdobeSign, DocuSign, HelloSign)
+4. Automated sending after pilot agreement in client meeting
+5. Track signature status with automated reminders
+6. Store executed NDAs with audit trail
+7. Support multi-party NDAs (client + subcontractors)
+8. Version control for NDA templates
 
 **Non-Functional Requirements:**
 - NDA generation: <2 minutes from trigger
@@ -3618,6 +3701,7 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 
 **Dependencies:**
 - Demo Generator (consumes demo_approved + client_agreed_pilot events)
+- **Research Engine** (retrieves client's registered business address for NDA template population)
 - Configuration Management (NDA templates, client business classifications)
 - Pricing Model Generator (triggers pricing calculation after NDA signing)
 - External APIs: AdobeSign, DocuSign, SendGrid (email delivery)
@@ -3646,7 +3730,7 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 
 **Feature Interactions:**
 - Pilot agreement in demo meeting → Auto-generates NDA
-- NDA signed → Triggers pricing model generation
+- NDA signed → Triggers PRD Builder session creation
 - NDA expiry approaching → Alerts sales team for renewal
 
 #### API Specification
@@ -3663,6 +3747,13 @@ Request Body:
   "business_type": "e-commerce",
   "deal_size_estimate": 250000,
   "template_id": "standard_saas_nda_v3",
+  "business_address": {
+    "street": "123 Business Ave, Suite 400",
+    "city": "San Francisco",
+    "state": "CA",
+    "postal_code": "94105",
+    "country": "USA"
+  },
   "signatories": [
     {
       "name": "John Smith",
@@ -3681,6 +3772,8 @@ Request Body:
   "effective_duration_months": 24,
   "auto_send": true
 }
+
+Note: The `business_address` is automatically populated from Research Engine data. The NDA Generation Agent retrieves the registered business address via GET /api/v1/research/jobs/{job_id}/report and extracts the verified business_data.registered_address fields.
 
 Response (201 Created):
 {
@@ -3989,8 +4082,9 @@ Topic: nda_events
 - Support multi-currency (USD, EUR, GBP, INR)
 
 **Dependencies:**
-- NDA Generator (consumes nda_fully_signed event)
-- PRD Builder (provides use case complexity for pricing)
+- **PRD Builder** (consumes prd_approved event to trigger pricing generation)
+- **PRD Builder** (provides use case complexity, volume requirements, and technical scope for accurate pricing)
+- **Research Engine** (provides predicted volumes for pricing tier recommendations)
 - Financial Cost Module (Ashay's module for cost calculations)
 - Proposal Generator (passes pricing data for inclusion)
 
@@ -4018,7 +4112,9 @@ Topic: nda_events
 12. 🔄 Multi-year contract discounting
 
 **Feature Interactions:**
+- PRD approved → Triggers pricing model generation (consumes prd_approved event)
 - Use case complexity from PRD → Determines base pricing tier
+- Predicted volumes from Research Engine → Informs tier recommendations
 - Cost module integration → Ensures margin targets met
 - Pricing approval → Triggers proposal generation
 
@@ -4490,8 +4586,8 @@ Response (200 OK):
 12. 🔄 Integration with legal review platforms (LegalSifter)
 
 **Feature Interactions:**
+- PRD approved → Auto-populates technical scope section in proposal
 - Pricing approval → Auto-populates proposal pricing section
-- PRD completion → Auto-populates technical scope section
 - Proposal finalization → Triggers e-signature workflow
 
 #### API Specification

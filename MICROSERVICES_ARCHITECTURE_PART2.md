@@ -33,9 +33,11 @@
 - Multi-client knowledge isolation (no data leakage)
 
 **Dependencies:**
-- Proposal Generator (consumes proposal_signed event)
+- **NDA Generator** (consumes nda_fully_signed event to trigger PRD session)
+- **Demo Generator** (demo data provides use case context for PRD)
+- **Research Engine** (volume predictions inform PRD volume requirements)
 - Agent Orchestration Service (village knowledge retrieval)
-- Automation Engine (triggers YAML config generation)
+- **Pricing Model Generator** (PRD approval triggers pricing generation via prd_approved event)
 - Analytics Service (historical KPI data for benchmarking)
 
 **Data Storage:**
@@ -67,11 +69,13 @@
 16. 🔄 ROI calculator based on automation metrics
 
 **Feature Interactions:**
-- Proposal signing → Auto-triggers PRD session
-- PRD approval → Triggers automation engine YAML generation
+- NDA signing → Auto-triggers PRD session (consumes nda_fully_signed event)
+- PRD approval → Triggers pricing model generation (publishes prd_approved event to prd_events topic)
+- Pricing completion → Proposal generation uses both PRD and pricing data
 - Village knowledge → Suggests objectives client didn't request
 - Help button clicked → Generates shareable code → Publishes help_requested event → Human agent joins → Real-time collaboration begins
 - Collaboration ended → Session resumes with AI PRD builder → Client continues independently
+- Requirements form data → Validates client-stated volumes against PRD technical requirements
 
 #### API Specification
 
@@ -1015,7 +1019,8 @@ Server → Client Events:
 - 99.9% config availability
 
 **Dependencies:**
-- PRD Builder (consumes prd_approved event)
+- **Proposal Generator** (consumes proposal_signed event to trigger YAML config generation)
+- **PRD Builder** (provides PRD data for config population)
 - Agent Orchestration Service (loads YAML configs for chatbot runtime)
 - Voice Agent Service (loads YAML configs for voicebot runtime)
 - Configuration Management Service (stores and distributes configs)
@@ -2132,6 +2137,10 @@ Response (200 OK):
 5. SMS notifications for high-priority alerts
 6. Campaign scheduling and drip sequences
 7. Unsubscribe management and compliance (CAN-SPAM, GDPR)
+8. **Requirements draft generation** - AI auto-generates draft from research findings for human review
+9. **Human approval workflow** - Sales agent reviews/approves requirements draft before sending to client
+10. **Requirements validation form** - Presents research findings to client for confirmation/corrections
+11. **Client feedback validation** - Compares client corrections against AI predictions, flags major discrepancies
 
 **Non-Functional Requirements:**
 - Email delivery latency: <5 seconds
@@ -2226,15 +2235,206 @@ Response (201 Created):
 }
 ```
 
+**3. Generate Requirements Draft (AI Auto-Generated)**
+```http
+POST /api/v1/outreach/requirements-draft/generate
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "research_job_id": "uuid"
+}
+
+Response (201 Created):
+{
+  "draft_id": "uuid",
+  "client_id": "uuid",
+  "research_summary": "Based on our research, Acme Corp is an e-commerce business with strong Instagram presence (15K followers, 3.2% engagement). Current customer service operates 9am-6pm with gaps in evening coverage.",
+  "predicted_volumes": {
+    "chat_volume_monthly": 1400,
+    "call_volume_monthly": 450,
+    "email_volume_monthly": 850,
+    "website_traffic_monthly": 45000,
+    "confidence_score": 0.85
+  },
+  "recommended_services": {
+    "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot", "Instagram chatbot"],
+    "voicebot_types": ["Phone call (inbound/outbound)"],
+    "rationale": "Instagram chatbot recommended due to high social engagement. Website chatbot for 24/7 coverage. Phone voicebot for existing call volume."
+  },
+  "status": "pending_review",
+  "created_at": "2025-10-06T10:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: outreach_events
+{
+  "event_type": "requirements_draft_generated",
+  "draft_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "research_job_id": "uuid",
+  "assigned_reviewer": "sales_agent_uuid",
+  "timestamp": "2025-10-06T10:00:00Z"
+}
+```
+
+**4. Approve Requirements Draft (Human Agent)**
+```http
+POST /api/v1/outreach/requirements-draft/{draft_id}/approve
+Authorization: Bearer {jwt_token}  // Sales Agent JWT
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "draft_id": "uuid",
+  "approved_by": "sales_agent_uuid",
+  "modifications": {
+    "research_summary": "Optional: Updated summary text if agent makes changes",
+    "recommended_services": {
+      "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot"]  // Agent removed Instagram
+    }
+  },
+  "recipient_email": "client@example.com",
+  "send_immediately": true,
+  "expires_in_hours": 72
+}
+
+Response (200 OK):
+{
+  "draft_id": "uuid",
+  "form_id": "uuid",  // Generated form ID for client submission
+  "status": "approved_and_sent",
+  "recipient_email": "client@example.com",
+  "form_url": "https://app.workflow.com/forms/requirements/{form_id}",
+  "sent_at": "2025-10-06T11:00:00Z",
+  "expires_at": "2025-10-09T11:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: outreach_events
+{
+  "event_type": "requirements_draft_approved",
+  "draft_id": "uuid",
+  "form_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "approved_by": "sales_agent_uuid",
+  "approved_at": "2025-10-06T11:00:00Z",
+  "sent_to_client": true,
+  "timestamp": "2025-10-06T11:00:00Z"
+}
+
+{
+  "event_type": "requirements_form_sent",
+  "form_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "draft_id": "uuid",
+  "recipient_email": "client@example.com",
+  "research_job_id": "uuid",
+  "sent_at": "2025-10-06T11:00:00Z",
+  "expires_at": "2025-10-09T11:00:00Z"
+}
+```
+
+**5. Submit Requirements Validation (Client Validates Research Findings)**
+```http
+POST /api/v1/outreach/forms/{form_id}/submit
+Authorization: Bearer {jwt_token}  // Client JWT
+Content-Type: application/json
+
+Request Body:
+{
+  "form_id": "uuid",
+  "client_id": "uuid",
+  "validation_response": {
+    "research_findings_accurate": true,  // Client confirms research is accurate
+    "volume_corrections": {
+      "chat_volume": 1200,  // Client corrects from predicted 1400
+      "call_volume": null  // null = agrees with prediction (450)
+    },
+    "service_confirmations": {
+      "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot"],  // Confirms 2 of 3 recommended
+      "voicebot_types": ["Phone call (inbound/outbound)"]  // Confirms recommendation
+    },
+    "additional_requirements": "Need integration with existing Zendesk ticketing system. Also require Spanish language support.",
+    "corrections_needed": "Our evening traffic is higher than research shows - we need 24/7 coverage prioritized."
+  }
+}
+
+Response (200 OK):
+{
+  "submission_id": "uuid",
+  "form_id": "uuid",
+  "status": "completed",
+  "validation_summary": {
+    "research_confirmed": true,
+    "corrections_provided": true,
+    "discrepancy_analysis": {
+      "chat_volume": {
+        "ai_predicted": 1400,
+        "client_corrected": 1200,
+        "discrepancy_percent": -14.3,
+        "flag_for_review": false  // <30% discrepancy
+      },
+      "call_volume": {
+        "ai_predicted": 450,
+        "client_confirmed": 450,  // Client agreed with prediction
+        "discrepancy_percent": 0,
+        "flag_for_review": false
+      }
+    },
+    "additional_requirements_captured": true
+  },
+  "next_step": "demo_generation",
+  "submitted_at": "2025-10-06T14:30:00Z"
+}
+
+Event Published to Kafka:
+Topic: client_events
+{
+  "event_type": "requirements_validation_completed",
+  "form_id": "uuid",
+  "draft_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "validation_response": {
+    "research_findings_accurate": true,
+    "volume_corrections": {
+      "chat_volume": 1200,  // Corrected from 1400
+      "call_volume": 450  // Confirmed prediction
+    },
+    "service_confirmations": {
+      "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot"],
+      "voicebot_types": ["Phone call (inbound/outbound)"]
+    },
+    "additional_requirements": "Need integration with existing Zendesk ticketing system. Also require Spanish language support.",
+    "corrections_needed": "Our evening traffic is higher than research shows - we need 24/7 coverage prioritized."
+  },
+  "discrepancy_analysis": {
+    "chat_volume_discrepancy": -14.3,
+    "call_volume_discrepancy": 0,
+    "flags_for_review": []  // Empty if all discrepancies <30%
+  },
+  "timestamp": "2025-10-06T14:30:00Z"
+}
+```
+
 #### Stakeholders and Agents
 
 **Human Stakeholders:**
 
 1. **Sales Agent**
-   - Role: Handles manual outreach tickets, reviews engagement metrics
-   - Access: Assigned tickets, email templates, engagement dashboards
-   - Permissions: create:manual_tickets, send:emails, view:engagement
-   - Workflows: Reviews open tickets, sends custom emails, tracks responses
+   - Role: Reviews and approves AI-generated requirements drafts, handles manual outreach tickets, reviews engagement metrics
+   - Access: Requirements draft review queue, assigned tickets, email templates, engagement dashboards
+   - Permissions: approve:requirements_drafts, create:manual_tickets, send:emails, view:engagement
+   - Workflows: Reviews requirements drafts from research, approves/modifies before sending to client, reviews open tickets, sends custom emails, tracks responses
 
 **AI Agents:**
 
@@ -2250,6 +2450,33 @@ Response (201 Created):
      - Renders email template with variables (client_name, company_name, claim_link)
      - Sends email via SendGrid API
      - Publishes `email_sent` event to `outreach_events` topic
+
+2. **Requirements Draft Generator Agent**
+   - Responsibility: Auto-generates requirements draft from research findings for human review
+   - Tools: Research Engine API, LLM (for summarization), Kafka consumers
+   - Autonomy: Fully autonomous for draft generation, requires human approval before sending
+   - Escalation: N/A - always waits for human approval
+   - **Event Handling**:
+     - Consumes `research_completed` from `research_events` topic
+     - Retrieves research report from Research Engine (GET /api/v1/research/jobs/{job_id}/report)
+     - Extracts: business context, predicted volumes, recommended service types
+     - Generates research summary using LLM
+     - Creates requirements draft with recommendations
+     - Publishes `requirements_draft_generated` event to `outreach_events` topic
+     - Assigns to sales agent for review
+
+3. **Requirements Validation Agent**
+   - Responsibility: Analyzes client validation responses, flags significant discrepancies from AI predictions
+   - Tools: Statistical analysis, discrepancy calculator, alert dispatcher
+   - Autonomy: Fully autonomous for analysis, flags for human review if variance >30%
+   - Escalation: Creates alert ticket for sales agent if high discrepancy detected or major corrections needed
+   - **Validation Logic**:
+     - Consumes `requirements_validation_completed` from `client_events` topic
+     - Compares client corrections vs AI predictions for each volume metric
+     - Calculates discrepancy percentage: ((corrected - predicted) / predicted) * 100
+     - Flags for review if absolute discrepancy >30%
+     - Captures additional_requirements and corrections_needed text
+     - Publishes validation results to Demo Generator for confirmed requirements
 
 ---
 

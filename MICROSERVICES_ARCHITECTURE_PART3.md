@@ -1725,8 +1725,9 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
 }
 ```
 **Consumer Actions:**
-- **Automation Engine: Trigger YAML config generation** (CRITICAL FLOW)
+- **Pricing Model Generator: Trigger pricing calculation** (NEW WORKFLOW - CRITICAL FLOW)
 - Analytics: Track PRD approval rate
+- Note: Automation Engine now triggers on proposal_signed event (not prd_approved)
 
 ---
 
@@ -1806,6 +1807,114 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
 ```
 **Consumer Actions:**
 - Human Agent Management: Add ticket to agent's queue
+
+3. **requirements_draft_generated** (NEW)
+```json
+{
+  "event_type": "requirements_draft_generated",
+  "draft_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "research_job_id": "uuid",
+  "research_summary": "Based on our research, Acme Corp is an e-commerce business...",
+  "predicted_volumes": {
+    "chat_volume_monthly": 1400,
+    "call_volume_monthly": 450,
+    "confidence_score": 0.85
+  },
+  "recommended_services": {
+    "chatbot_types": ["Website chatbot", "WhatsApp chatbot"],
+    "voicebot_types": ["Phone call (inbound/outbound)"]
+  },
+  "assigned_reviewer": "sales_agent_uuid",
+  "timestamp": "2025-10-06T10:00:00Z"
+}
+```
+**Consumer Actions:**
+- Human Agent Management: Create review task in sales agent's queue
+- Analytics: Track draft generation time from research completion
+
+4. **requirements_draft_approved** (NEW)
+```json
+{
+  "event_type": "requirements_draft_approved",
+  "draft_id": "uuid",
+  "form_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "approved_by": "sales_agent_uuid",
+  "approved_at": "2025-10-06T11:00:00Z",
+  "modifications_made": true,
+  "sent_to_client": true,
+  "timestamp": "2025-10-06T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Analytics: Track approval time, modification rate
+- Monitoring: Track draft-to-send conversion rate
+
+5. **requirements_form_sent** (NEW)
+```json
+{
+  "event_type": "requirements_form_sent",
+  "form_id": "uuid",
+  "draft_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "recipient_email": "client@example.com",
+  "research_job_id": "uuid",
+  "sent_at": "2025-10-06T11:00:00Z",
+  "expires_at": "2025-10-09T11:00:00Z",
+  "timestamp": "2025-10-06T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Analytics: Track form delivery and completion rates
+- Monitoring: Alert if form not completed within 72 hours
+
+---
+
+### client_events (UPDATED)
+
+**Producers:** Organization Management, PRD Builder, Demo Generator
+**Consumers:** Analytics Service, Human Agent Management Service
+
+**Event Types:**
+
+1. **requirements_validation_completed** (NEW - replaces requirements_form_completed)
+```json
+{
+  "event_type": "requirements_validation_completed",
+  "form_id": "uuid",
+  "draft_id": "uuid",
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "validation_response": {
+    "research_findings_accurate": true,
+    "volume_corrections": {
+      "chat_volume": 1200,
+      "call_volume": 450
+    },
+    "service_confirmations": {
+      "chatbot_types": ["Website chatbot (chat widget)", "WhatsApp chatbot"],
+      "voicebot_types": ["Phone call (inbound/outbound)"]
+    },
+    "additional_requirements": "Need Zendesk integration and Spanish language support.",
+    "corrections_needed": "Evening traffic is higher - need 24/7 coverage prioritized."
+  },
+  "discrepancy_analysis": {
+    "chat_volume_discrepancy": -14.3,
+    "call_volume_discrepancy": 0,
+    "flags_for_review": []
+  },
+  "timestamp": "2025-10-06T14:30:00Z"
+}
+```
+**Consumer Actions:**
+- **Demo Generator**: Use confirmed requirements and additional_requirements to generate demo (PRIMARY TRIGGER)
+- PRD Builder: Use validated volumes and service confirmations for technical requirements
+- Pricing Model Generator: Use corrected volumes for tier recommendations
+- Human Agent Management: Create review task if flags_for_review not empty or corrections_needed present
 
 ---
 
@@ -1969,7 +2078,15 @@ Organization Creation → organization_created event
   ↓
 Research Engine (auto-triggered) → research_completed event
   ↓
-Outbound Email → email_sent OR manual_outreach_ticket_created event
+AI Generates Requirements Draft → requirements_draft_generated event
+  ↓
+Human Agent Reviews/Approves Draft → requirements_draft_approved event
+  ↓
+Requirements Form Sent to Client → requirements_form_sent event
+  ↓
+Client Validates Research Findings → requirements_validation_completed event
+  ↓
+Outbound Email (if needed) → email_sent OR manual_outreach_ticket_created event
   ↓
 Client Feedback → feedback_received event
   ↓
@@ -1981,13 +2098,13 @@ NDA Generator → nda_generated event
   ↓
 Client Signs NDA → nda_fully_signed event
   ↓
+PRD Builder (with collaboration support) → prd_approved event
+  ↓
 Pricing Model Generator → pricing_generated event
   ↓
 Proposal Generator → proposal_generated event
   ↓
 Client Signs Proposal → proposal_signed event
-  ↓
-PRD Builder (with collaboration support) → prd_approved event
   ↓
 Automation Engine → config_generated event
   ↓
@@ -2009,6 +2126,14 @@ Claim Link Sent to Client → claim_link_sent event
   ↓
 Research Engine (auto-triggered by AI) → research_completed event
   ↓
+AI Generates Requirements Draft → requirements_draft_generated event
+  ↓
+Sales Agent Reviews/Approves Draft → requirements_draft_approved event
+  ↓
+Requirements Form Sent to Client → requirements_form_sent event
+  ↓
+Client Validates Research Findings → requirements_validation_completed event
+  ↓
 Sales Agent Prepares Demo/Data → assisted_account_access_granted event
   ↓
 Demo Generator (AI-assisted) → demo_generated event
@@ -2024,6 +2149,8 @@ Sales Meeting (Sales Agent facilitated) → demo_approved + pilot_agreed events
 NDA Generator (AI-generated, Sales Agent reviews) → nda_generated event
   ↓
 Client Signs NDA (Sales Agent follows up) → nda_fully_signed event
+  ↓
+PRD Builder (AI-driven, Sales Agent collaborates when needed) → prd_approved event
   ↓
 Pricing Model Generator (AI-generated) → pricing_generated event
   ↓
