@@ -6,11 +6,13 @@
 ## 8. Agent Orchestration Service
 
 #### Objectives
-- **Primary Purpose**: Core LangGraph-based orchestration engine that powers all chatbot/voicebot workflows using dynamic YAML configurations
-- **Business Value**: Enables multi-tenant agent deployment with configuration-driven behavior, supports 10,000+ concurrent conversations, 99.9% uptime
+- **Primary Purpose**: Core LangGraph-based orchestration engine that powers **chatbot workflows** using dynamic YAML configurations
+- **Business Value**: Enables multi-tenant chatbot deployment with configuration-driven behavior, supports 10,000+ concurrent conversations, 99.9% uptime
+- **Product Scope**: This service is **chatbot-specific** (product_type: chatbot). Voicebots use LiveKit framework instead (see Voice Agent Service).
+- **Architecture Reference**: Implements the two-node pattern from [LangGraph Customer Support Tutorial](https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/)
 - **Scope Boundaries**:
-  - **Does**: Load YAML configs, orchestrate multi-agent workflows, manage conversation state, execute tools, handle escalations
-  - **Does Not**: Generate configs (Automation Engine does), implement tools (developers do), manage voice infrastructure
+  - **Does**: Load YAML configs (with external integrations), orchestrate LangGraph chatbot workflows, manage conversation state, execute tools, handle escalations
+  - **Does Not**: Generate configs (Automation Engine does), implement tools (developers do), manage voice infrastructure (Voice Service does), power voicebots (separate LiveKit implementation)
 
 #### Requirements
 
@@ -68,6 +70,64 @@
 - Config hot-reload → Gracefully updates agent behavior mid-conversation
 - Tool execution failure → Fallback to alternative tool or escalate
 - PII detected → Auto-store with encryption, update user profile
+
+#### Chatbot LangGraph Architecture
+
+**Framework Pattern**: Two-node workflow following [LangGraph Customer Support Tutorial](https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/)
+
+**Core Components:**
+
+1. **StateGraph Implementation**
+   - **Agent Node**: LLM-powered decision making, tool selection, response generation
+   - **Tools Node**: Dynamic tool execution based on YAML config
+   - **Conditional Edges**: Routes between agent ↔ tools based on tool calls
+   - **Checkpointing**: PostgreSQL-backed state persistence for fault tolerance
+
+2. **State Schema (TypedDict)**
+   ```python
+   class ChatbotState(TypedDict):
+       messages: List[BaseMessage]
+       conversation_id: str
+       user_id: str
+       config_id: str
+       pii_collected: Dict[str, Any]
+       tool_history: List[ToolCall]
+       escalation_triggered: bool
+       checkpoint_id: str
+   ```
+
+3. **YAML Configuration Structure (Chatbot)**
+   ```yaml
+   product_type: chatbot  # Required: differentiates from voicebot
+   system_prompt: "You are a helpful customer support agent..."
+   tools:
+     - name: fetch_order_status
+       description: "Retrieves order status by order ID"
+       parameters: {...}
+     - name: initiate_refund
+       description: "Initiates refund process"
+       parameters: {...}
+   external_integrations:  # ONLY in chatbot configs (NOT voicebot)
+     - type: salesforce
+       credentials_ref: "salesforce_prod"
+       enabled: true
+     - type: stripe
+       credentials_ref: "stripe_live"
+       enabled: true
+   escalation_rules:
+     - trigger: "user_frustrated"
+       action: "human_handoff"
+   ```
+
+4. **Cross-Product Communication**
+   - **Use Case**: Medical prescription image during voice call
+   - **Flow**: Voicebot active → Chatbot receives image upload → Chatbot processes image silently (no conversational response) → Chatbot publishes `cross_product_image_processed` event → Voicebot receives event → Voicebot continues conversation with parsed prescription data
+   - **Implementation**: Kafka topic `cross_product_events` (see Event Schemas section)
+
+5. **Hot-Reload Mechanism**
+   - Kafka `config_events` topic triggers config refresh
+   - Version pinning prevents mid-conversation updates (waits for conversation end)
+   - New conversations immediately use latest config
 
 #### API Specification
 
@@ -642,11 +702,13 @@ Auto-rollback triggered within 60 seconds
 ## 9. Voice Agent Service
 
 #### Objectives
-- **Primary Purpose**: Real-time voice conversation handling using LiveKit infrastructure with sub-500ms latency
+- **Primary Purpose**: Real-time voice conversation handling using **LiveKit Agents framework** with sub-500ms latency
 - **Business Value**: Enables voice automation for phone support/sales, reduces call costs from $13/call to $2-3/call
+- **Product Scope**: This service is **voicebot-specific** (product_type: voicebot). Chatbots use LangGraph framework instead (see Agent Orchestration Service).
+- **Architecture**: Uses LiveKit VoicePipelineAgent (STT-LLM-TTS pipeline), NOT LangGraph. Shares conceptual agent+tools pattern but different implementation.
 - **Scope Boundaries**:
-  - **Does**: Handle voice calls, STT/TTS processing, LiveKit session management, SIP integration, voice-specific workflows
-  - **Does Not**: Generate configs (Automation Engine), implement business logic (Agent Orchestration does via YAML)
+  - **Does**: Handle voice calls, STT/TTS processing, LiveKit session management, SIP integration (Twilio/Telnyx), voicebot workflows with YAML-configured tools
+  - **Does Not**: Generate configs (Automation Engine), use LangGraph (chatbot-only), include external integrations in YAML (SIP endpoint provided separately)
 
 #### Requirements
 
@@ -654,7 +716,7 @@ Auto-rollback triggered within 60 seconds
 1. LiveKit-based voice session management
 2. STT integration (Deepgram Nova-3) with streaming
 3. TTS integration (ElevenLabs Flash v2.5) with low latency
-4. LangGraph workflow for voice (same as chatbot, YAML-driven)
+4. VoicePipelineAgent workflow (LiveKit framework, YAML-driven tools only)
 5. SIP integration for phone calls (Twilio/Telnyx)
 6. DTMF support for IVR navigation
 7. Hot transfer to human agents
@@ -696,6 +758,64 @@ Auto-rollback triggered within 60 seconds
 10. 🔄 Emotion detection from voice
 11. 🔄 Multi-language support
 12. 🔄 Voice biometrics authentication
+
+#### Voicebot LiveKit Architecture
+
+**Framework**: LiveKit Agents (Python SDK) - NOT LangGraph
+
+**Core Components:**
+
+1. **VoicePipelineAgent Implementation**
+   - **STT Pipeline**: Deepgram Nova-3 streaming transcription
+   - **LLM Integration**: Same LLM Gateway as chatbots, but optimized for voice latency
+   - **TTS Pipeline**: ElevenLabs Flash v2.5 with dual streaming
+   - **Turn Detection**: VAD (Voice Activity Detection) for <300ms latency
+   - **Agent Logic**: Shares conceptual agent+tools pattern with chatbots but implemented in LiveKit framework
+
+2. **LiveKit SIP Integration**
+   - **SIP Bridge**: LiveKit SIP server connects PSTN calls to LiveKit rooms
+   - **Providers**: Twilio (primary), Telnyx (failover)
+   - **Inbound Flow**: PSTN → Twilio SIP → LiveKit SIP Bridge → VoicePipelineAgent
+   - **Outbound Flow**: VoicePipelineAgent → LiveKit SIP Bridge → Twilio SIP → PSTN
+
+3. **YAML Configuration Structure (Voicebot)**
+   ```yaml
+   product_type: voicebot  # Required: differentiates from chatbot
+   system_prompt: "You are a helpful voice assistant..."
+   tools:
+     - name: fetch_account_info
+       description: "Retrieves account information"
+       parameters: {...}
+     - name: schedule_appointment
+       description: "Schedules an appointment"
+       parameters: {...}
+   # NO external_integrations field (unlike chatbot)
+   # SIP endpoint configured separately via SIP trunk provisioning
+   escalation_rules:
+     - trigger: "user_frustrated"
+       action: "human_transfer"
+   voice_config:
+     stt_provider: deepgram
+     tts_provider: elevenlabs
+     voice_id: "sarah_professional"
+     turn_detection_threshold_ms: 300
+   ```
+
+4. **Cross-Product Communication**
+   - **Use Case**: Medical prescription image uploaded during voice call
+   - **Flow**: Voicebot active on call → User uploads prescription image via chatbot widget → Chatbot processes image (OCR/LLM parsing) → Chatbot publishes `cross_product_image_processed` event → Voicebot receives event → Voicebot continues call: "I see you've uploaded a prescription for Amoxicillin 500mg..."
+   - **Implementation**: Kafka topic `cross_product_events` enables coordination
+   - **Key Constraint**: Chatbot does NOT send conversational responses when voicebot is active (silent processing only)
+
+5. **Key Differences from Chatbot**
+   | Aspect | Chatbot (LangGraph) | Voicebot (LiveKit) |
+   |--------|---------------------|-------------------|
+   | Framework | LangGraph | LiveKit Agents |
+   | State Management | StateGraph + Checkpointing | LiveKit room state |
+   | YAML Config | Includes `external_integrations` | NO `external_integrations` |
+   | SIP Integration | N/A | Twilio/Telnyx SIP trunks |
+   | Latency Target | <2s P95 | <500ms P95 |
+   | Tool Execution | Via LangGraph tools node | Via LiveKit agent callbacks |
 
 #### API Specification
 
@@ -1017,9 +1137,10 @@ Response (200 OK):
 
 **AI Agents:**
 
-1. **Voice Agent (LangGraph-based)**
-   - Responsibility: Conducts voice conversations, same logic as chatbot
-   - Tools: YAML-configured tools (same as Agent Orchestration)
+1. **Voice Agent (LiveKit-based)**
+   - Responsibility: Conducts voice conversations using VoicePipelineAgent
+   - Tools: YAML-configured tools (similar pattern to chatbot but LiveKit implementation)
+   - Framework: LiveKit Agents (NOT LangGraph)
    - Autonomy: Fully autonomous within config constraints
    - Escalation: Hot transfer triggered by config rules
 
@@ -1214,10 +1335,10 @@ Response (201 Created):
 ## 10. Configuration Management Service
 
 #### Objectives
-- **Primary Purpose**: Centralized configuration storage and hot-reload distribution for all microservices
-- **Business Value**: Enables dynamic behavior changes without deployments, supports feature flags, ensures config consistency
+- **Primary Purpose**: Centralized configuration storage, validation, and hot-reload distribution for chatbot and voicebot configurations
+- **Business Value**: Enables dynamic behavior changes without deployments, supports feature flags, ensures config consistency, validates product type differentiation
 - **Scope Boundaries**:
-  - **Does**: Store configs in S3, watch for changes, validate configs, propagate updates via Kafka, manage feature flags
+  - **Does**: Store configs in S3, watch for changes, validate configs (including product_type validation), propagate updates via Kafka, manage feature flags
   - **Does Not**: Generate configs (Automation Engine does), implement business logic
 
 #### Requirements
@@ -1322,13 +1443,24 @@ Response (200 OK):
   "errors": [],
   "warnings": ["Tool 'initiate_refund' not yet implemented"],
   "schema_version": "1.0",
-  "breaking_change_detected": false
+  "breaking_change_detected": false,
+  "product_type": "chatbot"  // or "voicebot"
 }
 
 Response (400 Bad Request - Validation Failed):
 {
   "valid": false,
   "errors": [
+    {
+      "field": "product_type",
+      "message": "Required field missing. Must be 'chatbot' or 'voicebot'",
+      "severity": "error"
+    },
+    {
+      "field": "external_integrations",
+      "message": "Field not allowed for product_type: voicebot",
+      "severity": "error"
+    },
     {
       "field": "system_prompt",
       "message": "Required field missing",
@@ -1424,8 +1556,13 @@ Topic: config_events
    - Escalation: Alerts on S3 bucket access failures
 
 2. **Schema Validator Agent**
-   - Responsibility: Validates YAML configs against JSON schema
+   - Responsibility: Validates YAML configs against JSON schema, enforces product type rules
    - Tools: JSON Schema validators, YAML parsers
+   - Validation Rules:
+     - product_type field required (chatbot | voicebot)
+     - chatbot configs MUST include external_integrations
+     - voicebot configs MUST NOT include external_integrations
+     - Both require system_prompt, tools, escalation_rules
    - Autonomy: Fully autonomous
    - Escalation: Blocks invalid configs from being saved
 
@@ -1531,6 +1668,7 @@ Topic: config_events
 - `config_events`: Config generated, deployed, hot-reloaded
 - `conversation_events`: Started, escalated, completed
 - `voice_events`: Call initiated, transferred, ended
+- `cross_product_events`: Voicebot paused, chatbot paused, image processed, data shared
 - `analytics_events`: KPIs calculated, experiments completed
 - `monitoring_events`: Incidents created, resolved
 - `escalation_events`: Human handoff triggered
@@ -1689,6 +1827,102 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
 **Consumer Actions:**
 - Human Agent Management: Queue invitation for specialist acceptance
 - Analytics: Track upsell opportunities
+
+---
+
+### cross_product_events
+
+**Producers:** Agent Orchestration Service (chatbot), Voice Agent Service (voicebot)
+**Consumers:** Agent Orchestration Service (chatbot), Voice Agent Service (voicebot)
+
+**Purpose:** Enables coordination between chatbot and voicebot products when both are active for the same user session.
+
+**Event Types:**
+
+1. **voicebot_session_started**
+```json
+{
+  "event_type": "voicebot_session_started",
+  "call_id": "uuid",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "phone_number": "+15551234567",
+  "config_id": "uuid",
+  "timestamp": "2025-10-11T11:00:00Z"
+}
+```
+**Consumer Actions:**
+- Agent Orchestration (chatbot): Pause conversational responses, enter silent processing mode
+- Analytics: Track multi-channel engagement
+
+2. **voicebot_session_ended**
+```json
+{
+  "event_type": "voicebot_session_ended",
+  "call_id": "uuid",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "duration_seconds": 295,
+  "timestamp": "2025-10-11T11:05:00Z"
+}
+```
+**Consumer Actions:**
+- Agent Orchestration (chatbot): Resume conversational responses if chatbot session active
+- Analytics: Calculate session overlap metrics
+
+3. **chatbot_image_processed**
+```json
+{
+  "event_type": "chatbot_image_processed",
+  "conversation_id": "uuid",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "image_type": "medical_prescription",
+  "extracted_data": {
+    "medication_name": "Amoxicillin",
+    "dosage": "500mg",
+    "frequency": "3 times daily",
+    "prescribing_doctor": "Dr. Sarah Johnson",
+    "prescription_date": "2025-10-11"
+  },
+  "processing_latency_ms": 1250,
+  "timestamp": "2025-10-11T11:02:30Z"
+}
+```
+**Consumer Actions:**
+- Voice Agent Service: Incorporate extracted data into voice conversation context
+- Voicebot responds: "I see you've uploaded a prescription for Amoxicillin 500mg, 3 times daily from Dr. Sarah Johnson. Would you like me to help you with a refill?"
+
+4. **chatbot_data_shared**
+```json
+{
+  "event_type": "chatbot_data_shared",
+  "conversation_id": "uuid",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "data_type": "form_submission",
+  "shared_data": {
+    "field_1": "value_1",
+    "field_2": "value_2"
+  },
+  "timestamp": "2025-10-11T11:03:00Z"
+}
+```
+**Consumer Actions:**
+- Voice Agent Service: Access shared form data during voice call
+
+**Use Case Example: Medical Prescription During Voice Call**
+
+**Scenario:** User is on voice call with healthcare voicebot, uploads prescription image via chatbot widget
+
+**Flow:**
+1. Voicebot active (voicebot_session_started published)
+2. Chatbot receives image upload
+3. Chatbot processes image silently (OCR + LLM parsing)
+4. Chatbot publishes chatbot_image_processed with extracted prescription data
+5. Voicebot receives event, adds data to conversation context
+6. Voicebot continues call: "I see you've uploaded a prescription for Amoxicillin 500mg..."
+7. Chatbot does NOT send conversational response (remains in silent mode until voicebot_session_ended)
 
 ---
 
