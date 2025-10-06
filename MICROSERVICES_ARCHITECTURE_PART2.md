@@ -2235,10 +2235,17 @@ Response (201 Created):
 **AI Agents:**
 
 1. **Email Trigger Agent**
-   - Responsibility: Listens to Kafka events, triggers automated emails
+   - Responsibility: Listens to Kafka events (auth_events, research_events, etc.), triggers automated emails
    - Tools: Kafka consumers, email sender API, template renderer
    - Autonomy: Fully autonomous
    - Escalation: Creates manual ticket if email delivery fails 3+ times
+   - **Event Handling**:
+     - Consumes `assisted_account_created` from `auth_events` topic
+     - Extracts `claim_token` from event payload
+     - Constructs `claim_link` as: `https://app.workflow.com/claim/{claim_token}`
+     - Renders email template with variables (client_name, company_name, claim_link)
+     - Sends email via SendGrid API
+     - Publishes `email_sent` event to `outreach_events` topic
 
 ---
 

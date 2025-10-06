@@ -1865,7 +1865,50 @@ Response (200 OK):
 }
 ```
 
-**9. Get Client Lifecycle Timeline**
+**9. Get Agent Permissions (For Kong API Gateway Authorization)**
+```http
+GET /api/v1/agents/{agent_id}/permissions
+Authorization: Bearer {internal_service_jwt}
+X-Internal-Service: kong
+
+Response (200 OK):
+{
+  "agent_id": "uuid",
+  "user_id": "uuid",
+  "primary_role": "sales_agent",
+  "all_roles": ["sales_agent", "onboarding_specialist"],
+  "permissions": {
+    "assisted_signup": ["create", "read", "update"],
+    "research_engine": ["read", "trigger"],
+    "demo_generator": ["read", "create", "approve"],
+    "prd_builder": ["read", "collaborate"],
+    "client_management": ["read", "update", "transfer"]
+  },
+  "capacity": {
+    "max_concurrent_clients": 15,
+    "current_workload": 8,
+    "available_capacity": 7
+  },
+  "status": "active",
+  "availability": "online"
+}
+
+Response (404 Not Found):
+{
+  "error": "agent_not_found",
+  "message": "Agent with ID {agent_id} does not exist"
+}
+
+Response (403 Forbidden):
+{
+  "error": "unauthorized",
+  "message": "Only Kong API Gateway can access this endpoint"
+}
+```
+
+**Note**: This endpoint is designed specifically for Kong API Gateway to check permissions during request authorization. It is NOT exposed to external clients and requires `X-Internal-Service: kong` header for authentication.
+
+**10. Get Client Lifecycle Timeline**
 ```http
 GET /api/v1/agents/clients/{client_id}/timeline
 Authorization: Bearer {jwt_token}

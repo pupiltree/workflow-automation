@@ -1220,7 +1220,214 @@ Response (201 Created):
   - **Does**: Store configs in S3, watch for changes, validate configs, propagate updates via Kafka, manage feature flags
   - **Does Not**: Generate configs (Automation Engine does), implement business logic
 
-*(Detailed API spec similar to previous services... continuing with executive summary format for brevity)*
+#### Requirements
+
+**Functional Requirements:**
+1. Store YAML configs in versioned S3 buckets
+2. Validate config schema before storage
+3. Propagate config updates via Kafka events
+4. Provide config retrieval by config_id, organization_id, or tenant_slug
+5. Version management with rollback capability
+6. Feature flag management per tenant
+
+**Non-Functional Requirements:**
+- Config retrieval: <50ms P95
+- S3 → Kafka propagation: <2 seconds
+- 99.99% uptime (critical for hot-reload)
+
+**Dependencies:**
+- Automation Engine (generates configs)
+- Agent Orchestration Service (consumes configs)
+- Voice Agent Service (consumes configs)
+- S3 (config storage)
+- Kafka (config update events)
+
+**Data Storage:**
+- S3: YAML config files (versioned, immutable)
+- PostgreSQL: Config metadata, version history
+- Redis: Config cache (hot configs)
+
+#### API Specification
+
+**1. Get Config by ID**
+```http
+GET /api/v1/configs/{config_id}
+Authorization: Bearer {jwt_token}
+X-Service-Name: agent_orchestration
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "version": 4,
+  "yaml_content": "...",  // Full YAML config
+  "metadata": {
+    "created_at": "2025-10-17T15:00:00Z",
+    "updated_at": "2025-10-20T10:00:00Z",
+    "status": "active",
+    "breaking_change": false
+  },
+  "s3_url": "s3://workflow-configs/org-uuid/config-uuid/v4.yaml"
+}
+```
+
+**2. Get Config by Tenant Slug**
+```http
+GET /api/v1/tenants/{tenant_slug}/config
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "tenant_slug": "acme-corp",
+  "organization_id": "uuid",
+  "version": 4,
+  "yaml_content": "...",
+  "cached": true
+}
+```
+
+**3. Get Latest Config for Organization**
+```http
+GET /api/v1/configs/latest
+Authorization: Bearer {jwt_token}
+Query Parameters:
+- organization_id: uuid
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "organization_id": "uuid",
+  "version": 4,
+  "yaml_content": "...",
+  "status": "active"
+}
+```
+
+**4. Validate Config**
+```http
+POST /api/v1/configs/validate
+Authorization: Bearer {platform_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "yaml_content": "...",
+  "config_id": "uuid"  // Optional, for update validation
+}
+
+Response (200 OK):
+{
+  "valid": true,
+  "errors": [],
+  "warnings": ["Tool 'initiate_refund' not yet implemented"],
+  "schema_version": "1.0",
+  "breaking_change_detected": false
+}
+
+Response (400 Bad Request - Validation Failed):
+{
+  "valid": false,
+  "errors": [
+    {
+      "field": "system_prompt",
+      "message": "Required field missing",
+      "severity": "error"
+    },
+    {
+      "field": "tools[0].name",
+      "message": "Tool name must be snake_case",
+      "severity": "error"
+    }
+  ]
+}
+```
+
+**5. Get Config Versions**
+```http
+GET /api/v1/configs/{config_id}/versions
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "versions": [
+    {
+      "version": 4,
+      "created_at": "2025-10-20T10:00:00Z",
+      "created_by": "github_webhook",
+      "status": "active",
+      "breaking_change": false,
+      "changes": ["tool_attached:initiate_refund"]
+    },
+    {
+      "version": 3,
+      "created_at": "2025-10-17T15:00:00Z",
+      "created_by": "automation_engine",
+      "status": "archived",
+      "breaking_change": false,
+      "changes": ["initial_generation"]
+    }
+  ]
+}
+```
+
+**6. Rollback to Previous Version**
+```http
+POST /api/v1/configs/{config_id}/rollback
+Authorization: Bearer {platform_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "target_version": 3,
+  "reason": "Version 4 causing high error rate"
+}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "rolled_back_from": 4,
+  "rolled_back_to": 3,
+  "active_version": 3,
+  "kafka_event_published": true
+}
+
+Event Published to Kafka:
+Topic: config_events
+{
+  "event_type": "config_rollback",
+  "config_id": "uuid",
+  "from_version": 4,
+  "to_version": 3,
+  "reason": "high_error_rate",
+  "timestamp": "2025-10-20T11:00:00Z"
+}
+```
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Platform Engineer**
+   - Role: Manages configs, validates schemas, performs rollbacks
+   - Access: All configs, version history
+   - Permissions: admin:configs, rollback:configs, validate:configs
+   - Workflows: Reviews config updates, validates breaking changes, performs emergency rollbacks
+
+**AI Agents:**
+
+1. **Config Watcher Agent**
+   - Responsibility: Monitors S3 for config changes, publishes Kafka events
+   - Tools: S3 event notifications, Kafka producers
+   - Autonomy: Fully autonomous
+   - Escalation: Alerts on S3 bucket access failures
+
+2. **Schema Validator Agent**
+   - Responsibility: Validates YAML configs against JSON schema
+   - Tools: JSON Schema validators, YAML parsers
+   - Autonomy: Fully autonomous
+   - Escalation: Blocks invalid configs from being saved
 
 ---
 
