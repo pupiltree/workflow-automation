@@ -3245,6 +3245,7 @@ Response (200 OK):
 {
   "demo_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "ready",
   "demo_url": "https://demo.workflow.com/acme-corp-d3f5g7",
   "access_token": "demo_token_xyz",
@@ -3851,6 +3852,7 @@ Response (200 OK):
 {
   "nda_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "partially_signed",
   "document_url": "https://storage.workflow.com/ndas/acme-nda-2025-10-04.pdf",
   "signature_workflow_id": "adobesign_xyz123",
@@ -4285,6 +4287,7 @@ Response (200 OK):
 {
   "pricing_id": "uuid",
   "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "status": "approved",
   "cost_breakdown": {...},
   "pricing_tiers": [...],
