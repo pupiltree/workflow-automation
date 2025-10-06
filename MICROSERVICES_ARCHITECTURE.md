@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **18 specialized microservices** (Services 0, 0.5, 1-16), leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
+This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **20 specialized microservices** (Services 0, 0.5, 1-18), leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
 
 **Key Architecture Principles:**
 - Event-driven communication via Apache Kafka for loose coupling and scalability
