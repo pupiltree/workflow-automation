@@ -3001,10 +3001,11 @@ Response (200 OK):
 ### 2. Demo Generator Service
 
 #### Objectives
-- **Primary Purpose**: Automated generation of client-specific AI chatbot/voicebot demos with mock data and tools
+- **Primary Purpose**: Automated generation of client-specific AI chatbot and voicebot demos with mock data and tools
 - **Business Value**: Reduces demo creation time from 40+ hours to <2 hours, enables rapid iteration, increases win rates through personalized demos
+- **Product Differentiation**: Supports both chatbot (LangGraph-based) and voicebot (LiveKit-based) demo generation with product-specific configurations
 - **Scope Boundaries**:
-  - **Does**: Generate functional web UI demos, create mock datasets, integrate mock tools, deploy to sandboxed environments, enable developer testing
+  - **Does**: Generate functional web UI demos, create mock datasets, integrate mock tools, deploy to sandboxed environments, enable developer testing, support both chatbot and voicebot product types
   - **Does Not**: Access production client data, deploy to production, handle real transactions
 
 #### Requirements
@@ -3014,9 +3015,11 @@ Response (200 OK):
 2. **Dynamic Demo Generation** (Client-Specific):
    - Auto-generate system prompt from research findings
    - Auto-generate mock tools based on client's use case
-   - Use LangGraph two-node workflow (agent node + tools node) per https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
+   - **For Chatbot Demos**: Use LangGraph two-node workflow (agent node + tools node) per https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
+   - **For Voicebot Demos**: Use LiveKit VoicePipelineAgent with STT/TTS integration (NOT LangGraph)
    - Create contextually relevant mock data (customer profiles, conversations)
    - Deploy to isolated sandbox for client viewing
+   - Support product_type differentiation (chatbot vs voicebot)
 3. **Real Showcase Demos** (For Client Presentations):
    - Pre-built showcase demos (2-5 permanent demos) with real tools and integrations
    - Full admin dashboard access with appropriate permissions for clients to explore
@@ -3056,8 +3059,10 @@ Response (200 OK):
 3. ✅ **Dynamic Demo Generation (Client-Specific)**:
    - Auto-generate system prompt from research (business context, pain points, use case)
    - Auto-generate mock tools (e.g., `fetch_order_status`, `schedule_appointment`, `process_refund`)
-   - Implement LangGraph two-node workflow (agent node + tools node)
+   - **Chatbot Demos**: Implement LangGraph two-node workflow (agent node + tools node)
+   - **Voicebot Demos**: Implement LiveKit VoicePipelineAgent with mock STT/TTS
    - Mock tool responses return realistic data based on research
+   - Product type selection (chatbot, voicebot, or both)
 4. ✅ **Real Showcase Demos (For Client Presentations)**:
    - 2-5 pre-built permanent showcase demos with real integrations (Salesforce, Zendesk, Shopify)
    - Full admin dashboard accessible to clients with appropriate permissions
@@ -3096,15 +3101,26 @@ Request Body:
   "research_job_id": "uuid",
   "client_id": "uuid",
   "demo_type": "dynamic",
+  "product_types": ["chatbot", "voicebot"],  // Can generate both or single product type
   "demo_config": {
     "channels": ["webchat", "voice"],
     "use_cases": ["customer_support", "lead_qualification"],
     "auto_generate_system_prompt": true,
     "auto_generate_tools": true,
-    "langgraph_workflow": {
-      "type": "two_node",
-      "nodes": ["agent", "tools"],
-      "architecture_reference": "https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/"
+    "chatbot_config": {  // Only if "chatbot" in product_types
+      "framework": "langgraph",
+      "workflow": {
+        "type": "two_node",
+        "nodes": ["agent", "tools"],
+        "architecture_reference": "https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/"
+      },
+      "include_external_integrations": false  // Mock demo, no real integrations
+    },
+    "voicebot_config": {  // Only if "voicebot" in product_types
+      "framework": "livekit",
+      "stt_provider": "deepgram_mock",
+      "tts_provider": "elevenlabs_mock",
+      "voice_id": "sarah_professional"
     },
     "branding_from_research": true,
     "conversation_samples": 10
@@ -3115,6 +3131,7 @@ Response (202 Accepted):
 {
   "demo_id": "uuid",
   "demo_type": "dynamic",
+  "product_types": ["chatbot", "voicebot"],
   "status": "generating",
   "generation_plan": {
     "system_prompt": "Auto-generating from research findings (business context, pain points)",
@@ -3130,6 +3147,17 @@ Response (202 Accepted):
         "mock_response_type": "calendar_slots"
       }
     ],
+    "chatbot_implementation": {
+      "framework": "langgraph",
+      "workflow_type": "two_node",
+      "state_management": "postgresql_checkpointing"
+    },
+    "voicebot_implementation": {
+      "framework": "livekit",
+      "stt_provider": "deepgram_mock",
+      "tts_provider": "elevenlabs_mock",
+      "latency_target_ms": 500
+    },
     "branding": {
       "logo_url": "https://storage.workflow.com/logos/acme-primary.png",
       "primary_color": "#1a73e8",
