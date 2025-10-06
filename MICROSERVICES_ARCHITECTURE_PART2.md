@@ -539,6 +539,7 @@ Topic: collaboration_events
   "help_request_id": "uuid",
   "session_id": "uuid",
   "organization_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "requested_by": "uuid",
   "urgency": "medium",
   "timestamp": "2025-10-04T12:00:00Z"
@@ -596,6 +597,7 @@ Topic: collaboration_events
   "event_type": "agent_joined_session",
   "collaboration_session_id": "uuid",
   "session_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "agent_id": "uuid",
   "timestamp": "2025-10-04T12:05:00Z"
 }
@@ -701,6 +703,7 @@ Topic: collaboration_events
   "event_type": "canvas_edited",
   "collaboration_session_id": "uuid",
   "prd_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "editor_id": "uuid",
   "editor_type": "human_agent",
   "section": "integration_architecture.oauth_flows",
@@ -748,6 +751,7 @@ Topic: collaboration_events
   "event_type": "collaboration_ended",
   "collaboration_session_id": "uuid",
   "session_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "duration_minutes": 15,
   "ended_by": "uuid",
   "timestamp": "2025-10-04T12:20:00Z"
@@ -1359,6 +1363,7 @@ Response (200 OK - JSON):
 Response (200 OK - YAML):
 config_metadata:
   config_id: uuid
+  product_type: chatbot
   client_id: uuid
   version: 1
   environment: staging
@@ -1683,6 +1688,7 @@ Topic: config_events
 {
   "event_type": "tool_attached_to_config",
   "config_id": "uuid",
+  "product_type": "chatbot",
   "tool_name": "initiate_refund",
   "github_issue": 156,
   "timestamp": "2025-10-12T10:00:00Z"
@@ -1693,6 +1699,7 @@ Topic: config_reload
 {
   "event_type": "config_updated",
   "config_id": "uuid",
+  "product_type": "chatbot",
   "version": 4,
   "changes": ["tool_initiate_refund_now_available"],
   "reload_required": true,
@@ -2516,6 +2523,7 @@ Topic: outreach_events
   "form_id": "uuid",
   "client_id": "uuid",
   "organization_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "approved_by": "sales_agent_uuid",
   "approved_at": "2025-10-06T11:00:00Z",
   "sent_to_client": true,
@@ -2527,6 +2535,7 @@ Topic: outreach_events
   "form_id": "uuid",
   "client_id": "uuid",
   "organization_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
   "draft_id": "uuid",
   "recipient_email": "client@example.com",
   "research_job_id": "uuid",

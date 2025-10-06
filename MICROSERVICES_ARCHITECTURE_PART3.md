@@ -1550,6 +1550,7 @@ Topic: config_events
 {
   "event_type": "config_rollback",
   "config_id": "uuid",
+  "product_type": "chatbot",
   "from_version": 4,
   "to_version": 3,
   "reason": "high_error_rate",
@@ -1998,6 +1999,7 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
   "event_type": "config_generated",
   "config_id": "uuid",
   "organization_id": "uuid",
+  "product_type": "chatbot",
   "prd_id": "uuid",
   "status": "pending_deployment",
   "missing_tools": ["initiate_refund", "check_inventory"],
@@ -2015,6 +2017,7 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
   "event_type": "config_updated",
   "config_id": "uuid",
   "organization_id": "uuid",
+  "product_type": "chatbot",
   "updated_by": "github_issue_closed_webhook",
   "changes": ["tool_attached:initiate_refund"],
   "hot_reload_required": true,
