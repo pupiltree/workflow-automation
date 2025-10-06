@@ -1380,6 +1380,118 @@ tools_available:
 ...
 ```
 
+**Example: Voicebot YAML Config (LiveKit-based)**
+```yaml
+config_metadata:
+  config_id: uuid_voicebot
+  product_type: voicebot
+  client_id: uuid
+  version: 1
+  environment: staging
+  created_at: 2025-10-10T15:00:00Z
+
+system_prompt:
+  role: healthcare_appointment_scheduler
+  instructions: "You are a friendly voice assistant for HealthCare Plus. Help patients schedule, reschedule, or cancel medical appointments. Always confirm appointment details before booking."
+  constraints:
+    - Never share patient medical records over the phone
+    - Verify patient identity before any changes
+    - Escalate to human for emergency requests
+  tone: empathetic_professional
+  voice_specific:
+    speaking_rate: normal
+    interruption_sensitivity: medium
+    silence_timeout_ms: 2000
+
+tools_available:
+  - tool_name: check_appointment_availability
+    status: implemented
+  - tool_name: book_appointment
+    status: implemented
+  - tool_name: send_sms_confirmation
+    status: missing
+    github_issue: https://github.com/workflow/tools/issues/201
+
+integrations: []
+# NOTE: Voicebot products do NOT have external_integrations field
+# Voice channel is the ONLY input method via SIP trunks
+
+sip_config:
+  primary_provider: twilio
+  primary_endpoint: "+14155551234"
+  failover_provider: telnyx
+  failover_endpoint: "+14155555678"
+  inbound_calls_enabled: true
+  outbound_calls_enabled: true
+  call_recording: true
+  recording_retention_days: 90
+
+livekit_config:
+  room_prefix: healthcare_plus
+  stt_provider: deepgram
+  stt_model: nova-3
+  stt_language: en-US
+  tts_provider: elevenlabs
+  tts_voice_id: ErXwobaYiN019PkySvjV
+  tts_model: flash_v2_5
+  vad_enabled: true
+  vad_threshold: 0.5
+
+llm_config:
+  provider: openai
+  model: gpt-4o-mini
+  # Note: Voicebots use faster/cheaper models for low-latency responses
+  parameters:
+    temperature: 0.6
+    max_tokens: 150
+    top_p: 0.9
+  fallback:
+    provider: anthropic
+    model: claude-sonnet-4
+
+workflow_features:
+  pii_collection:
+    enabled: true
+    fields: ["patient_name", "date_of_birth", "phone"]
+  human_escalation:
+    enabled: true
+    triggers:
+      - condition: patient_requests_doctor
+        action: immediate_transfer
+      - condition: emergency_keywords_detected
+        action: immediate_transfer
+      - condition: ai_confidence < 0.4
+        action: suggest_transfer
+  call_transfer:
+    enabled: true
+    transfer_destinations:
+      - name: front_desk
+        phone: +14155556789
+      - name: emergency_line
+        phone: +14155559999
+  voicemail:
+    enabled: true
+    max_duration_seconds: 120
+    transcription_enabled: true
+  outbound_calling:
+    enabled: true
+    triggers:
+      - event: appointment_reminder_24h
+        template: reminder_script
+      - event: appointment_confirmation
+        template: confirmation_script
+
+database_config:
+  type: supabase
+  tables: ["call_logs", "appointments", "patient_records"]
+  rls_enabled: true
+
+vector_db_config:
+  type: pinecone
+  index_name: healthcare_knowledge_base
+  namespace: healthcare_plus
+```
+
 **3. Update Config via Webchat**
 ```http
 POST /api/v1/automation/configs/{config_id}/chat
