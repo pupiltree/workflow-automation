@@ -2292,6 +2292,35 @@ Response (200 OK):
 #### Database Schema
 
 ```sql
+-- Main configurations table (stores all chatbot/voicebot configurations)
+CREATE TABLE configurations (
+  config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  product_type VARCHAR(20) NOT NULL CHECK (product_type IN ('chatbot', 'voicebot')),
+  version INT NOT NULL DEFAULT 1,
+  yaml_content TEXT NOT NULL,
+  s3_url TEXT NOT NULL,
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'archived', 'draft')),
+  breaking_change BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  created_by UUID REFERENCES auth.users(id),
+  INDEX idx_org_product_configs (organization_id, product_type),
+  INDEX idx_config_version (config_id, version),
+  INDEX idx_config_status (status) WHERE status = 'active',
+  INDEX idx_config_s3 (s3_url),
+  UNIQUE(organization_id, product_type, version)
+);
+
+-- Row-Level Security for multi-tenant isolation
+ALTER TABLE configurations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_configs ON configurations
+  FOR ALL
+  USING (organization_id IN (
+    SELECT organization_id FROM team_memberships WHERE user_id = auth.uid()
+  ));
+
 -- Config change audit log
 CREATE TABLE config_change_log (
   change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
