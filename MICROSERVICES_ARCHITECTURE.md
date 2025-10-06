@@ -3024,7 +3024,7 @@ Response (200 OK):
    - **For Voicebot Demos**: Use LiveKit VoicePipelineAgent with STT/TTS integration (NOT LangGraph)
    - Create contextually relevant mock data (customer profiles, conversations)
    - Deploy to isolated sandbox for client viewing
-   - Support product_type differentiation (chatbot vs voicebot)
+   - Support product_types differentiation (chatbot vs voicebot)
 3. **Real Showcase Demos** (For Client Presentations):
    - Pre-built showcase demos (2-5 permanent demos) with real tools and integrations
    - Full admin dashboard access with appropriate permissions for clients to explore

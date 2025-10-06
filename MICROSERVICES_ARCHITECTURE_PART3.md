@@ -247,6 +247,7 @@ Request Body:
 Response (200 OK):
 {
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "escalation_id": "uuid",
   "status": "escalated",
   "assigned_agent": {
@@ -287,6 +288,7 @@ Authorization: Bearer {jwt_token}
 Response (200 OK):
 {
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "thread_id": "uuid",
   "config_id": "uuid",
   "status": "active",
@@ -353,6 +355,7 @@ Request Body:
 Response (200 OK):
 {
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "survey_id": "uuid",
   "status": "sent",
   "agent_message": "Before we finish, I'd love to get your quick feedback! How did you hear about us?",
@@ -384,6 +387,7 @@ Response (200 OK):
 {
   "escalation_id": "uuid",
   "conversation_id": "uuid",
+  "product_type": "chatbot",
   "status": "agent_unavailable",
   "fallback_action": "queue_callback",
   "queue_position": 3,
@@ -489,6 +493,7 @@ Topic: config_events
 {
   "event_type": "config_updated",
   "config_id": "uuid",
+  "product_type": "chatbot",
   "organization_id": "uuid",
   "updated_by": "github_issue_closed_webhook",
   "changes": ["tool_attached:initiate_refund"],
@@ -497,6 +502,11 @@ Topic: config_events
 }
   ↓
 Agent Orchestration Service & Voice Agent Service (Kafka consumers) receive event
+  ↓
+Each service filters by product_type:
+  - Agent Orchestration: Only processes if product_type == "chatbot"
+  - Voice Agent: Only processes if product_type == "voicebot"
+  - Prevents unnecessary reloads for irrelevant product configs
 ```
 
 ### Active Conversation Handling (CRITICAL)
@@ -916,6 +926,7 @@ Request Body:
 Response (200 OK):
 {
   "call_id": "uuid",
+  "product_type": "voicebot",
   "transfer_id": "uuid",
   "status": "transferring",
   "target_agent": {
@@ -1000,6 +1011,7 @@ Request Body:
 Response (200 OK):
 {
   "call_id": "uuid",
+  "product_type": "voicebot",
   "status": "ended",
   "ended_at": "2025-10-11T11:05:00Z",
   "duration_seconds": 295,
