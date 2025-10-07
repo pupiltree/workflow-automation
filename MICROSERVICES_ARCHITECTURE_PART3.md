@@ -1802,85 +1802,3319 @@ Response (200 OK):
 ## 11. Monitoring Engine Service
 
 #### Objectives
-- **Primary Purpose**: Proactive monitoring of all workflows, LLM quality, integration health, and system uptime
-- **Business Value**: Prevents downtime, detects quality degradation, enables rapid incident response
-- **Scope**: Event tracking, incident creation, alerting, RCA generation, SLA monitoring
+- **Primary Purpose**: Proactive observability for LLM workflows, agent execution, integration health, and system reliability with distributed tracing and incident management
+- **Business Value**: Reduces MTTR from hours to <10 minutes, prevents 95% of customer-impacting incidents through early detection, enables real-time LLM quality monitoring
+- **Product Differentiation**: Purpose-built for AI agent workflows with semantic tracing, LLM token-level observability, multi-agent orchestration debugging
+- **Scope Boundaries**:
+  - **Does**: Distributed tracing (OpenTelemetry), LLM call monitoring, agent workflow execution tracking, service health checks, incident detection/creation, alerting, RCA generation, SLA compliance monitoring, integration health dashboards
+  - **Does Not**: Log storage (delegates to external logging platforms), metrics aggregation at scale (uses Prometheus), business analytics (Analytics Service does), customer success metrics (Customer Success Service does)
 
-**Key APIs:**
-- POST /api/v1/monitoring/events (log events)
-- GET /api/v1/monitoring/health (service health)
-- POST /api/v1/monitoring/incidents (create incident)
-- GET /api/v1/monitoring/incidents/{id} (incident details)
+#### Requirements
 
-**Stakeholders:** Platform Engineers, SREs, Client Success Managers
+**Functional Requirements:**
+1. OpenTelemetry-based distributed tracing across all 17 microservices
+2. LLM call monitoring with token usage, latency, and quality scoring per request
+3. Agent workflow execution tracing with step-by-step debugging (LangGraph state inspection)
+4. Semantic caching hit rate tracking and optimization recommendations
+5. Integration health monitoring for external APIs (Salesforce, HubSpot, Zendesk, etc.)
+6. Automated incident creation with severity classification (P0/P1/P2/P3)
+7. Real-time alerting via PagerDuty, Slack, email with escalation policies
+8. AI-generated Root Cause Analysis (RCA) reports using traces and logs
+9. SLA compliance tracking per client with breach alerting
+10. Service dependency mapping and failure impact analysis
+11. LLM quality degradation detection (hallucinations, refusals, tone drift)
+12. Custom metric tracking for business-critical workflows
+13. Multi-tenant trace isolation with namespace-based filtering
+
+**Non-Functional Requirements:**
+- Trace ingestion latency: <100ms P95 from event generation to queryable
+- Dashboard query performance: <2s for 24-hour trace visualization
+- Support 10M+ trace spans per day across all tenants
+- 99.95% uptime for monitoring service (more reliable than monitored services)
+- Alert delivery: <30s from incident detection to first notification
+- Trace retention: 30 days hot storage, 365 days cold storage (S3)
+- Multi-tenant trace isolation with zero cross-tenant data leakage
+
+**Dependencies:**
+- **All Microservices (0-17)** *[See all MICROSERVICES_ARCHITECTURE*.md documents]* (instrumented with OpenTelemetry SDKs)
+- **LLM Gateway Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 16]* (LLM call metadata and token usage)
+- **Configuration Management Service** *[See Service 10 above]* (alerting rules, SLA thresholds per client)
+- External APIs:
+  - **OpenTelemetry Collector**: Trace/metrics aggregation and routing
+  - **Prometheus**: Metrics storage and querying
+  - **Grafana**: Visualization dashboards
+  - **Traceloop/Helicone**: LLM-specific observability (evaluation as alternative to custom)
+  - **PagerDuty**: Incident alerting and escalation
+  - **Slack API**: Real-time notifications to engineering channels
+  - **Arize AI**: LLM quality monitoring and evaluation (optional)
+
+**Data Storage:**
+- PostgreSQL: Incidents, alerts, SLA definitions, escalation policies, RCA reports
+- ClickHouse: High-performance trace storage (alternative to Jaeger backend)
+- Redis: Recent trace cache (last 5 minutes), alert deduplication state
+- S3: Long-term trace archive (365 days), RCA report documents
+- Prometheus: Metrics time-series data (CPU, memory, request rates, latencies)
+
+#### Features
+
+**Must-Have:**
+1. ✅ OpenTelemetry instrumentation SDK for all services (Python, Node.js, Go)
+2. ✅ Distributed trace visualization with service dependency graph
+3. ✅ LLM call tracing with prompt/completion/tokens/latency per request
+4. ✅ Agent workflow execution debugger (LangGraph state at each step)
+5. ✅ Automated incident creation with P0/P1/P2/P3 severity classification
+6. ✅ Real-time alerting to PagerDuty, Slack, email with escalation policies
+7. ✅ AI-generated RCA reports using trace analysis and log correlation
+8. ✅ SLA compliance dashboard per client with breach predictions
+9. ✅ Integration health monitoring with uptime/latency/error rate tracking
+10. ✅ Semantic cache hit rate monitoring with cost savings calculation
+11. ✅ LLM quality degradation alerts (response quality drops below threshold)
+12. ✅ Custom business metric tracking (demo-to-close rate, PRD approval time, etc.)
+
+**Nice-to-Have:**
+13. 🔄 Anomaly detection using ML models (e.g., Prophet for time-series forecasting)
+14. 🔄 Automated incident remediation for known failure patterns
+15. 🔄 Cost attribution per client based on LLM token usage and infrastructure
+16. 🔄 A/B test performance comparison (trace latency, error rates by experiment variant)
+17. 🔄 Predictive alerting (alert before incident occurs based on trend analysis)
+
+**Feature Interactions:**
+- Service publishes trace span → OpenTelemetry Collector ingests → ClickHouse stores → Grafana visualizes
+- LLM Gateway completes request → Publishes `llm_request_completed` event → Monitoring ingests with token usage → Updates cost dashboard
+- Trace shows error rate spike → Incident creation triggered → AI generates RCA → PagerDuty alert sent → Engineer acknowledges via Slack
+- SLA breach predicted (95% of budget used) → Alert sent to Client Success → CSM proactively contacts client
+- Integration health check fails 3x → Incident created → Escalation policy triggered → Platform engineer paged
+- Agent workflow stuck (no state change for 5 minutes) → Timeout incident created → Trace shows Neo4j query hanging → Auto-escalate to database team
+
+#### API Specification
+
+**1. Ingest Trace Span (OpenTelemetry)**
+```http
+POST /api/v1/monitoring/traces
+Authorization: Bearer {service_jwt}
+X-Tenant-ID: {organization_id}
+Content-Type: application/json
+
+Request Body (OpenTelemetry Span JSON):
+{
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "parent_span_id": "0020000000000001",
+  "name": "agent_orchestration.execute_workflow",
+  "kind": "SPAN_KIND_INTERNAL",
+  "start_time_unix_nano": 1696518000000000000,
+  "end_time_unix_nano": 1696518002500000000,
+  "attributes": {
+    "service.name": "agent-orchestration-service",
+    "organization_id": "uuid",
+    "product_type": "voicebot",
+    "workflow_id": "uuid",
+    "agent_name": "discovery_voice_agent",
+    "langgraph_state": "{...}",  // Serialized agent state
+    "llm_calls": 3,
+    "total_tokens": 1850
+  },
+  "status": {
+    "code": "STATUS_CODE_OK"
+  },
+  "events": [
+    {
+      "time_unix_nano": 1696518001000000000,
+      "name": "tool_invoked",
+      "attributes": {
+        "tool_name": "search_crunchbase",
+        "tool_latency_ms": 450
+      }
+    }
+  ]
+}
+
+Response (202 Accepted):
+{
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "ingested_at": "2025-10-15T10:00:02Z",
+  "status": "accepted"
+}
+```
+
+**2. Query Traces by Workflow**
+```http
+GET /api/v1/monitoring/traces/search
+Authorization: Bearer {platform_engineer_jwt}
+X-Tenant-ID: {organization_id}
+Query Parameters:
+- workflow_id: uuid
+- start_time: 2025-10-15T00:00:00Z
+- end_time: 2025-10-15T23:59:59Z
+- service_name: agent-orchestration-service (optional)
+- min_duration_ms: 5000 (optional - find slow traces)
+- status: error (optional - filter by status)
+
+Response (200 OK):
+{
+  "traces": [
+    {
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "root_span": {
+        "name": "agent_orchestration.execute_workflow",
+        "duration_ms": 2500,
+        "status": "ok",
+        "organization_id": "uuid",
+        "workflow_id": "uuid"
+      },
+      "total_spans": 15,
+      "service_count": 4,
+      "services": ["agent-orchestration-service", "llm-gateway-service", "qdrant-service", "neo4j-service"],
+      "total_llm_calls": 3,
+      "total_tokens": 1850,
+      "start_time": "2025-10-15T10:00:00Z",
+      "end_time": "2025-10-15T10:00:02.5Z",
+      "url": "https://monitoring.workflow.com/trace/4bf92f3577b34da6a3ce929d0e0e4736"
+    }
+  ],
+  "total_results": 127,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**3. Get Service Health Dashboard**
+```http
+GET /api/v1/monitoring/health
+Authorization: Bearer {platform_engineer_jwt}
+Query Parameters:
+- time_window: 1h | 24h | 7d (default: 1h)
+
+Response (200 OK):
+{
+  "timestamp": "2025-10-15T10:00:00Z",
+  "services": [
+    {
+      "service_name": "agent-orchestration-service",
+      "status": "healthy",
+      "uptime_percentage": 99.98,
+      "request_rate_rpm": 450,
+      "error_rate_percentage": 0.02,
+      "p50_latency_ms": 850,
+      "p95_latency_ms": 2100,
+      "p99_latency_ms": 3500,
+      "active_incidents": 0,
+      "last_deployment": "2025-10-14T15:30:00Z"
+    },
+    {
+      "service_name": "llm-gateway-service",
+      "status": "degraded",
+      "uptime_percentage": 99.50,
+      "request_rate_rpm": 2800,
+      "error_rate_percentage": 1.2,  // Above 1% threshold
+      "p50_latency_ms": 1200,
+      "p95_latency_ms": 4500,
+      "p99_latency_ms": 8000,
+      "active_incidents": 1,
+      "active_incident_ids": ["incident-uuid"],
+      "last_deployment": "2025-10-15T09:00:00Z",
+      "degradation_reason": "OpenAI API rate limiting detected"
+    }
+  ],
+  "overall_system_health": "degraded",
+  "active_incidents_total": 1
+}
+```
+
+**4. Create Incident**
+```http
+POST /api/v1/monitoring/incidents
+Authorization: Bearer {monitoring_service_jwt}  // Auto-created by monitoring or manual by engineer
+Content-Type: application/json
+
+Request Body:
+{
+  "title": "LLM Gateway error rate spike: 1.2% (threshold: 1.0%)",
+  "severity": "P2",  // P0 (critical - system down) | P1 (high - major feature broken) | P2 (medium - degraded) | P3 (low - minor issue)
+  "affected_services": ["llm-gateway-service"],
+  "organization_id": "uuid",  // null for platform-wide incidents
+  "description": "Error rate for LLM Gateway increased from 0.1% to 1.2% over the last 10 minutes. Primary errors: OpenAI rate limit (429) responses.",
+  "detection_method": "automated_threshold",  // automated_threshold | manual | user_report
+  "trace_ids": ["4bf92f3577b34da6a3ce929d0e0e4736", "..."],
+  "metrics": {
+    "error_rate_current": 1.2,
+    "error_rate_threshold": 1.0,
+    "affected_requests_count": 340,
+    "time_window": "10m"
+  }
+}
+
+Response (201 Created):
+{
+  "incident_id": "uuid",
+  "title": "LLM Gateway error rate spike: 1.2% (threshold: 1.0%)",
+  "severity": "P2",
+  "status": "open",  // open | investigating | resolved | closed
+  "created_at": "2025-10-15T10:00:00Z",
+  "assigned_to": null,  // Will be assigned via PagerDuty escalation
+  "pagerduty_incident_id": "PD12345",
+  "slack_thread_url": "https://slack.com/archives/incidents/p1696518000",
+  "url": "https://monitoring.workflow.com/incidents/uuid"
+}
+
+Event Published to Kafka:
+Topic: monitoring_incidents
+{
+  "event_type": "incident_created",
+  "incident_id": "uuid",
+  "severity": "P2",
+  "affected_services": ["llm-gateway-service"],
+  "organization_id": "uuid",
+  "timestamp": "2025-10-15T10:00:00Z"
+}
+```
+
+**5. Get Incident Details with RCA**
+```http
+GET /api/v1/monitoring/incidents/{incident_id}
+Authorization: Bearer {platform_engineer_jwt}
+
+Response (200 OK):
+{
+  "incident_id": "uuid",
+  "title": "LLM Gateway error rate spike: 1.2% (threshold: 1.0%)",
+  "severity": "P2",
+  "status": "investigating",
+  "affected_services": ["llm-gateway-service"],
+  "organization_id": "uuid",
+  "created_at": "2025-10-15T10:00:00Z",
+  "acknowledged_at": "2025-10-15T10:02:30Z",
+  "acknowledged_by": {
+    "user_id": "uuid",
+    "name": "Sarah Chen",
+    "role": "platform_engineer"
+  },
+  "timeline": [
+    {
+      "timestamp": "2025-10-15T10:00:00Z",
+      "event": "Incident created (automated threshold breach)",
+      "user": "system"
+    },
+    {
+      "timestamp": "2025-10-15T10:01:00Z",
+      "event": "PagerDuty alert sent to on-call engineer",
+      "user": "system"
+    },
+    {
+      "timestamp": "2025-10-15T10:02:30Z",
+      "event": "Incident acknowledged by Sarah Chen",
+      "user": "Sarah Chen"
+    },
+    {
+      "timestamp": "2025-10-15T10:05:00Z",
+      "event": "RCA generated by AI",
+      "user": "system"
+    }
+  ],
+  "ai_generated_rca": {
+    "summary": "Root cause identified: OpenAI API rate limit exceeded due to traffic spike from new client onboarding (3 clients deployed simultaneously at 09:45 UTC).",
+    "root_cause": "OpenAI API rate limit (10,000 RPM) exceeded. Current rate: 12,400 RPM.",
+    "contributing_factors": [
+      "3 new clients onboarded simultaneously without staggered deployment",
+      "Semantic cache hit rate dropped from 60% to 20% due to novel use cases",
+      "Rate limit alert threshold (8,000 RPM) was not configured"
+    ],
+    "affected_workflows": ["discovery_call", "demo_generation", "prd_creation"],
+    "impact_analysis": {
+      "total_affected_requests": 340,
+      "failed_requests": 68,
+      "degraded_requests": 272,
+      "affected_clients": 3,
+      "revenue_at_risk": "$0 (all trial clients)"
+    },
+    "recommendations": [
+      "Configure rate limit alert at 80% threshold (8,000 RPM)",
+      "Implement request queuing with exponential backoff for 429 errors",
+      "Stagger client onboarding deployments (max 1 per hour)",
+      "Increase semantic cache TTL to improve hit rate for common queries"
+    ],
+    "generated_at": "2025-10-15T10:05:00Z",
+    "confidence": 0.92
+  },
+  "related_traces": [
+    {
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "workflow_id": "uuid",
+      "error": "OpenAI API rate limit exceeded (429)",
+      "timestamp": "2025-10-15T09:58:00Z"
+    }
+  ],
+  "metrics_snapshot": {
+    "error_rate_before": 0.1,
+    "error_rate_peak": 1.2,
+    "error_rate_current": 0.8,
+    "request_rate_rpm_before": 8200,
+    "request_rate_rpm_peak": 12400,
+    "request_rate_rpm_current": 9500
+  }
+}
+```
+
+**6. Update Incident Status**
+```http
+PATCH /api/v1/monitoring/incidents/{incident_id}
+Authorization: Bearer {platform_engineer_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "status": "resolved",  // open | investigating | resolved | closed
+  "resolution_notes": "Implemented request queuing with exponential backoff. Rate limit alert configured at 8,000 RPM. Semantic cache TTL increased to 24 hours.",
+  "resolved_by": "uuid"
+}
+
+Response (200 OK):
+{
+  "incident_id": "uuid",
+  "status": "resolved",
+  "resolved_at": "2025-10-15T10:30:00Z",
+  "resolution_duration_minutes": 30,
+  "url": "https://monitoring.workflow.com/incidents/uuid"
+}
+
+Event Published to Kafka:
+Topic: monitoring_incidents
+{
+  "event_type": "incident_resolved",
+  "incident_id": "uuid",
+  "severity": "P2",
+  "resolution_duration_minutes": 30,
+  "timestamp": "2025-10-15T10:30:00Z"
+}
+```
+
+**7. Get SLA Compliance Dashboard**
+```http
+GET /api/v1/monitoring/sla/{organization_id}
+Authorization: Bearer {csm_jwt}
+Query Parameters:
+- time_window: current_month | last_month | last_90_days
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "organization_name": "Acme Corp",
+  "time_window": "current_month",
+  "period": "2025-10-01 to 2025-10-31",
+  "sla_commitments": {
+    "uptime_percentage": 99.9,
+    "p95_latency_ms": 3000,
+    "error_rate_percentage": 0.5
+  },
+  "actual_performance": {
+    "uptime_percentage": 99.95,
+    "p95_latency_ms": 2100,
+    "error_rate_percentage": 0.15
+  },
+  "compliance_status": "compliant",  // compliant | at_risk | breached
+  "sla_budget_remaining": {
+    "downtime_minutes_allowed": 43.2,  // 0.1% of month
+    "downtime_minutes_used": 21.6,
+    "downtime_minutes_remaining": 21.6,
+    "percentage_used": 50.0
+  },
+  "incidents_this_period": [
+    {
+      "incident_id": "uuid",
+      "title": "LLM Gateway error rate spike",
+      "severity": "P2",
+      "downtime_minutes": 0,  // Degraded but not down
+      "sla_impacting": false
+    }
+  ],
+  "breach_risk_alerts": [],
+  "next_breach_prediction": null  // Null if no breach predicted
+}
+```
+
+**8. Configure Alerting Rule**
+```http
+POST /api/v1/monitoring/alerts/rules
+Authorization: Bearer {platform_engineer_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "rule_name": "LLM Gateway Error Rate Alert",
+  "service_name": "llm-gateway-service",
+  "organization_id": null,  // null = platform-wide, uuid = client-specific
+  "metric": "error_rate_percentage",
+  "condition": "greater_than",
+  "threshold": 1.0,
+  "time_window": "10m",
+  "severity": "P2",
+  "notification_channels": ["pagerduty", "slack"],
+  "escalation_policy_id": "uuid",
+  "enabled": true
+}
+
+Response (201 Created):
+{
+  "rule_id": "uuid",
+  "rule_name": "LLM Gateway Error Rate Alert",
+  "created_at": "2025-10-15T10:00:00Z",
+  "status": "active"
+}
+```
+
+**9. Track LLM Quality Metrics**
+```http
+GET /api/v1/monitoring/llm/quality
+Authorization: Bearer {platform_engineer_jwt}
+X-Tenant-ID: {organization_id}
+Query Parameters:
+- start_time: 2025-10-15T00:00:00Z
+- end_time: 2025-10-15T23:59:59Z
+- model: gpt-4 (optional)
+- workflow_type: discovery_call | demo_generation | prd_creation (optional)
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "time_window": "2025-10-15 00:00 - 23:59 UTC",
+  "llm_metrics": {
+    "total_requests": 12450,
+    "total_tokens": 18500000,
+    "total_cost_usd": 247.50,
+    "average_latency_ms": 1200,
+    "p95_latency_ms": 2800,
+    "error_rate_percentage": 0.15,
+    "semantic_cache_hit_rate": 0.58,
+    "cost_saved_via_cache_usd": 144.00
+  },
+  "quality_metrics": {
+    "average_quality_score": 0.87,  // 0-1 scale (based on human feedback, A/B test win rate)
+    "hallucination_rate": 0.02,  // Detected via fact-checking tools
+    "refusal_rate": 0.01,  // Model refused to answer
+    "tone_consistency_score": 0.92,  // Matches system prompt tone
+    "degradation_alerts": []
+  },
+  "model_breakdown": [
+    {
+      "model": "gpt-4",
+      "requests": 8200,
+      "tokens": 14500000,
+      "cost_usd": 203.00,
+      "average_latency_ms": 1500,
+      "quality_score": 0.90
+    },
+    {
+      "model": "gpt-3.5-turbo",
+      "requests": 4250,
+      "tokens": 4000000,
+      "cost_usd": 44.50,
+      "average_latency_ms": 600,
+      "quality_score": 0.82
+    }
+  ],
+  "workflow_breakdown": [
+    {
+      "workflow_type": "discovery_call",
+      "requests": 5600,
+      "average_quality_score": 0.88,
+      "average_latency_ms": 1100
+    }
+  ]
+}
+```
+
+**10. Get Integration Health Dashboard**
+```http
+GET /api/v1/monitoring/integrations/health
+Authorization: Bearer {platform_engineer_jwt}
+Query Parameters:
+- time_window: 1h | 24h | 7d
+
+Response (200 OK):
+{
+  "timestamp": "2025-10-15T10:00:00Z",
+  "integrations": [
+    {
+      "integration_name": "Salesforce API",
+      "provider": "salesforce",
+      "status": "healthy",
+      "uptime_percentage": 99.99,
+      "request_rate_rpm": 120,
+      "error_rate_percentage": 0.01,
+      "average_latency_ms": 450,
+      "p95_latency_ms": 850,
+      "rate_limit_usage": {
+        "limit_rpm": 1000,
+        "current_rpm": 120,
+        "percentage_used": 12.0
+      },
+      "active_clients_using": 24,
+      "last_error": null
+    },
+    {
+      "integration_name": "OpenAI API",
+      "provider": "openai",
+      "status": "degraded",
+      "uptime_percentage": 99.50,
+      "request_rate_rpm": 12400,
+      "error_rate_percentage": 1.2,
+      "average_latency_ms": 1200,
+      "p95_latency_ms": 4500,
+      "rate_limit_usage": {
+        "limit_rpm": 10000,
+        "current_rpm": 12400,
+        "percentage_used": 124.0  // Exceeding limit!
+      },
+      "active_clients_using": 47,
+      "last_error": {
+        "error_code": "rate_limit_exceeded",
+        "error_message": "Rate limit exceeded (429)",
+        "occurred_at": "2025-10-15T09:58:00Z",
+        "occurrences_last_hour": 68
+      }
+    }
+  ],
+  "overall_integration_health": "degraded"
+}
+```
+
+#### Frontend Components
+
+**1. Service Health Dashboard**
+- Component: `ServiceHealthDashboard.tsx`
+- Features:
+  - Real-time service status grid (green/yellow/red) with uptime percentages
+  - Request rate, error rate, and latency (P50/P95/P99) charts per service
+  - Active incident count with severity badges
+  - One-click drill-down to service-specific traces
+  - Auto-refresh every 30 seconds
+  - Filter by time window (1h/24h/7d)
+
+**2. Distributed Trace Viewer**
+- Component: `TraceViewer.tsx`
+- Features:
+  - Waterfall visualization of trace spans with service colors
+  - LangGraph agent state inspection at each workflow step
+  - LLM call details (prompt/completion/tokens/cost) in side panel
+  - Span metadata with custom attributes (organization_id, workflow_id, etc.)
+  - Error highlighting with stack traces
+  - Export trace as JSON or share permalink
+  - Search traces by workflow_id, trace_id, or service name
+
+**3. Incident Management Dashboard**
+- Component: `IncidentDashboard.tsx`
+- Features:
+  - Incident list with filters (severity, status, affected service)
+  - AI-generated RCA report viewer with confidence score
+  - Incident timeline with acknowledgment/resolution events
+  - Assign incident to engineer with PagerDuty integration
+  - Add notes and update status (open → investigating → resolved → closed)
+  - Related traces and metrics snapshot visualization
+  - MTTR (Mean Time To Resolution) analytics
+
+**4. SLA Compliance Dashboard**
+- Component: `SLAComplianceDashboard.tsx`
+- Features:
+  - Per-client SLA commitment vs actual performance comparison
+  - Uptime budget remaining visualization (progress bar with remaining minutes)
+  - Breach risk alerts with predicted breach date
+  - Incident list filtered by SLA-impacting events
+  - Historical compliance trend charts (monthly view)
+  - Export SLA report as PDF for client QBRs
+
+**5. LLM Quality Dashboard**
+- Component: `LLMQualityDashboard.tsx`
+- Features:
+  - Token usage and cost breakdown by model (GPT-4 vs GPT-3.5)
+  - Semantic cache hit rate with cost savings calculation
+  - Quality score trends (based on human feedback and A/B tests)
+  - Hallucination/refusal rate tracking
+  - Latency distribution by model and workflow type
+  - Degradation alerts with threshold breach visualization
+
+**6. Integration Health Dashboard**
+- Component: `IntegrationHealthDashboard.tsx`
+- Features:
+  - External API status grid (Salesforce, HubSpot, Zendesk, OpenAI, etc.)
+  - Rate limit usage bars with percentage of limit consumed
+  - Error rate and latency trends per integration
+  - Active clients using each integration count
+  - Last error details with occurrence count
+  - Uptime percentage with SLA compliance indicators
+
+**7. Alerting Rules Manager**
+- Component: `AlertingRulesManager.tsx`
+- Features:
+  - Create/edit/delete alerting rules with visual rule builder
+  - Select metric, condition, threshold, and time window via dropdowns
+  - Configure notification channels (PagerDuty, Slack, email)
+  - Assign escalation policies with multi-stage escalation
+  - Enable/disable rules with toggle switch
+  - Test alert rule before saving (simulate threshold breach)
+
+**8. RCA Report Viewer**
+- Component: `RCAReportViewer.tsx`
+- Features:
+  - AI-generated RCA summary with root cause and contributing factors
+  - Impact analysis (affected requests, clients, revenue at risk)
+  - Recommendations list with priority ranking
+  - Related traces embedded with one-click drill-down
+  - Metrics snapshot before/during/after incident
+  - Export RCA report as Markdown or PDF for postmortem documentation
+
+**State Management:**
+- React Query for real-time trace/incident/metrics fetching with auto-refresh
+- WebSocket for live dashboard updates (service health, active incidents)
+- Zustand for UI state (selected trace, active filters, dashboard time window)
+- LocalStorage for user preferences (default time window, favorite dashboards)
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Platform Engineer**
+   - Role: Monitor system health, investigate incidents, configure alerting rules
+   - Access: All monitoring dashboards, trace viewer, incident management, alerting configuration
+   - Permissions: `read:all_traces`, `write:incidents`, `update:alert_rules`, `deploy:fixes`
+   - Workflows:
+     1. Receives PagerDuty alert → Acknowledges incident → Reviews RCA report → Investigates traces → Deploys fix → Resolves incident
+     2. Reviews service health dashboard daily → Identifies degradation trends → Configures proactive alerts
+   - On-Call: 24/7 rotation with escalation to senior engineers after 15 minutes
+
+2. **Site Reliability Engineer (SRE)**
+   - Role: Define SLAs, maintain uptime targets, optimize observability infrastructure
+   - Access: SLA compliance dashboard, service health dashboard, integration health, trace analytics
+   - Permissions: `read:all_metrics`, `write:sla_definitions`, `configure:retention_policies`, `optimize:trace_sampling`
+   - Workflows:
+     1. Reviews SLA compliance weekly → Identifies at-risk clients → Adjusts infrastructure capacity
+     2. Analyzes trace data to identify performance bottlenecks → Recommends optimizations to service teams
+   - Approval: Required for SLA changes, trace retention policy updates
+
+3. **Customer Success Manager (CSM)**
+   - Role: Monitor client-specific SLA compliance, proactive breach prevention
+   - Access: Client-scoped SLA dashboard, client-specific incidents, LLM quality metrics for assigned clients
+   - Permissions: `read:client_sla:{client_id}`, `read:client_incidents:{client_id}`, `export:sla_reports`
+   - Workflows:
+     1. Receives SLA breach risk alert → Contacts client proactively → Coordinates with platform team for resolution
+     2. Generates monthly SLA report for QBR → Shares uptime/performance metrics with client
+   - Escalation: Escalates SLA breaches to VP of Customer Success and Engineering Manager
+
+4. **Product Manager**
+   - Role: Track product health metrics, identify reliability improvement opportunities
+   - Access: High-level service health dashboard, incident trends, MTTR analytics
+   - Permissions: `read:incident_analytics`, `read:service_uptime`, `read:feature_health`
+   - Workflows:
+     1. Reviews weekly incident report → Identifies recurring issues → Prioritizes reliability roadmap items
+     2. Tracks new feature health post-launch → Monitors error rates and latency
+   - Decision Authority: Approves reliability sprints, defines acceptable SLA targets
+
+**AI Agents:**
+
+1. **RCA Generation Agent**
+   - Responsibility: Analyze traces, logs, and metrics to generate root cause analysis reports for incidents
+   - Tools: OpenTelemetry trace querying, log aggregation APIs, GPT-4 for natural language RCA generation, correlation analysis algorithms
+   - Autonomy: Fully autonomous - automatically generates RCA within 5 minutes of incident creation
+   - Escalation: If confidence score <0.7, flags RCA for human review with "Low Confidence" badge
+
+2. **Anomaly Detection Agent**
+   - Responsibility: Detect anomalies in metrics (error rate spikes, latency increases) using ML models
+   - Tools: Prometheus metrics querying, Prophet time-series forecasting, custom anomaly detection models
+   - Autonomy: Supervised - flags anomalies but requires engineer approval to create incident
+   - Escalation: If anomaly persists for >15 minutes without engineer action, auto-creates P3 incident
+
+3. **Incident Correlation Agent**
+   - Responsibility: Correlate multiple alerts into single incident to reduce noise
+   - Tools: Alert stream processing, similarity matching algorithms, incident deduplication logic
+   - Autonomy: Fully autonomous - automatically merges related alerts into parent incident
+   - Escalation: If correlation confidence <0.8, creates separate incidents and notifies SRE for manual review
+
+4. **SLA Breach Predictor Agent**
+   - Responsibility: Predict SLA breaches before they occur based on current error budget consumption
+   - Tools: Error budget tracking, trend analysis, linear regression forecasting
+   - Autonomy: Fully autonomous - sends predictive alerts when breach likely within 7 days
+   - Escalation: If breach predicted within 24 hours, escalates to CSM and platform engineering manager
+
+**Approval Workflows:**
+1. Alert rule creation/modification → Platform Engineer creates → Auto-approved (audit log maintained)
+2. SLA definition change → SRE proposes → VP of Engineering approves → Publishes to Configuration Service
+3. Incident severity escalation (P3 → P1) → On-call engineer escalates → Engineering Manager approves
+4. RCA report publication → AI generates → Platform Engineer reviews (if confidence <0.7) → Publishes to incident
+5. Trace retention policy change → SRE proposes → CFO approves (cost impact) → Platform Engineer implements
 
 ---
 
 ## 12. Analytics Service
 
 #### Objectives
-- **Primary Purpose**: Real-time and batch analytics for conversations, KPIs, business metrics, and A/B testing
-- **Business Value**: Data-driven optimization, client reporting, revenue attribution
-- **Scope**: Conversation analytics, KPI calculation, A/B test analysis, custom dashboards
+- **Primary Purpose**: Real-time and batch analytics for agent conversations, business KPIs, funnel conversion, and Thompson Sampling-based A/B testing with comprehensive client reporting
+- **Business Value**: Increases conversion rates by 15-30% through data-driven optimization, enables client self-service reporting (80% reduction in custom report requests), provides ROI attribution for deployed agents
+- **Product Differentiation**: LLM conversation analytics with intent detection, sentiment analysis, multi-armed bandit optimization (Thompson Sampling), real-time funnel visualization, revenue attribution across full customer lifecycle
+- **Scope Boundaries**:
+  - **Does**: Event tracking and aggregation, conversation analytics (intents, sentiment, quality scores), business metric calculation (conversion rates, ARR, pipeline value), A/B test orchestration with Thompson Sampling, custom dashboard builder, automated report generation, revenue attribution modeling
+  - **Does Not**: Operational monitoring (Monitoring Service does), log storage (external logging platforms do), customer success health scoring (Customer Success Service does), raw trace storage (Monitoring Service does)
 
-**Key APIs:**
-- POST /api/v1/analytics/events (track events)
-- GET /api/v1/analytics/kpis (KPI dashboard)
-- POST /api/v1/analytics/experiments (create A/B test)
-- GET /api/v1/analytics/reports (generate reports)
+#### Requirements
 
-**Stakeholders:** Data Analysts, Product Managers, Client Business Owners
+**Functional Requirements:**
+1. Real-time event tracking API with sub-100ms ingestion latency
+2. Conversation analytics with intent classification, sentiment analysis, and topic extraction
+3. Business funnel tracking (lead → qualified → demo → proposal → closed-won)
+4. A/B experiment framework with Thompson Sampling (multi-armed bandit) allocation
+5. Custom KPI dashboard builder with drag-and-drop metrics
+6. Automated report generation (daily/weekly/monthly) with email delivery
+7. Revenue attribution across customer touchpoints (discovery → demo → PRD → implementation)
+8. Cohort analysis for client retention and expansion tracking
+9. LLM quality metrics aggregation (from Monitoring Service) for client reporting
+10. Export analytics to external BI tools (Tableau, Looker, Power BI) via API
+11. Real-time dashboard updates via WebSocket for live metrics
+12. Multi-tenant data isolation with client-scoped analytics queries
+
+**Non-Functional Requirements:**
+- Event ingestion: <100ms P95 from publish to queryable
+- Dashboard query performance: <3s for 30-day aggregations
+- Support 100M+ events per month across all tenants
+- 99.9% uptime for analytics API
+- Real-time dashboard updates: <500ms from event to UI refresh
+- Data retention: 13 months for detailed events, 5 years for aggregated metrics
+- Multi-tenant query isolation with zero cross-tenant data leakage
+
+**Dependencies:**
+- **All Microservices (0-17)** *[See all MICROSERVICES_ARCHITECTURE*.md documents]* (publish events for tracking)
+- **Monitoring Engine Service** *[See Service 11 above]* (LLM quality metrics, token usage data)
+- **Configuration Management Service** *[See Service 10 above]* (A/B test variant configurations)
+- **Agent Orchestration Service** *[See Service 8 above]* (conversation metadata, intent classification)
+- **CRM Integration Service** *[See Service 15 below]* (revenue data from Salesforce/HubSpot)
+- External APIs:
+  - **ClickHouse**: High-performance event storage and aggregation
+  - **Apache Kafka**: Event stream ingestion
+  - **Redis**: Real-time metric caching for dashboard performance
+  - **S3**: Long-term metric archive and report storage
+
+**Data Storage:**
+- PostgreSQL: A/B experiment definitions, dashboard configurations, scheduled reports, cohort definitions
+- ClickHouse: Event data (conversation events, funnel events, business events), pre-aggregated metrics
+- Redis: Real-time metric cache (last 5 minutes), dashboard session state
+- S3: Generated reports (PDF/CSV/Excel), long-term metric archive (5+ years)
+
+#### Features
+
+**Must-Have:**
+1. ✅ Real-time event tracking API with multi-event batch ingestion
+2. ✅ Conversation analytics dashboard (intents, sentiments, topics, quality scores)
+3. ✅ Business funnel visualization with conversion rates at each stage
+4. ✅ A/B testing with Thompson Sampling allocation for optimal variant selection
+5. ✅ Custom KPI dashboard builder with 20+ pre-built metric widgets
+6. ✅ Automated report generation with email/Slack delivery
+7. ✅ Revenue attribution modeling across customer lifecycle
+8. ✅ Cohort retention analysis with expansion tracking
+9. ✅ LLM cost and quality metrics per client/workflow
+10. ✅ Export API for external BI tools (Tableau, Looker connectors)
+11. ✅ Real-time WebSocket updates for live dashboards
+
+**Nice-to-Have:**
+12. 🔄 Predictive analytics using ML models (churn prediction, upsell scoring)
+13. 🔄 Natural language query interface ("Show me conversion rate for last month")
+14. 🔄 Anomaly detection for business metrics (sudden drop in conversion alerts)
+15. 🔄 Comparative analytics (compare client performance against benchmarks)
+16. 🔄 Automated insight generation ("Discovery call sentiment improved 12% this week")
+
+**Feature Interactions:**
+- Agent completes discovery call → Publishes `conversation_completed` event → Analytics ingests → Updates real-time dashboard → Tracks funnel stage (lead → qualified)
+- Demo generated → Publishes `demo_generated` event → Analytics tracks → Revenue attribution model updated → Client dashboard shows demo ROI
+- A/B test running → Thompson Sampling agent selects variant → Conversation outcome tracked → Posterior distribution updated → Next allocation probability adjusted
+- Monthly report scheduled → Analytics aggregates metrics → Generates PDF report → Emails to client stakeholders
+- Client views dashboard → WebSocket connection established → Real-time events streamed → Dashboard updates without refresh
+- Business metric threshold breached (conversion rate drops >10%) → Alert published to `analytics_alerts` topic → Customer Success notified
+
+#### API Specification
+
+**1. Track Events (Batch Ingestion)**
+```http
+POST /api/v1/analytics/events
+Authorization: Bearer {service_jwt}
+X-Tenant-ID: {organization_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "events": [
+    {
+      "event_type": "conversation_completed",
+      "organization_id": "uuid",
+      "product_type": "voicebot",
+      "timestamp": "2025-10-15T10:30:00Z",
+      "conversation_id": "uuid",
+      "workflow_type": "discovery_call",
+      "properties": {
+        "duration_seconds": 420,
+        "user_intent": "product_inquiry",
+        "sentiment": "positive",
+        "sentiment_score": 0.85,
+        "quality_score": 0.92,
+        "llm_calls": 12,
+        "total_tokens": 3400,
+        "cost_usd": 0.045,
+        "outcome": "qualified",  // qualified | not_interested | callback_requested
+        "next_funnel_stage": "demo_scheduled"
+      }
+    },
+    {
+      "event_type": "demo_generated",
+      "organization_id": "uuid",
+      "product_type": "chatbot",
+      "timestamp": "2025-10-15T10:45:00Z",
+      "demo_id": "uuid",
+      "lead_id": "uuid",
+      "properties": {
+        "generation_time_seconds": 120,
+        "llm_calls": 8,
+        "total_tokens": 5200,
+        "cost_usd": 0.068,
+        "demo_quality_score": 0.88,
+        "sent_to_client": true
+      }
+    }
+  ]
+}
+
+Response (202 Accepted):
+{
+  "events_accepted": 2,
+  "ingestion_id": "uuid",
+  "estimated_query_availability": "2025-10-15T10:30:01Z"  // <1s from now
+}
+```
+
+**2. Get Business Funnel Dashboard**
+```http
+GET /api/v1/analytics/funnel
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Query Parameters:
+- start_date: 2025-10-01
+- end_date: 2025-10-31
+- product_type: voicebot (optional)
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "time_period": "2025-10-01 to 2025-10-31",
+  "funnel_stages": [
+    {
+      "stage": "lead",
+      "count": 1200,
+      "conversion_to_next": 0.75,  // 75% convert to qualified
+      "average_time_in_stage_hours": 2.5
+    },
+    {
+      "stage": "qualified",
+      "count": 900,
+      "conversion_to_next": 0.67,  // 67% get demo
+      "average_time_in_stage_hours": 24
+    },
+    {
+      "stage": "demo_sent",
+      "count": 603,
+      "conversion_to_next": 0.45,  // 45% request proposal
+      "average_time_in_stage_hours": 72
+    },
+    {
+      "stage": "proposal_sent",
+      "count": 271,
+      "conversion_to_next": 0.35,  // 35% close
+      "average_time_in_stage_hours": 120
+    },
+    {
+      "stage": "closed_won",
+      "count": 95,
+      "conversion_to_next": null,
+      "average_time_in_stage_hours": null,
+      "total_arr_usd": 285000
+    }
+  ],
+  "overall_conversion_rate": 0.079,  // 7.9% lead-to-close
+  "average_sales_cycle_days": 9.5,
+  "top_drop_off_stage": "demo_sent",
+  "top_drop_off_rate": 0.55  // 55% don't convert after demo
+}
+```
+
+**3. Create A/B Test Experiment**
+```http
+POST /api/v1/analytics/experiments
+Authorization: Bearer {product_manager_jwt}
+X-Tenant-ID: {organization_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "experiment_name": "Discovery Call Tone Test: Casual vs Professional",
+  "organization_id": "uuid",
+  "product_type": "voicebot",
+  "workflow_type": "discovery_call",
+  "variants": [
+    {
+      "variant_id": "control",
+      "variant_name": "Professional Tone",
+      "config_id": "uuid",  // Points to existing configuration
+      "initial_allocation": 0.5
+    },
+    {
+      "variant_id": "treatment",
+      "variant_name": "Casual Tone",
+      "config_id": "uuid",
+      "initial_allocation": 0.5
+    }
+  ],
+  "allocation_strategy": "thompson_sampling",  // thompson_sampling | fixed | round_robin
+  "success_metric": "qualified_rate",  // qualified_rate | sentiment_score | demo_request_rate
+  "minimum_sample_size": 100,  // Per variant
+  "maximum_duration_days": 14,
+  "start_immediately": true
+}
+
+Response (201 Created):
+{
+  "experiment_id": "uuid",
+  "experiment_name": "Discovery Call Tone Test: Casual vs Professional",
+  "status": "running",  // draft | running | paused | completed
+  "started_at": "2025-10-15T10:00:00Z",
+  "estimated_completion": "2025-10-29T10:00:00Z",
+  "variants": [
+    {
+      "variant_id": "control",
+      "current_allocation": 0.5,
+      "samples_collected": 0,
+      "success_rate": null
+    },
+    {
+      "variant_id": "treatment",
+      "current_allocation": 0.5,
+      "samples_collected": 0,
+      "success_rate": null
+    }
+  ],
+  "url": "https://analytics.workflow.com/experiments/uuid"
+}
+
+Event Published to Kafka:
+Topic: analytics_experiments
+{
+  "event_type": "experiment_started",
+  "experiment_id": "uuid",
+  "organization_id": "uuid",
+  "workflow_type": "discovery_call",
+  "allocation_strategy": "thompson_sampling",
+  "timestamp": "2025-10-15T10:00:00Z"
+}
+```
+
+**4. Get A/B Test Results**
+```http
+GET /api/v1/analytics/experiments/{experiment_id}
+Authorization: Bearer {product_manager_jwt}
+
+Response (200 OK):
+{
+  "experiment_id": "uuid",
+  "experiment_name": "Discovery Call Tone Test: Casual vs Professional",
+  "status": "running",
+  "started_at": "2025-10-15T10:00:00Z",
+  "duration_days": 7,
+  "allocation_strategy": "thompson_sampling",
+  "success_metric": "qualified_rate",
+  "variants": [
+    {
+      "variant_id": "control",
+      "variant_name": "Professional Tone",
+      "current_allocation": 0.35,  // Thompson Sampling reduced allocation (performing worse)
+      "samples_collected": 245,
+      "successes": 147,
+      "success_rate": 0.60,
+      "confidence_interval_95": [0.54, 0.66],
+      "posterior_alpha": 148,  // Beta distribution parameters
+      "posterior_beta": 99
+    },
+    {
+      "variant_id": "treatment",
+      "variant_name": "Casual Tone",
+      "current_allocation": 0.65,  // Thompson Sampling increased allocation (performing better)
+      "samples_collected": 455,
+      "successes": 318,
+      "success_rate": 0.70,
+      "confidence_interval_95": [0.66, 0.74],
+      "posterior_alpha": 319,
+      "posterior_beta": 138
+    }
+  ],
+  "statistical_significance": {
+    "is_significant": true,
+    "p_value": 0.012,
+    "confidence_level": 0.95,
+    "winning_variant": "treatment",
+    "improvement_over_control": 0.167,  // 16.7% improvement
+    "probability_best": {
+      "control": 0.08,
+      "treatment": 0.92  // 92% probability treatment is best
+    }
+  },
+  "recommendation": {
+    "action": "deploy_winner",  // continue | deploy_winner | stop_inconclusive
+    "reason": "Treatment variant shows statistically significant 16.7% improvement with 92% probability of being best variant.",
+    "deploy_variant": "treatment"
+  },
+  "estimated_completion": "2025-10-22T10:00:00Z"
+}
+```
+
+**5. Get Conversation Analytics**
+```http
+GET /api/v1/analytics/conversations
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Query Parameters:
+- start_date: 2025-10-01
+- end_date: 2025-10-31
+- product_type: voicebot (optional)
+- workflow_type: discovery_call (optional)
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "time_period": "2025-10-01 to 2025-10-31",
+  "total_conversations": 2450,
+  "conversation_metrics": {
+    "average_duration_seconds": 385,
+    "average_quality_score": 0.87,
+    "average_sentiment_score": 0.79,
+    "average_llm_calls_per_conversation": 11,
+    "average_tokens_per_conversation": 3200,
+    "average_cost_per_conversation_usd": 0.042
+  },
+  "intent_breakdown": [
+    {
+      "intent": "product_inquiry",
+      "count": 980,
+      "percentage": 0.40,
+      "average_quality_score": 0.89
+    },
+    {
+      "intent": "pricing_question",
+      "count": 735,
+      "percentage": 0.30,
+      "average_quality_score": 0.85
+    },
+    {
+      "intent": "technical_question",
+      "count": 490,
+      "percentage": 0.20,
+      "average_quality_score": 0.88
+    },
+    {
+      "intent": "complaint",
+      "count": 245,
+      "percentage": 0.10,
+      "average_quality_score": 0.82
+    }
+  ],
+  "sentiment_distribution": {
+    "positive": 0.65,
+    "neutral": 0.25,
+    "negative": 0.10
+  },
+  "outcome_breakdown": [
+    {
+      "outcome": "qualified",
+      "count": 1838,
+      "percentage": 0.75
+    },
+    {
+      "outcome": "not_interested",
+      "count": 490,
+      "percentage": 0.20
+    },
+    {
+      "outcome": "callback_requested",
+      "count": 122,
+      "percentage": 0.05
+    }
+  ],
+  "trends": {
+    "quality_score_trend": "+5.2%",  // vs previous period
+    "sentiment_trend": "+3.1%",
+    "qualified_rate_trend": "+2.8%"
+  }
+}
+```
+
+**6. Create Custom Dashboard**
+```http
+POST /api/v1/analytics/dashboards
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "dashboard_name": "Weekly Executive Summary",
+  "organization_id": "uuid",
+  "layout": [
+    {
+      "widget_type": "metric_card",
+      "metric": "total_conversations",
+      "time_range": "last_7_days",
+      "position": {"row": 0, "col": 0, "width": 3, "height": 2}
+    },
+    {
+      "widget_type": "funnel_chart",
+      "time_range": "last_30_days",
+      "position": {"row": 0, "col": 3, "width": 6, "height": 4}
+    },
+    {
+      "widget_type": "line_chart",
+      "metric": "qualified_rate",
+      "time_range": "last_90_days",
+      "grouping": "daily",
+      "position": {"row": 2, "col": 0, "width": 6, "height": 3}
+    },
+    {
+      "widget_type": "sentiment_distribution",
+      "time_range": "last_30_days",
+      "position": {"row": 2, "col": 6, "width": 3, "height": 3}
+    }
+  ],
+  "shared_with": ["user_uuid_1", "user_uuid_2"],
+  "is_public": false
+}
+
+Response (201 Created):
+{
+  "dashboard_id": "uuid",
+  "dashboard_name": "Weekly Executive Summary",
+  "url": "https://analytics.workflow.com/dashboards/uuid",
+  "created_at": "2025-10-15T10:00:00Z",
+  "widget_count": 4
+}
+```
+
+**7. Schedule Automated Report**
+```http
+POST /api/v1/analytics/reports/schedule
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "report_name": "Monthly Performance Report",
+  "organization_id": "uuid",
+  "report_type": "business_summary",  // business_summary | conversation_analytics | funnel_analysis | llm_cost_report
+  "frequency": "monthly",  // daily | weekly | monthly
+  "schedule_day": 1,  // 1st of month
+  "schedule_time": "09:00",  // 9 AM UTC
+  "recipients": [
+    {
+      "email": "ceo@acme.com",
+      "name": "Jane Smith"
+    },
+    {
+      "email": "cto@acme.com",
+      "name": "John Doe"
+    }
+  ],
+  "delivery_channels": ["email", "slack"],
+  "slack_channel_id": "C0123456789",
+  "format": "pdf",  // pdf | csv | excel
+  "include_sections": [
+    "executive_summary",
+    "funnel_performance",
+    "conversation_analytics",
+    "llm_cost_breakdown",
+    "month_over_month_comparison"
+  ]
+}
+
+Response (201 Created):
+{
+  "schedule_id": "uuid",
+  "report_name": "Monthly Performance Report",
+  "next_generation": "2025-11-01T09:00:00Z",
+  "status": "active",
+  "created_at": "2025-10-15T10:00:00Z"
+}
+```
+
+**8. Get Revenue Attribution Report**
+```http
+GET /api/v1/analytics/revenue-attribution
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Query Parameters:
+- start_date: 2025-10-01
+- end_date: 2025-10-31
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "time_period": "2025-10-01 to 2025-10-31",
+  "total_revenue_usd": 285000,
+  "closed_deals": 95,
+  "revenue_by_touchpoint": [
+    {
+      "touchpoint": "discovery_call",
+      "attributed_revenue_usd": 85500,
+      "attribution_percentage": 0.30,
+      "deals_influenced": 95
+    },
+    {
+      "touchpoint": "demo_generated",
+      "attributed_revenue_usd": 71250,
+      "attribution_percentage": 0.25,
+      "deals_influenced": 95
+    },
+    {
+      "touchpoint": "prd_created",
+      "attributed_revenue_usd": 57000,
+      "attribution_percentage": 0.20,
+      "deals_influenced": 78
+    },
+    {
+      "touchpoint": "implementation_completed",
+      "attributed_revenue_usd": 42750,
+      "attribution_percentage": 0.15,
+      "deals_influenced": 65
+    },
+    {
+      "touchpoint": "qbr_conducted",
+      "attributed_revenue_usd": 28500,
+      "attribution_percentage": 0.10,
+      "deals_influenced": 45
+    }
+  ],
+  "attribution_model": "multi_touch_linear",  // first_touch | last_touch | multi_touch_linear | time_decay
+  "roi_by_workflow": [
+    {
+      "workflow_type": "discovery_call",
+      "total_cost_usd": 5200,  // LLM + infrastructure
+      "attributed_revenue_usd": 85500,
+      "roi": 15.4  // 15.4x ROI
+    },
+    {
+      "workflow_type": "demo_generation",
+      "total_cost_usd": 3800,
+      "attributed_revenue_usd": 71250,
+      "roi": 17.8
+    }
+  ],
+  "customer_lifetime_value_avg": 3000,
+  "cost_per_acquisition_avg": 195
+}
+```
+
+**9. Get Cohort Retention Analysis**
+```http
+GET /api/v1/analytics/cohorts
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Query Parameters:
+- cohort_by: month_joined | quarter_joined | product_type
+- start_date: 2025-01-01
+- end_date: 2025-10-31
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "cohort_by": "month_joined",
+  "cohorts": [
+    {
+      "cohort_name": "January 2025",
+      "cohort_size": 45,
+      "retention_by_month": {
+        "month_0": 1.00,  // 100% at start
+        "month_1": 0.93,
+        "month_2": 0.89,
+        "month_3": 0.84,
+        "month_4": 0.82,
+        "month_5": 0.80,
+        "month_6": 0.78,
+        "month_7": 0.78,
+        "month_8": 0.76,
+        "month_9": 0.76
+      },
+      "expansion_revenue": {
+        "month_0_arr": 135000,
+        "current_arr": 182000,
+        "expansion_rate": 0.35  // 35% expansion
+      }
+    }
+  ],
+  "overall_retention_month_6": 0.82,
+  "overall_expansion_rate": 0.28
+}
+```
+
+**10. Export to External BI Tool**
+```http
+POST /api/v1/analytics/export
+Authorization: Bearer {client_jwt}
+X-Tenant-ID: {organization_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "export_type": "tableau_connector",  // tableau_connector | looker_api | power_bi | csv
+  "metrics": [
+    "total_conversations",
+    "qualified_rate",
+    "funnel_conversion_rates",
+    "revenue_attribution"
+  ],
+  "start_date": "2025-01-01",
+  "end_date": "2025-10-31",
+  "granularity": "daily",  // hourly | daily | weekly | monthly
+  "destination": {
+    "type": "s3",
+    "bucket": "acme-bi-exports",
+    "path": "/analytics/2025-10/"
+  }
+}
+
+Response (202 Accepted):
+{
+  "export_id": "uuid",
+  "status": "processing",
+  "estimated_completion": "2025-10-15T10:05:00Z",
+  "download_url": "https://analytics.workflow.com/exports/uuid"  // Available when complete
+}
+```
+
+#### Frontend Components
+
+**1. Business Funnel Dashboard**
+- Component: `FunnelDashboard.tsx`
+- Features:
+  - Animated funnel visualization with conversion rates between stages
+  - Click-through to see conversion details per stage
+  - Time-series conversion rate trends (daily/weekly/monthly)
+  - Drop-off analysis with top reasons for stage exit
+  - Cohort comparison (compare this month vs last month)
+  - Export funnel data to CSV/Excel
+
+**2. A/B Test Manager**
+- Component: `ABTestManager.tsx`
+- Features:
+  - Create new experiments with variant configuration
+  - Real-time allocation visualization (Thompson Sampling updates)
+  - Statistical significance calculator with confidence intervals
+  - Variant performance comparison charts
+  - Experiment status tracking (draft/running/paused/completed)
+  - Deploy winner with one-click configuration rollout
+  - Experiment history and learnings repository
+
+**3. Conversation Analytics Dashboard**
+- Component: `ConversationAnalyticsDashboard.tsx`
+- Features:
+  - Intent distribution pie chart with drill-down
+  - Sentiment trend line chart (positive/neutral/negative over time)
+  - Quality score heatmap by hour/day of week
+  - Topic extraction word cloud
+  - Outcome distribution (qualified/not interested/callback)
+  - Filter by product type, workflow, date range
+  - Export conversation transcripts matching filters
+
+**4. Custom Dashboard Builder**
+- Component: `DashboardBuilder.tsx`
+- Features:
+  - Drag-and-drop widget placement on grid layout
+  - 20+ pre-built widget types (metric cards, charts, tables, funnels)
+  - Configure data source and time range per widget
+  - Share dashboard with team members via link
+  - Set dashboard refresh interval (real-time to daily)
+  - Duplicate dashboard templates
+  - Mobile-responsive preview
+
+**5. Revenue Attribution Report**
+- Component: `RevenueAttributionReport.tsx`
+- Features:
+  - Multi-touch attribution model visualization
+  - Touchpoint influence chart (discovery → demo → PRD → close)
+  - ROI calculator per workflow type
+  - Customer lifetime value (CLV) trends
+  - Cost per acquisition (CPA) breakdown
+  - Attribution model selector (first-touch, last-touch, linear, time-decay)
+  - Export to executive presentation format (PDF)
+
+**6. Cohort Retention Analysis**
+- Component: `CohortAnalysis.tsx`
+- Features:
+  - Retention matrix heatmap (cohorts × months)
+  - Expansion revenue tracking per cohort
+  - Churn prediction overlay
+  - Segment cohorts by product type, industry, deal size
+  - Compare cohorts side-by-side
+  - Export cohort data to CSV
+
+**7. Real-Time Metrics Dashboard**
+- Component: `RealTimeMetricsDashboard.tsx`
+- Features:
+  - Live conversation count with sparkline
+  - Real-time qualified rate updates via WebSocket
+  - Active experiment performance (live variant allocation)
+  - Today vs yesterday comparison metrics
+  - Alert thresholds with breach notifications
+  - Auto-refresh every 10 seconds (WebSocket-powered)
+
+**8. Scheduled Reports Manager**
+- Component: `ReportScheduleManager.tsx`
+- Features:
+  - Create/edit/delete report schedules
+  - Preview generated report before scheduling
+  - Manage recipient lists (email, Slack channels)
+  - View report generation history and delivery status
+  - Manually trigger report generation
+  - Template library for common report types
+
+**State Management:**
+- React Query for analytics data fetching with automatic cache invalidation
+- WebSocket for real-time dashboard updates (conversations, experiments, metrics)
+- Zustand for UI state (selected filters, date ranges, dashboard layouts)
+- IndexedDB for offline dashboard viewing (cached metrics)
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Data Analyst**
+   - Role: Build custom dashboards, analyze experiments, generate insights from conversation data
+   - Access: All analytics dashboards, A/B test results, cohort analysis, SQL query interface
+   - Permissions: `read:all_analytics`, `write:dashboards`, `export:data`, `query:clickhouse`
+   - Workflows:
+     1. Product Manager requests analysis → Data Analyst builds custom dashboard → Shares insights in weekly meeting
+     2. Monitors A/B tests daily → Identifies statistically significant winners → Recommends deployment
+   - Tools: SQL query builder, Jupyter notebooks for advanced analysis
+
+2. **Product Manager**
+   - Role: Define success metrics, run A/B tests, optimize conversion funnels
+   - Access: Business funnel dashboard, A/B test manager, revenue attribution, conversation analytics
+   - Permissions: `read:product_analytics`, `write:experiments`, `deploy:winning_variants`
+   - Workflows:
+     1. Hypothesizes optimization → Creates A/B test → Monitors results → Deploys winner
+     2. Reviews weekly funnel dashboard → Identifies drop-off stage → Prioritizes optimization work
+   - Decision Authority: Approves A/B test deployment, defines success metrics
+
+3. **Client Business Owner**
+   - Role: Monitor ROI, track business outcomes, access self-service reports
+   - Access: Client-scoped dashboards (funnel, revenue attribution, conversation analytics), scheduled reports
+   - Permissions: `read:client_analytics:{organization_id}`, `export:reports`, `configure:dashboards`
+   - Workflows:
+     1. Receives monthly automated report via email → Reviews business metrics → Shares with executive team
+     2. Logs into analytics portal → Views real-time funnel performance → Monitors qualified lead rate
+   - Escalation: Contacts CSM if metrics decline
+
+4. **Executive Leadership (CEO/CTO)**
+   - Role: Monitor high-level business metrics, track ROI across all clients
+   - Access: Executive summary dashboard, revenue attribution, cohort retention
+   - Permissions: `read:executive_analytics`, `read:cross_client_benchmarks`
+   - Workflows:
+     1. Views executive dashboard weekly → Tracks ARR growth and client retention → Identifies trends
+     2. Reviews quarterly business review reports → Evaluates platform ROI
+   - Decision Authority: Approves major metric definition changes
+
+**AI Agents:**
+
+1. **Conversation Intent Classifier**
+   - Responsibility: Classify user intent from conversation transcripts (product_inquiry, pricing_question, technical_question, complaint)
+   - Tools: GPT-4 for intent classification, custom fine-tuned model for domain-specific intents
+   - Autonomy: Fully autonomous - classifies all conversations in real-time
+   - Escalation: If confidence <0.7, flags conversation for manual review
+
+2. **Sentiment Analysis Agent**
+   - Responsibility: Analyze conversation sentiment (positive/neutral/negative) and extract emotional tone
+   - Tools: Fine-tuned BERT model for sentiment analysis, GPT-4 for tone extraction
+   - Autonomy: Fully autonomous - scores all conversations
+   - Escalation: Flags highly negative sentiment (score <0.3) for immediate CSM review
+
+3. **Thompson Sampling Allocation Agent**
+   - Responsibility: Dynamically adjust A/B test variant allocation based on Bayesian posterior distributions
+   - Tools: Thompson Sampling algorithm, Beta distribution calculations, statistical significance testing
+   - Autonomy: Fully autonomous - updates allocation probabilities after each sample
+   - Escalation: If one variant reaches 95% probability of being best, suggests early experiment termination
+
+4. **Automated Insight Generator**
+   - Responsibility: Detect significant trends and generate natural language insights ("Qualified rate increased 12% this week")
+   - Tools: Statistical trend detection, GPT-4 for insight narrative generation
+   - Autonomy: Supervised - generates insights but requires Data Analyst review before client sharing
+   - Escalation: If detects negative trend (>10% metric decline), immediately alerts Product Manager
+
+5. **Anomaly Detection Agent**
+   - Responsibility: Detect anomalies in business metrics (sudden drop in conversion, spike in costs)
+   - Tools: Prophet time-series forecasting, Z-score anomaly detection, custom ML models
+   - Autonomy: Fully autonomous - alerts on anomalies exceeding 2 standard deviations
+   - Escalation: Critical anomalies (>3 sigma) escalate to on-call Product Manager via PagerDuty
+
+**Approval Workflows:**
+1. A/B test creation → Product Manager creates → Auto-approved (audit log maintained)
+2. A/B test deployment (deploy winning variant) → Product Manager deploys → Auto-approved if statistical significance reached
+3. Custom dashboard sharing externally → Data Analyst creates → VP of Product approves → Shares with client
+4. New metric definition → Data Analyst proposes → Product Manager approves → Adds to metric catalog
+5. Export to external BI tool → Client requests → Data Analyst configures → Auto-approved (audit log maintained)
 
 ---
 
 ## 13. Customer Success Service
 
 #### Objectives
-- **Primary Purpose**: Automated customer success workflows with AI-driven insights and proactive engagement
-- **Business Value**: Reduces churn, identifies expansion opportunities, automates QBRs
-- **Scope**: KPI tracking, insight generation, meeting automation, playbook suggestions
+- **Primary Purpose**: AI-driven customer success automation with predictive health scoring, churn prevention, expansion identification, automated QBR generation, and lifecycle messaging orchestration
+- **Business Value**: Reduces churn by 30-40%, increases expansion revenue by 25%, automates 80% of QBR preparation, enables proactive intervention 14-21 days before churn risk materializes
+- **Product Differentiation**: ChurnZero-style predictive CS AI™ with multi-signal health scoring, automated playbook execution, relationship strength analysis, expansion opportunity scoring, integration with hyperpersonalization engine for targeted campaigns
+- **Scope Boundaries**:
+  - **Does**: Health score calculation (multi-signal), churn prediction (ML-based), expansion opportunity identification, automated QBR document generation, lifecycle messaging (onboarding, adoption, renewal), playbook recommendations, CSM task automation, relationship mapping
+  - **Does Not**: Manual meeting scheduling (calendar integration does), direct email/SMS sending (Hyperpersonalization Service does), business analytics (Analytics Service does), support ticket management (Support Service does)
 
-**Key APIs:**
-- GET /api/v1/customer-success/metrics/{client_id} (client metrics)
-- POST /api/v1/customer-success/insights (generate insights)
-- POST /api/v1/customer-success/meetings (schedule QBR)
-- GET /api/v1/customer-success/playbooks (recommended actions)
+#### Requirements
 
-**Stakeholders:** Customer Success Managers, Account Executives
+**Functional Requirements:**
+1. Multi-signal health scoring with 15+ inputs (product usage, sentiment, support tickets, payment status, engagement, NPS)
+2. ML-based churn prediction with 14-21 day early warning (85%+ accuracy)
+3. Expansion opportunity scoring (upsell/cross-sell likelihood)
+4. Automated QBR document generation with business outcomes, ROI analysis, and recommendations
+5. Lifecycle messaging orchestration (onboarding, adoption milestones, renewal reminders)
+6. Playbook engine with trigger-based automated workflows (low health → outreach playbook)
+7. Relationship strength analysis (executive sponsor engagement, multi-threading)
+8. CSM task automation and prioritization (focus on high-risk/high-value accounts)
+9. Account segmentation (strategic, high-touch, tech-touch, at-risk)
+10. Success plan tracking with milestones and outcomes
+11. Integration with Hyperpersonalization Service for targeted campaigns
+12. NPS/CSAT survey orchestration and trend analysis
+
+**Non-Functional Requirements:**
+- Health score calculation: <5s for real-time updates
+- Churn prediction accuracy: >85% with 14-21 day lead time
+- Support 10,000+ client accounts with health scoring
+- 99.9% uptime for CSM dashboard
+- Health score updates: Real-time on critical signals (support escalation, payment failure)
+- Data retention: 5 years for historical health scores and predictions
+
+**Dependencies:**
+- **Analytics Service** *[See Service 12 above]* (product usage metrics, engagement data, conversation analytics)
+- **Monitoring Engine Service** *[See Service 11 above]* (SLA compliance, uptime metrics)
+- **Support Engine Service** *[See Service 14 below]* (support ticket data, resolution times, CSAT scores)
+- **CRM Integration Service** *[See Service 15 below]* (account data, ARR, renewal dates from Salesforce/HubSpot)
+- **Hyperpersonalization Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md]* (lifecycle messaging, email campaigns)
+- **Agent Orchestration Service** *[See Service 8 above]* (conversation sentiment, engagement quality)
+- External APIs:
+  - **Calendly/Cal.com**: QBR meeting scheduling
+  - **Zoom/Google Meet**: Video conferencing links
+  - **Slack API**: CSM notifications and alerts
+  - **SendGrid**: Email delivery for QBR invites
+
+**Data Storage:**
+- PostgreSQL: Health scores, churn predictions, expansion scores, success plans, playbooks, account segments
+- ClickHouse: Health score history (time-series), engagement events
+- Redis: Real-time health score cache, active playbook state
+- S3: Generated QBR documents (PDF/PPTX), success plan templates
+
+#### Features
+
+**Must-Have:**
+1. ✅ Multi-signal health scoring with configurable weights
+2. ✅ ML-based churn prediction with confidence scores
+3. ✅ Expansion opportunity identification (upsell/cross-sell scoring)
+4. ✅ Automated QBR generation with business outcomes and ROI
+5. ✅ Lifecycle messaging triggers (onboarding, adoption, renewal)
+6. ✅ Playbook engine with conditional workflows
+7. ✅ CSM dashboard with account health overview
+8. ✅ Account segmentation and prioritization
+9. ✅ Relationship strength analysis
+10. ✅ Success plan templates and tracking
+11. ✅ NPS/CSAT survey orchestration
+
+**Nice-to-Have:**
+12. 🔄 Predictive expansion timing ("Contact in 45 days for optimal upsell")
+13. 🔄 Executive sponsor engagement tracking
+14. 🔄 Automated success story generation for case studies
+15. 🔄 Competitive win/loss analysis integration
+16. 🔄 Revenue waterfall forecasting with churn/expansion
+
+**Feature Interactions:**
+- Health score drops below 50 → Churn risk playbook triggered → CSM notified → Task created → Outreach email sent via Hyperpersonalization Service
+- Product usage spike detected → Expansion opportunity scored → CSM notified → Upsell playbook suggested
+- QBR due in 30 days → QBR generation triggered → Document created → Meeting invite sent → Calendly link shared
+- Support ticket escalated → Health score immediately updated → CSM alerted if account in strategic segment
+- Payment failed → Health score drops 20 points → High-priority CSM task created → Finance team notified
+- NPS score <7 (detractor) → Churn prediction confidence increases → Executive escalation playbook triggered
+
+#### API Specification
+
+**1. Get Account Health Dashboard**
+```http
+GET /api/v1/customer-success/health/{organization_id}
+Authorization: Bearer {csm_jwt}
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "organization_name": "Acme Corp",
+  "health_score": 72,  // 0-100 scale
+  "health_status": "healthy",  // at_risk (0-50) | needs_attention (51-70) | healthy (71-85) | excellent (86-100)
+  "previous_health_score": 68,
+  "health_trend": "improving",  // improving | stable | declining
+  "health_score_breakdown": {
+    "product_usage": {
+      "score": 85,
+      "weight": 0.30,
+      "signals": {
+        "daily_active_users": 45,
+        "feature_adoption_rate": 0.78,
+        "api_calls_per_day": 1200
+      }
+    },
+    "engagement": {
+      "score": 70,
+      "weight": 0.20,
+      "signals": {
+        "last_login_days_ago": 2,
+        "conversation_frequency": "high",
+        "csm_response_rate": 0.95
+      }
+    },
+    "support": {
+      "score": 60,
+      "weight": 0.15,
+      "signals": {
+        "open_tickets": 3,
+        "average_resolution_time_hours": 18,
+        "csat_score": 4.2
+      }
+    },
+    "financial": {
+      "score": 80,
+      "weight": 0.15,
+      "signals": {
+        "payment_status": "current",
+        "days_to_renewal": 120,
+        "arr_usd": 36000
+      }
+    },
+    "sentiment": {
+      "score": 75,
+      "weight": 0.10,
+      "signals": {
+        "nps_score": 8,
+        "conversation_sentiment_avg": 0.78,
+        "recent_feedback": "positive"
+      }
+    },
+    "relationship": {
+      "score": 65,
+      "weight": 0.10,
+      "signals": {
+        "executive_sponsor_engaged": true,
+        "multi_threading_score": 0.70,
+        "champion_identified": true
+      }
+    }
+  },
+  "churn_prediction": {
+    "churn_risk": "low",  // low (0-30%) | medium (31-60%) | high (61-100%)
+    "churn_probability": 0.15,  // 15% chance in next 90 days
+    "confidence": 0.88,
+    "predicted_churn_date": null,  // null if low risk
+    "top_risk_factors": [
+      "3 open support tickets (avg 1.2 for healthy accounts)",
+      "Feature adoption below benchmark (78% vs 85% avg)"
+    ]
+  },
+  "expansion_opportunity": {
+    "score": 82,  // 0-100 likelihood
+    "opportunity_type": "upsell",  // upsell | cross_sell | seat_expansion
+    "estimated_arr_increase": 12000,
+    "recommended_timing": "next_30_days",
+    "reasoning": "High product usage (85%), positive sentiment (NPS 8), approaching renewal (120 days)"
+  },
+  "csm_assigned": {
+    "user_id": "uuid",
+    "name": "Sarah Johnson",
+    "email": "sarah@workflow.com"
+  },
+  "account_segment": "strategic",  // strategic | high_touch | tech_touch | at_risk
+  "days_since_last_qbr": 82,
+  "next_qbr_due": "2025-11-15"
+}
+```
+
+**2. Generate QBR Document**
+```http
+POST /api/v1/customer-success/qbr/generate
+Authorization: Bearer {csm_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "qbr_period": "Q3_2025",  // Q1_2025 | Q2_2025 | monthly | annual
+  "include_sections": [
+    "executive_summary",
+    "business_outcomes",
+    "product_usage_analytics",
+    "roi_analysis",
+    "success_milestones",
+    "upcoming_roadmap",
+    "action_items"
+  ],
+  "format": "pptx",  // pdf | pptx | docx
+  "branding": "acme_corp"  // Use client's branding
+}
+
+Response (202 Accepted):
+{
+  "qbr_id": "uuid",
+  "status": "generating",
+  "estimated_completion": "2025-10-15T10:02:00Z",
+  "sections_included": 7
+}
+
+// Poll for completion
+GET /api/v1/customer-success/qbr/{qbr_id}
+Response (200 OK):
+{
+  "qbr_id": "uuid",
+  "status": "completed",
+  "organization_id": "uuid",
+  "qbr_period": "Q3_2025",
+  "generated_at": "2025-10-15T10:01:45Z",
+  "download_url": "https://cs.workflow.com/qbr/uuid/download",
+  "preview_url": "https://cs.workflow.com/qbr/uuid/preview",
+  "summary": {
+    "total_conversations": 2450,
+    "qualified_leads": 1838,
+    "conversion_rate": 0.75,
+    "arr_impact": 285000,
+    "roi": "15.4x",
+    "key_wins": [
+      "Achieved 75% qualification rate (target: 70%)",
+      "Generated $285K ARR from 95 closed deals",
+      "Reduced sales cycle from 14 days to 9.5 days"
+    ],
+    "recommendations": [
+      "Expand to additional use case: post-sales support bot",
+      "Increase voicebot deployment (higher qualified rate than chatbot)"
+    ]
+  }
+}
+```
+
+**3. Trigger Playbook**
+```http
+POST /api/v1/customer-success/playbooks/trigger
+Authorization: Bearer {csm_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "playbook_id": "churn_risk_intervention",  // churn_risk_intervention | expansion_outreach | onboarding_nurture | renewal_preparation
+  "organization_id": "uuid",
+  "trigger_reason": "Health score dropped below 50 (critical threshold)",
+  "override_automation": false,  // If true, requires manual CSM approval for each step
+  "context": {
+    "health_score": 48,
+    "churn_probability": 0.68,
+    "top_risk_factors": ["3 open support tickets", "Low engagement (last login 14 days ago)"]
+  }
+}
+
+Response (201 Created):
+{
+  "playbook_execution_id": "uuid",
+  "playbook_name": "Churn Risk Intervention",
+  "status": "running",
+  "started_at": "2025-10-15T10:00:00Z",
+  "steps": [
+    {
+      "step_number": 1,
+      "action": "create_csm_task",
+      "description": "High-priority outreach: Acme Corp at churn risk",
+      "status": "completed",
+      "completed_at": "2025-10-15T10:00:01Z"
+    },
+    {
+      "step_number": 2,
+      "action": "send_email_campaign",
+      "description": "Send personalized check-in email via Hyperpersonalization Service",
+      "status": "in_progress",
+      "estimated_completion": "2025-10-15T10:05:00Z"
+    },
+    {
+      "step_number": 3,
+      "action": "schedule_executive_call",
+      "description": "Schedule call between CSM and client executive sponsor",
+      "status": "pending",
+      "dependencies": ["step_2_email_response"]
+    }
+  ]
+}
+
+Event Published to Kafka:
+Topic: customer_success_events
+{
+  "event_type": "playbook_triggered",
+  "playbook_id": "churn_risk_intervention",
+  "organization_id": "uuid",
+  "trigger_reason": "health_score_critical",
+  "timestamp": "2025-10-15T10:00:00Z"
+}
+```
+
+**4. Get Churn Predictions**
+```http
+GET /api/v1/customer-success/churn-predictions
+Authorization: Bearer {csm_jwt}
+Query Parameters:
+- risk_level: high | medium | low (optional - filter by risk)
+- csm_id: uuid (optional - filter by assigned CSM)
+- segment: strategic | high_touch | tech_touch (optional)
+- limit: 50 (default)
+
+Response (200 OK):
+{
+  "predictions": [
+    {
+      "organization_id": "uuid",
+      "organization_name": "Acme Corp",
+      "churn_probability": 0.68,
+      "churn_risk": "high",
+      "confidence": 0.92,
+      "predicted_churn_date": "2025-11-28",
+      "days_until_predicted_churn": 44,
+      "current_health_score": 48,
+      "arr_at_risk_usd": 36000,
+      "top_risk_factors": [
+        "Health score declined 30 points in 21 days",
+        "3 open support tickets (2x normal)",
+        "No executive sponsor engagement in 45 days",
+        "Payment failed once (now current)"
+      ],
+      "recommended_actions": [
+        "Trigger churn risk intervention playbook",
+        "Schedule executive business review within 7 days",
+        "Resolve open support tickets with priority escalation"
+      ],
+      "csm_assigned": "Sarah Johnson",
+      "last_outreach": "2025-10-01"
+    },
+    {
+      "organization_id": "uuid",
+      "organization_name": "TechStart Inc",
+      "churn_probability": 0.55,
+      "churn_risk": "medium",
+      "confidence": 0.85,
+      "predicted_churn_date": "2025-12-15",
+      "days_until_predicted_churn": 61,
+      "current_health_score": 62,
+      "arr_at_risk_usd": 24000,
+      "top_risk_factors": [
+        "Low feature adoption (60% vs 85% benchmark)",
+        "NPS score declined from 9 to 6"
+      ],
+      "recommended_actions": [
+        "Schedule product training session",
+        "Share success stories from similar clients"
+      ],
+      "csm_assigned": "Michael Chen",
+      "last_outreach": "2025-10-10"
+    }
+  ],
+  "total_at_risk_arr_usd": 156000,
+  "total_accounts": 12,
+  "risk_distribution": {
+    "high": 3,
+    "medium": 5,
+    "low": 4
+  }
+}
+```
+
+**5. Get Expansion Opportunities**
+```http
+GET /api/v1/customer-success/expansion-opportunities
+Authorization: Bearer {csm_jwt}
+Query Parameters:
+- min_score: 70 (minimum expansion score)
+- opportunity_type: upsell | cross_sell | seat_expansion (optional)
+- limit: 50
+
+Response (200 OK):
+{
+  "opportunities": [
+    {
+      "organization_id": "uuid",
+      "organization_name": "Growth Co",
+      "expansion_score": 88,
+      "opportunity_type": "seat_expansion",
+      "current_arr_usd": 48000,
+      "estimated_expansion_arr_usd": 24000,
+      "expansion_percentage": 0.50,  // 50% increase
+      "recommended_timing": "next_30_days",
+      "reasoning": [
+        "Product usage at 95% capacity (45/50 seats active daily)",
+        "High health score (82) and positive sentiment (NPS 9)",
+        "Recent feature requests indicate need for more users",
+        "120 days until renewal (optimal timing)"
+      ],
+      "recommended_pitch": "Your team is maxing out their current seat allocation with 45/50 users active daily. Adding 25 more seats would support your growing team and comes with a 20% volume discount.",
+      "csm_assigned": "Sarah Johnson",
+      "last_expansion_discussion": null
+    },
+    {
+      "organization_id": "uuid",
+      "organization_name": "Enterprise LLC",
+      "expansion_score": 82,
+      "opportunity_type": "cross_sell",
+      "current_arr_usd": 72000,
+      "estimated_expansion_arr_usd": 36000,
+      "expansion_percentage": 0.50,
+      "recommended_timing": "next_60_days",
+      "reasoning": [
+        "Successfully deployed chatbot, now candidate for voicebot",
+        "High satisfaction with chatbot (CSAT 4.8/5)",
+        "Support tickets show voice channel inquiries",
+        "Executive sponsor highly engaged"
+      ],
+      "recommended_pitch": "Your chatbot is thriving with a 78% qualification rate. Clients using both chatbot + voicebot see 35% higher conversion rates. Let's explore adding voice to your channels.",
+      "csm_assigned": "Michael Chen",
+      "last_expansion_discussion": "2025-09-15"
+    }
+  ],
+  "total_expansion_potential_arr_usd": 240000,
+  "total_opportunities": 8
+}
+```
+
+**6. Schedule Lifecycle Message**
+```http
+POST /api/v1/customer-success/lifecycle-messages
+Authorization: Bearer {csm_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "message_type": "renewal_reminder",  // onboarding_welcome | adoption_milestone | renewal_reminder | upsell_promotion | at_risk_check_in
+  "schedule_type": "relative",  // immediate | relative | absolute
+  "relative_trigger": "renewal_date_minus_60_days",  // For relative scheduling
+  "personalization_context": {
+    "csm_name": "Sarah Johnson",
+    "account_health_score": 72,
+    "recent_wins": ["Achieved 75% qualification rate"],
+    "upcoming_roadmap_features": ["Multi-language support", "Voice analytics dashboard"]
+  },
+  "delivery_channels": ["email", "slack"],  // Delegates to Hyperpersonalization Service
+  "content_template_id": "renewal_60_day_template"
+}
+
+Response (201 Created):
+{
+  "message_id": "uuid",
+  "message_type": "renewal_reminder",
+  "scheduled_send_date": "2025-12-15T09:00:00Z",
+  "status": "scheduled",
+  "delivery_channels": ["email", "slack"]
+}
+```
+
+**7. Update Account Segment**
+```http
+PATCH /api/v1/customer-success/segments/{organization_id}
+Authorization: Bearer {csm_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "segment": "strategic",  // strategic | high_touch | tech_touch | at_risk
+  "reason": "ARR increased to $100K+ (strategic threshold)",
+  "override_automation": true  // Manual CSM override
+}
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "previous_segment": "high_touch",
+  "new_segment": "strategic",
+  "updated_at": "2025-10-15T10:00:00Z",
+  "updated_by": "Sarah Johnson",
+  "segment_rules_applied": {
+    "csm_touchpoints_per_month": 4,  // Increased from 2
+    "qbr_frequency": "quarterly",  // Increased from semi-annual
+    "priority_support": true,
+    "dedicated_csm": true
+  }
+}
+```
+
+#### Frontend Components
+
+**1. Account Health Dashboard**
+- Component: `AccountHealthDashboard.tsx`
+- Features:
+  - Health score visualization with trend sparkline
+  - Multi-signal breakdown (usage, engagement, support, financial, sentiment, relationship)
+  - Churn risk indicator with predicted date
+  - Expansion opportunity card with estimated ARR increase
+  - Quick actions (trigger playbook, schedule QBR, send message)
+  - Activity timeline (recent interactions, support tickets, payments)
+
+**2. Portfolio Overview (CSM Dashboard)**
+- Component: `PortfolioOverview.tsx`
+- Features:
+  - Grid view of all assigned accounts with health scores
+  - Filter/sort by segment, health status, churn risk, ARR
+  - Aggregate metrics (total ARR, at-risk ARR, expansion pipeline)
+  - Task list prioritized by urgency and impact
+  - Alerts for accounts requiring immediate attention
+  - Bulk actions (trigger playbook for multiple accounts)
+
+**3. Churn Risk Analyzer**
+- Component: `ChurnRiskAnalyzer.tsx`
+- Features:
+  - List of accounts at churn risk sorted by probability
+  - Risk factor breakdown with heatmap
+  - Time-to-churn countdown
+  - Recommended action checklist
+  - Historical churn predictions vs actual outcomes (accuracy tracking)
+  - Export at-risk accounts to CSV
+
+**4. Expansion Pipeline**
+- Component: `ExpansionPipeline.tsx`
+- Features:
+  - Kanban board (identified → qualified → pitched → closed)
+  - Expansion score with reasoning and pitch suggestions
+  - ARR impact calculator
+  - Timing recommendations (optimal contact window)
+  - Track expansion discussions and outcomes
+  - Win/loss analysis for closed expansion opportunities
+
+**5. QBR Generator**
+- Component: `QBRGenerator.tsx`
+- Features:
+  - Select QBR period and sections to include
+  - Preview generated document before download
+  - Customize branding and formatting
+  - Schedule QBR meeting with Calendly integration
+  - Share QBR link with client stakeholders
+  - Template library for different client types
+
+**6. Playbook Manager**
+- Component: `PlaybookManager.tsx`
+- Features:
+  - List of available playbooks with trigger conditions
+  - Create custom playbooks with conditional steps
+  - Active playbook executions with step-by-step progress
+  - Playbook performance analytics (success rate, time to resolution)
+  - Pause/resume/cancel playbook execution
+  - Playbook library sharing across CSM team
+
+**7. Lifecycle Message Scheduler**
+- Component: `LifecycleMessageScheduler.tsx`
+- Features:
+  - Calendar view of scheduled messages
+  - Create message campaigns with triggers (renewal date, milestone)
+  - Personalization preview with account context
+  - Delivery channel selection (email, Slack, in-app)
+  - Message performance tracking (open rate, click rate, response rate)
+  - A/B test message variants
+
+**8. Success Plan Tracker**
+- Component: `SuccessPlanTracker.tsx`
+- Features:
+  - Define success milestones with due dates
+  - Track completion status with progress bars
+  - Link milestones to business outcomes (ARR, usage, NPS)
+  - Assign action items to CSM or client stakeholders
+  - Generate success plan reports for QBRs
+  - Template library (onboarding plans, expansion plans, renewal plans)
+
+**State Management:**
+- React Query for account health, churn predictions, expansion opportunities with auto-refresh
+- WebSocket for real-time health score updates (critical signals)
+- Zustand for UI state (selected account, active filters, dashboard views)
+- LocalStorage for CSM preferences (default segment filter, dashboard layout)
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Customer Success Manager (CSM)**
+   - Role: Manage assigned client portfolio, prevent churn, drive expansion, conduct QBRs
+   - Access: Portfolio dashboard, account health, churn predictions, expansion opportunities, playbook execution, QBR generator
+   - Permissions: `read:assigned_accounts`, `write:playbooks`, `generate:qbrs`, `update:segments`
+   - Workflows:
+     1. Reviews portfolio dashboard daily → Identifies at-risk accounts → Triggers intervention playbook → Schedules outreach call
+     2. Expansion opportunity identified → Reviews pitch suggestion → Schedules discussion with client → Tracks in expansion pipeline
+     3. QBR due in 30 days → Generates QBR document → Schedules meeting → Conducts review → Documents outcomes
+   - Tools: Calendly for scheduling, Slack for client communication, Zoom for meetings
+
+2. **VP of Customer Success**
+   - Role: Monitor team performance, forecast churn/expansion, optimize CS operations
+   - Access: Executive CS dashboard, team performance metrics, churn/expansion forecasts, playbook effectiveness
+   - Permissions: `read:all_accounts`, `read:team_performance`, `configure:playbooks`, `approve:segment_changes`
+   - Workflows:
+     1. Reviews weekly CS metrics → Identifies underperforming CSMs → Provides coaching
+     2. Forecasts quarterly churn and expansion → Reports to executive team → Adjusts CS strategy
+   - Decision Authority: Approves segment rule changes, playbook standardization, CS tooling budget
+
+3. **Account Executive (AE)**
+   - Role: Monitor expansion opportunities, coordinate with CSM on upsell/cross-sell
+   - Access: Expansion pipeline, account health (for owned accounts), success plans
+   - Permissions: `read:expansion_opportunities`, `update:expansion_pipeline`, `read:account_health:{owned_accounts}`
+   - Workflows:
+     1. Receives expansion opportunity alert → Coordinates with CSM → Pitches expansion → Closes deal
+     2. Monitors account health post-sale → Escalates concerns to CSM
+   - Collaboration: Joint calls with CSM for strategic accounts
+
+**AI Agents:**
+
+1. **Health Score Calculator Agent**
+   - Responsibility: Calculate multi-signal health score in real-time based on 15+ inputs
+   - Tools: Weighted scoring algorithm, configurable signal weights, threshold detection
+   - Autonomy: Fully autonomous - updates health scores continuously
+   - Escalation: If health score drops >20 points in 7 days, alerts CSM immediately
+
+2. **Churn Prediction Agent**
+   - Responsibility: Predict churn probability using ML models (Random Forest, XGBoost)
+   - Tools: Historical churn data, feature engineering (usage trends, engagement patterns), scikit-learn models
+   - Autonomy: Fully autonomous - generates daily predictions for all accounts
+   - Escalation: If churn probability >60% and confidence >85%, triggers churn risk playbook automatically
+
+3. **Expansion Opportunity Scorer**
+   - Responsibility: Identify and score expansion opportunities (upsell, cross-sell, seat expansion)
+   - Tools: Product usage analysis, sentiment analysis, renewal timing, GPT-4 for pitch generation
+   - Autonomy: Fully autonomous - scores opportunities daily, generates pitch suggestions
+   - Escalation: Expansion score >80 → Notifies CSM and AE with recommended timing and pitch
+
+4. **QBR Generator Agent**
+   - Responsibility: Generate comprehensive QBR documents with business outcomes, ROI, and recommendations
+   - Tools: GPT-4 for narrative generation, Chart.js for visualizations, data aggregation from Analytics Service
+   - Autonomy: Supervised - generates draft QBR, requires CSM review before sharing with client
+   - Escalation: If data quality issues detected (missing metrics), flags for CSM review
+
+5. **Playbook Orchestration Agent**
+   - Responsibility: Execute playbook workflows with conditional logic and multi-step automation
+   - Tools: Workflow engine, Hyperpersonalization Service API, task management system
+   - Autonomy: Semi-autonomous - executes playbook steps automatically unless override_automation=true
+   - Escalation: If playbook step fails (e.g., email bounce), notifies CSM and suggests alternative action
+
+**Approval Workflows:**
+1. Playbook trigger (automated) → Health score breach → Playbook auto-executes → CSM notified (no approval needed)
+2. Playbook trigger (manual) → CSM initiates → Auto-approved (audit log maintained)
+3. Account segment change (automated) → ARR threshold crossed → Auto-approved → CSM notified
+4. Account segment change (manual) → CSM requests → VP of CS approves (if downgrade from strategic)
+5. QBR sharing with client → QBR generated → CSM reviews → Auto-approved to share
 
 ---
 
 ## 14. Support Engine Service
 
 #### Objectives
-- **Primary Purpose**: AI-powered internal support for client issues with escalation workflows
-- **Business Value**: Automates 70% of support queries, enables 24/7 coverage
-- **Scope**: Email-based support AI, ticket management, support documentation generation
+- **Primary Purpose**: AI-powered support automation with intelligent ticket triage, sentiment-based escalation, automated resolution for common issues, and knowledge base generation
+- **Business Value**: Resolves 70% of tickets automatically, reduces first response time from hours to <2 minutes, enables 24/7 support coverage, reduces support cost per ticket by 60%
+- **Product Differentiation**: Zendesk-style intelligent triage with AI-powered resolution suggestions, sentiment analysis for priority escalation, automated support documentation generation, integration with platform knowledge (conversations, deployments, configurations)
+- **Scope Boundaries**:
+  - **Does**: Ticket creation (email, in-app, API), intelligent triage and categorization, sentiment analysis, automated resolution for common issues, human agent escalation, knowledge base search, support documentation generation, SLA tracking
+  - **Does Not**: Customer success workflows (Customer Success Service does), CRM data management (CRM Integration Service does), platform monitoring (Monitoring Service does), direct client communication (Hyperpersonalization Service does)
 
-**Key APIs:**
-- POST /api/v1/support/tickets (create ticket)
-- GET /api/v1/support/tickets/{id} (ticket details)
-- POST /api/v1/support/tickets/{id}/resolve (AI resolution)
-- POST /api/v1/support/docs/generate (generate support docs)
+#### Requirements
 
-**Stakeholders:** Support Engineers, Support Managers, Clients
+**Functional Requirements:**
+1. Multi-channel ticket creation (email, in-app widget, API, Slack)
+2. Intelligent ticket triage with category and priority classification
+3. Sentiment analysis for automatic priority escalation (negative sentiment → high priority)
+4. AI-powered resolution suggestions from knowledge base
+5. Automated resolution for common issues (password reset, configuration questions, deployment status)
+6. Human agent escalation with context handoff
+7. Knowledge base search with semantic similarity
+8. Automated support documentation generation from resolved tickets
+9. SLA tracking with breach alerting
+10. Support analytics (resolution time, CSAT, ticket volume by category)
+11. Integration with Monitoring Service for incident-related tickets
+12. Ticket assignment routing (round-robin, skill-based, workload-based)
+
+**Non-Functional Requirements:**
+- First response time: <2 minutes for automated resolution, <15 minutes for human-escalated tickets
+- Automated resolution rate: >70% for Tier 1 issues
+- Support 10,000+ organizations with multi-tenant ticket isolation
+- 99.9% uptime for support ticket creation
+- Knowledge base search latency: <1s for semantic query
+- SLA tracking accuracy: 100% (no missed breach alerts)
+
+**Dependencies:**
+- **Monitoring Engine Service** *[See Service 11 above]* (incident data, service health for context-aware resolution)
+- **Configuration Management Service** *[See Service 10 above]* (configuration history for troubleshooting)
+- **Customer Success Service** *[See Service 13 above]* (CSAT score updates, ticket count for health scoring)
+- **Organization Management Service** *[See MICROSERVICES_ARCHITECTURE.md Service 0]* (user permissions, organization data)
+- **Agent Orchestration Service** *[See Service 8 above]* (deployment status, conversation logs)
+- **Hyperpersonalization Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md]* (email notifications)
+- External APIs:
+  - **SendGrid**: Email ticket creation and notifications
+  - **Slack API**: Slack-based ticket creation and agent notifications
+  - **Qdrant**: Vector search for knowledge base semantic similarity
+  - **Twilio**: SMS support alerts (optional)
+
+**Data Storage:**
+- PostgreSQL: Tickets, comments, assignments, SLA definitions, agent availability, CSAT responses
+- Qdrant: Knowledge base articles (vector embeddings for semantic search)
+- Redis: Active ticket cache, agent online status, ticket assignment queue
+- S3: Ticket attachments, generated support documentation
+
+#### Features
+
+**Must-Have:**
+1. ✅ Multi-channel ticket creation (email, in-app, API, Slack)
+2. ✅ Intelligent ticket triage (category, priority, urgency classification)
+3. ✅ Sentiment analysis with automatic escalation for negative sentiment
+4. ✅ AI-powered resolution suggestions from knowledge base
+5. ✅ Automated resolution for Tier 1 issues (70%+ success rate)
+6. ✅ Human agent escalation with full context handoff
+7. ✅ Knowledge base semantic search
+8. ✅ Ticket assignment routing (round-robin, skill-based, workload-balanced)
+9. ✅ SLA tracking with breach alerting
+10. ✅ Support analytics dashboard (resolution time, CSAT, volume trends)
+11. ✅ Automated support doc generation from ticket clusters
+
+**Nice-to-Have:**
+12. 🔄 Predictive ticket volume forecasting for agent staffing
+13. 🔄 Multilingual support with auto-translation
+14. 🔄 Video call escalation for complex issues
+15. 🔄 Customer self-service portal with knowledge base
+16. 🔄 Agent performance scoring and coaching recommendations
+
+**Feature Interactions:**
+- Client sends email to support@workflow.com → Ticket created → AI triages as "Configuration Question" → Searches knowledge base → Finds relevant article → Sends resolution → Ticket closed
+- Ticket created with negative sentiment ("This is terrible!") → Priority escalated to P1 → Assigned to senior support engineer → Slack notification sent
+- Ticket unresolved after 3 AI attempts → Escalates to human agent → Agent reviews AI conversation history → Resolves issue → AI learns from resolution
+- SLA breach predicted (response time 80% elapsed) → Alert sent to support manager → Additional agent assigned to ticket
+- Monitoring Service detects incident → Auto-creates support tickets for affected organizations → Links tickets to incident → Updates tickets when incident resolved
+- 10 tickets with similar issue detected → AI generates support documentation → Adds to knowledge base → Future similar tickets auto-resolved
+
+#### API Specification
+
+**1. Create Support Ticket**
+```http
+POST /api/v1/support/tickets
+Authorization: Bearer {client_jwt}
+X-Organization-ID: {organization_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "subject": "Voicebot not responding after configuration change",
+  "description": "I changed the system prompt 2 hours ago and now the voicebot isn't responding to calls. This is urgent as we have a campaign running.",
+  "category": null,  // null = AI will classify
+  "priority": null,  // null = AI will determine
+  "channel": "email",  // email | in_app | api | slack
+  "reporter": {
+    "name": "Jane Smith",
+    "email": "jane@acme.com",
+    "user_id": "uuid"
+  },
+  "context": {
+    "product_type": "voicebot",
+    "config_id": "uuid",
+    "last_config_change_timestamp": "2025-10-15T08:00:00Z",
+    "deployment_id": "uuid"
+  },
+  "attachments": [
+    {
+      "filename": "screenshot.png",
+      "url": "https://uploads.workflow.com/uuid",
+      "size_bytes": 245000
+    }
+  ]
+}
+
+Response (201 Created):
+{
+  "ticket_id": "uuid",
+  "ticket_number": "SUPPORT-12345",
+  "subject": "Voicebot not responding after configuration change",
+  "status": "open",  // open | in_progress | awaiting_customer | resolved | closed
+  "category": "deployment_issue",  // AI-classified
+  "priority": "high",  // AI-determined (urgent keywords + context)
+  "sentiment": "negative",  // AI-analyzed (-0.65 score)
+  "sentiment_score": -0.65,
+  "estimated_resolution_time": "15 minutes",
+  "sla_breach_time": "2025-10-15T11:00:00Z",
+  "assigned_to": null,  // Will be assigned shortly
+  "created_at": "2025-10-15T10:00:00Z",
+  "url": "https://support.workflow.com/tickets/uuid",
+  "ai_resolution_attempted": false
+}
+
+Event Published to Kafka:
+Topic: support_tickets
+{
+  "event_type": "ticket_created",
+  "ticket_id": "uuid",
+  "organization_id": "uuid",
+  "category": "deployment_issue",
+  "priority": "high",
+  "sentiment": "negative",
+  "timestamp": "2025-10-15T10:00:00Z"
+}
+```
+
+**2. AI Attempted Resolution**
+```http
+POST /api/v1/support/tickets/{ticket_id}/ai-resolve
+Authorization: Bearer {support_service_jwt}  // Internal service call
+Content-Type: application/json
+
+Request Body:
+{
+  "ticket_id": "uuid",
+  "resolution_strategy": "knowledge_base_search"  // knowledge_base_search | automated_action | escalate
+}
+
+Response (200 OK):
+{
+  "ticket_id": "uuid",
+  "ai_resolution_result": "partial_resolution",  // full_resolution | partial_resolution | failed | escalated
+  "knowledge_base_articles_found": [
+    {
+      "article_id": "uuid",
+      "title": "Troubleshooting Voicebot Deployment Issues",
+      "relevance_score": 0.92,
+      "excerpt": "If your voicebot stops responding after a configuration change, check the following..."
+    }
+  ],
+  "suggested_resolution": "Based on your description, it appears the recent configuration change may not have been properly deployed. I've found that clicking 'Rollback to Previous Version' in the Configuration Portal resolves this issue in 95% of cases. Would you like me to guide you through this process?",
+  "automated_actions_taken": [
+    {
+      "action": "checked_deployment_status",
+      "result": "Deployment in progress (stuck at 85% for 1 hour)",
+      "recommendation": "Restart deployment or rollback"
+    },
+    {
+      "action": "checked_configuration_validation",
+      "result": "Configuration is valid (no schema errors)"
+    }
+  ],
+  "confidence": 0.88,
+  "response_sent_to_customer": true,
+  "escalation_recommended": false
+}
+```
+
+**3. Escalate to Human Agent**
+```http
+POST /api/v1/support/tickets/{ticket_id}/escalate
+Authorization: Bearer {client_jwt or support_agent_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "ticket_id": "uuid",
+  "escalation_reason": "AI resolution unsuccessful after 2 attempts",
+  "notes": "Customer confirmed rollback didn't resolve the issue. Requires deeper investigation.",
+  "requested_agent_skill": "voicebot_deployment_expert",  // Optional skill-based routing
+  "urgency": "high"
+}
+
+Response (200 OK):
+{
+  "ticket_id": "uuid",
+  "status": "escalated",
+  "assigned_to": {
+    "agent_id": "uuid",
+    "name": "Michael Chen",
+    "email": "michael@workflow.com",
+    "specialization": "voicebot_deployment_expert"
+  },
+  "escalated_at": "2025-10-15T10:15:00Z",
+  "ai_conversation_summary": "Customer reported voicebot not responding after config change at 08:00. AI suggested rollback (attempt 1), customer tried but issue persists. AI checked deployment status (stuck at 85%) and config validation (passed). Requires manual deployment investigation.",
+  "estimated_response_time": "15 minutes"
+}
+
+Event Published to Kafka:
+Topic: support_tickets
+{
+  "event_type": "ticket_escalated",
+  "ticket_id": "uuid",
+  "organization_id": "uuid",
+  "assigned_agent_id": "uuid",
+  "escalation_reason": "ai_resolution_failed",
+  "timestamp": "2025-10-15T10:15:00Z"
+}
+```
+
+**4. Get Ticket Details**
+```http
+GET /api/v1/support/tickets/{ticket_id}
+Authorization: Bearer {client_jwt or support_agent_jwt}
+
+Response (200 OK):
+{
+  "ticket_id": "uuid",
+  "ticket_number": "SUPPORT-12345",
+  "subject": "Voicebot not responding after configuration change",
+  "description": "I changed the system prompt 2 hours ago and now the voicebot isn't responding to calls. This is urgent as we have a campaign running.",
+  "status": "resolved",
+  "category": "deployment_issue",
+  "priority": "high",
+  "sentiment": "positive",  // Updated after resolution
+  "sentiment_score": 0.75,
+  "reporter": {
+    "name": "Jane Smith",
+    "email": "jane@acme.com",
+    "organization_id": "uuid",
+    "organization_name": "Acme Corp"
+  },
+  "assigned_to": {
+    "agent_id": "uuid",
+    "name": "Michael Chen",
+    "email": "michael@workflow.com"
+  },
+  "created_at": "2025-10-15T10:00:00Z",
+  "first_response_at": "2025-10-15T10:02:00Z",
+  "resolved_at": "2025-10-15T10:45:00Z",
+  "resolution_time_minutes": 45,
+  "sla_met": true,
+  "sla_breach_time": "2025-10-15T11:00:00Z",
+  "resolution_summary": "Deployment was stuck due to a temporary network issue. Manually restarted the deployment process. Voicebot is now live and responding correctly.",
+  "comments": [
+    {
+      "comment_id": "uuid",
+      "author": "AI Support Bot",
+      "author_type": "ai",
+      "content": "Thank you for contacting support. I've analyzed your issue and found that your deployment may be stuck. Would you like to try rolling back to the previous configuration version?",
+      "created_at": "2025-10-15T10:02:00Z"
+    },
+    {
+      "comment_id": "uuid",
+      "author": "Jane Smith",
+      "author_type": "customer",
+      "content": "I tried the rollback but the issue is still there. Can I speak to a human?",
+      "created_at": "2025-10-15T10:10:00Z"
+    },
+    {
+      "comment_id": "uuid",
+      "author": "Michael Chen",
+      "author_type": "agent",
+      "content": "Hi Jane, I'm Michael from the support team. I've reviewed your deployment logs and found the issue. Your deployment was stuck due to a network timeout. I'm manually restarting it now. Give me 5 minutes.",
+      "created_at": "2025-10-15T10:20:00Z"
+    },
+    {
+      "comment_id": "uuid",
+      "author": "Michael Chen",
+      "author_type": "agent",
+      "content": "Deployment completed successfully! Your voicebot is now live. Can you please test and confirm it's working?",
+      "created_at": "2025-10-15T10:40:00Z"
+    },
+    {
+      "comment_id": "uuid",
+      "author": "Jane Smith",
+      "author_type": "customer",
+      "content": "Yes, it's working now! Thank you so much for the quick help!",
+      "created_at": "2025-10-15T10:43:00Z"
+    }
+  ],
+  "attachments": [
+    {
+      "filename": "screenshot.png",
+      "url": "https://uploads.workflow.com/uuid",
+      "size_bytes": 245000,
+      "uploaded_by": "Jane Smith",
+      "uploaded_at": "2025-10-15T10:00:00Z"
+    }
+  ],
+  "csat_requested": true,
+  "csat_score": 5,  // 1-5 scale
+  "csat_feedback": "Michael was incredibly helpful and resolved my issue quickly!"
+}
+```
+
+**5. Search Knowledge Base**
+```http
+POST /api/v1/support/knowledge-base/search
+Authorization: Bearer {client_jwt or support_agent_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "query": "voicebot not responding after configuration change",
+  "limit": 5,
+  "semantic_search": true  // Use vector similarity vs keyword search
+}
+
+Response (200 OK):
+{
+  "query": "voicebot not responding after configuration change",
+  "results": [
+    {
+      "article_id": "uuid",
+      "title": "Troubleshooting Voicebot Deployment Issues",
+      "category": "deployment",
+      "relevance_score": 0.92,
+      "excerpt": "If your voicebot stops responding after a configuration change, this is often due to a stuck deployment. To resolve: 1) Check deployment status in Configuration Portal 2) If stuck >15 minutes, rollback to previous version 3) Wait 2 minutes and re-apply changes",
+      "url": "https://support.workflow.com/kb/articles/uuid",
+      "created_at": "2025-09-10T10:00:00Z",
+      "updated_at": "2025-10-01T15:30:00Z",
+      "helpful_count": 247,
+      "view_count": 1832
+    },
+    {
+      "article_id": "uuid",
+      "title": "Understanding Configuration Deployment Timeframes",
+      "category": "configuration",
+      "relevance_score": 0.85,
+      "excerpt": "Configuration changes typically take 30-60 seconds to deploy. If your changes aren't reflected after 2 minutes, there may be a deployment issue.",
+      "url": "https://support.workflow.com/kb/articles/uuid",
+      "helpful_count": 189,
+      "view_count": 1245
+    }
+  ],
+  "total_results": 5
+}
+```
+
+**6. Generate Support Documentation**
+```http
+POST /api/v1/support/docs/generate
+Authorization: Bearer {support_manager_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "source": "ticket_cluster",  // ticket_cluster | manual | incident
+  "ticket_ids": ["uuid1", "uuid2", "uuid3"],  // 10 similar tickets about same issue
+  "generate_article": true,
+  "suggested_title": "Resolving Stuck Voicebot Deployments",
+  "category": "deployment"
+}
+
+Response (202 Accepted):
+{
+  "doc_generation_id": "uuid",
+  "status": "generating",
+  "estimated_completion": "2025-10-15T10:05:00Z"
+}
+
+// Poll for completion
+GET /api/v1/support/docs/{doc_generation_id}
+Response (200 OK):
+{
+  "doc_generation_id": "uuid",
+  "status": "completed",
+  "article": {
+    "article_id": "uuid",
+    "title": "Resolving Stuck Voicebot Deployments",
+    "category": "deployment",
+    "content": "# Problem\nVoicebot deployments occasionally get stuck at 80-90% progress...\n\n# Solution\n1. Check deployment status...\n2. If stuck >15 minutes...\n3. Rollback to previous version...\n\n# Prevention\nEnsure configuration changes are tested in sandbox before deployment...",
+    "based_on_tickets": 10,
+    "confidence": 0.88,
+    "requires_review": true,  // Requires human review before publishing
+    "draft_url": "https://support.workflow.com/kb/drafts/uuid"
+  }
+}
+```
+
+**7. Get Support Analytics**
+```http
+GET /api/v1/support/analytics
+Authorization: Bearer {support_manager_jwt}
+Query Parameters:
+- start_date: 2025-10-01
+- end_date: 2025-10-31
+- organization_id: uuid (optional - filter by client)
+
+Response (200 OK):
+{
+  "time_period": "2025-10-01 to 2025-10-31",
+  "total_tickets": 1245,
+  "tickets_by_status": {
+    "open": 45,
+    "in_progress": 28,
+    "resolved": 1142,
+    "closed": 1142
+  },
+  "tickets_by_category": {
+    "deployment_issue": 312,
+    "configuration_question": 487,
+    "billing_inquiry": 124,
+    "feature_request": 198,
+    "bug_report": 124
+  },
+  "tickets_by_priority": {
+    "low": 498,
+    "medium": 622,
+    "high": 112,
+    "critical": 13
+  },
+  "resolution_metrics": {
+    "ai_resolution_rate": 0.72,  // 72% resolved by AI
+    "average_first_response_time_minutes": 1.8,
+    "average_resolution_time_minutes": 145,
+    "sla_compliance_rate": 0.96  // 96% of tickets met SLA
+  },
+  "sentiment_distribution": {
+    "positive": 0.68,
+    "neutral": 0.22,
+    "negative": 0.10
+  },
+  "csat_metrics": {
+    "average_csat_score": 4.6,  // 1-5 scale
+    "response_rate": 0.58,  // 58% of customers responded to CSAT survey
+    "promoters": 0.75,  // 75% gave 4 or 5
+    "detractors": 0.08  // 8% gave 1 or 2
+  },
+  "top_agents": [
+    {
+      "agent_id": "uuid",
+      "name": "Michael Chen",
+      "tickets_resolved": 187,
+      "average_resolution_time_minutes": 125,
+      "average_csat_score": 4.8
+    }
+  ]
+}
+```
+
+#### Frontend Components
+
+**1. Ticket List Dashboard**
+- Component: `TicketListDashboard.tsx`
+- Features:
+  - List view with filters (status, priority, category, assigned agent)
+  - Color-coded priority badges
+  - Sentiment indicators with emoji
+  - SLA breach countdown timer
+  - Quick actions (assign, escalate, close)
+  - Bulk operations (assign multiple tickets, close resolved tickets)
+
+**2. Ticket Detail View**
+- Component: `TicketDetailView.tsx`
+- Features:
+  - Full conversation history (customer, AI, human agent messages)
+  - Attachment viewer
+  - Side panel with customer context (organization, previous tickets, health score)
+  - AI resolution suggestions panel
+  - Quick reply templates
+  - Add internal notes (not visible to customer)
+  - Escalation button with reason selection
+
+**3. Knowledge Base Search**
+- Component: `KnowledgeBaseSearch.tsx`
+- Features:
+  - Semantic search with query suggestions
+  - Filter by category, date, helpfulness
+  - Article preview in modal
+  - "Mark as helpful" button
+  - Share article link with customers
+  - Edit article (for support managers)
+
+**4. Support Analytics Dashboard**
+- Component: `SupportAnalyticsDashboard.tsx`
+- Features:
+  - Ticket volume trends (line chart)
+  - Resolution time distribution (histogram)
+  - CSAT score trends
+  - AI resolution rate with benchmark
+  - SLA compliance gauge
+  - Agent performance leaderboard
+
+**5. Agent Queue**
+- Component: `AgentQueue.tsx`
+- Features:
+  - Real-time ticket assignment queue
+  - Accept/decline incoming tickets
+  - Current workload indicator
+  - SLA breach alerts
+  - Skill-based routing preferences
+  - "Go offline" toggle for breaks
+
+**6. Knowledge Base Editor**
+- Component: `KnowledgeBaseEditor.tsx`
+- Features:
+  - Markdown editor for articles
+  - Category and tag selection
+  - Related articles suggestions
+  - Preview mode
+  - Version history
+  - Publish workflow (draft → review → published)
+
+**State Management:**
+- React Query for ticket data with real-time updates
+- WebSocket for live ticket updates (new tickets, status changes, assignments)
+- Zustand for UI state (selected ticket, active filters, agent online status)
+- LocalStorage for agent preferences (default filters, notification settings)
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Support Engineer**
+   - Role: Resolve escalated tickets, handle complex issues
+   - Access: Assigned tickets, knowledge base, customer context, deployment logs
+   - Permissions: `read:tickets`, `write:ticket_comments`, `resolve:tickets`, `escalate:tickets`
+   - Workflows:
+     1. Receives escalated ticket → Reviews AI conversation history → Investigates issue → Resolves ticket → Updates knowledge base if new issue pattern
+     2. Monitors ticket queue → Accepts incoming tickets based on skill match → Resolves within SLA
+   - Tools: Slack for notifications, Zoom for screen sharing with customers
+
+2. **Support Manager**
+   - Role: Monitor team performance, manage SLAs, optimize support processes
+   - Access: All tickets, analytics dashboard, agent performance metrics, knowledge base management
+   - Permissions: `read:all_tickets`, `manage:agents`, `configure:sla`, `approve:kb_articles`
+   - Workflows:
+     1. Reviews daily analytics → Identifies bottlenecks → Adjusts agent assignments
+     2. Reviews AI-generated knowledge base articles → Approves for publication
+   - Decision Authority: SLA definitions, escalation rules, agent hiring
+
+3. **Client (Support Requester)**
+   - Role: Create support tickets, track resolution progress
+   - Access: Own organization's tickets, knowledge base
+   - Permissions: `create:tickets`, `read:own_tickets`, `search:knowledge_base`
+   - Workflows:
+     1. Encounters issue → Searches knowledge base → If no solution, creates ticket → Receives AI resolution attempt → If unresolved, escalates to human agent
+     2. Receives ticket resolution → Provides CSAT feedback
+
+**AI Agents:**
+
+1. **Ticket Triage Agent**
+   - Responsibility: Classify tickets by category and priority, analyze sentiment
+   - Tools: GPT-4 for text classification, fine-tuned sentiment analysis model
+   - Autonomy: Fully autonomous - classifies all incoming tickets
+   - Escalation: If classification confidence <0.7, flags for human review
+
+2. **Resolution Suggestion Agent**
+   - Responsibility: Search knowledge base and suggest resolutions to customer
+   - Tools: Qdrant vector search, GPT-4 for natural language response generation
+   - Autonomy: Fully autonomous - attempts resolution for Tier 1 issues
+   - Escalation: If 2 resolution attempts fail or customer requests human, escalates to support engineer
+
+3. **Knowledge Base Generator Agent**
+   - Responsibility: Generate support documentation from ticket clusters
+   - Tools: GPT-4 for article generation, clustering algorithms to identify common issues
+   - Autonomy: Supervised - generates draft articles, requires manager approval before publication
+   - Escalation: If article confidence <0.8, flags for extensive human review
+
+4. **SLA Monitoring Agent**
+   - Responsibility: Track ticket SLAs and alert on predicted breaches
+   - Tools: SLA calculation engine, time-tracking algorithms
+   - Autonomy: Fully autonomous - monitors all tickets continuously
+   - Escalation: If SLA breach predicted within 15 minutes, alerts support manager and assigns additional agent
+
+**Approval Workflows:**
+1. Ticket created → AI triage → Auto-approved classification → Proceeds to resolution
+2. AI resolution attempt → Customer accepts → Auto-closes ticket (no approval needed)
+3. Escalation to human agent → Support engineer accepts → Auto-approved (audit log maintained)
+4. Knowledge base article generated → AI drafts → Support manager reviews → Approves → Published
+5. SLA definition change → Support manager proposes → VP of Customer Success approves
 
 ---
 
 ## 15. CRM Integration Service
 
 #### Objectives
-- **Primary Purpose**: Bidirectional sync with CRMs (Salesforce, HubSpot) for lead/customer data
-- **Business Value**: Unified customer view, automated CRM updates, closed-loop attribution
-- **Scope**: CRM sync, webhook handlers, field mapping, conflict resolution
+- **Primary Purpose**: Bidirectional real-time sync with CRMs (Salesforce, HubSpot) for leads, contacts, accounts, opportunities with automated field mapping, conflict resolution, and closed-loop revenue attribution
+- **Business Value**: Eliminates manual data entry (saves 10+ hours/week per sales team), enables closed-loop attribution from lead → conversation → opportunity → closed-won, provides unified 360° customer view, reduces data sync errors from 15% to <1%
+- **Product Differentiation**: Sub-second webhook-based sync, AI-powered field mapping suggestions, intelligent conflict resolution, multi-CRM support (Salesforce + HubSpot simultaneously), conversation-to-opportunity linking for ROI tracking
+- **Scope Boundaries**:
+  - **Does**: Bidirectional sync (CRM ↔ Platform), webhook receivers for real-time updates, field mapping configuration, conflict detection and resolution, opportunity stage tracking, revenue attribution, duplicate detection
+  - **Does Not**: CRM data migration (one-time import tool separate), CRM workflow/automation configuration (stays in CRM), email campaign management (Hyperpersonalization Service does), direct CRM UI access
 
-**Key APIs:**
-- POST /api/v1/crm/sync (trigger sync)
-- GET /api/v1/crm/mappings/{client_id} (field mappings)
-- POST /api/v1/crm/webhooks (CRM webhook receiver)
-- GET /api/v1/crm/conflicts (conflict resolution)
+#### Requirements
 
-**Stakeholders:** Sales Ops, Marketing Ops, CRM Admins
+**Functional Requirements:**
+1. Bidirectional sync for Salesforce (Leads, Contacts, Accounts, Opportunities, Activities)
+2. Bidirectional sync for HubSpot (Contacts, Companies, Deals, Engagement)
+3. Real-time webhook receivers for CRM updates (sub-second latency)
+4. Configurable field mapping with AI-powered suggestions
+5. Conflict detection and resolution (last-write-wins, CRM-priority, Platform-priority, manual)
+6. Opportunity stage tracking with conversation linking
+7. Closed-loop revenue attribution (conversation → demo → PRD → opportunity → closed-won)
+8. Duplicate detection and merging
+9. Sync status monitoring with error alerting
+10. Multi-CRM support (client can connect both Salesforce and HubSpot)
+11. Custom object sync (Salesforce custom objects, HubSpot custom properties)
+12. Activity logging (conversations, demos, meetings logged to CRM timeline)
+
+**Non-Functional Requirements:**
+- Sync latency: <1s from webhook receipt to Platform update, <5s from Platform change to CRM update
+- Throughput: 10,000+ records synced per minute
+- 99.9% sync success rate
+- Conflict resolution: <500ms decision time
+- Support 1,000+ organizations with concurrent CRM connections
+- Data retention: 90 days of sync history for auditing
+
+**Dependencies:**
+- **Analytics Service** *[See Service 12 above]* (conversation data, qualified leads, revenue attribution)
+- **Organization Management Service** *[See MICROSERVICES_ARCHITECTURE.md Service 0]* (organization CRM credentials, OAuth tokens)
+- **Customer Success Service** *[See Service 13 above]* (account health scores, expansion opportunities to sync to CRM)
+- **Agent Orchestration Service** *[See Service 8 above]* (conversation outcomes to log as CRM activities)
+- External APIs:
+  - **Salesforce REST API**: CRUD operations for Leads, Contacts, Accounts, Opportunities
+  - **Salesforce Streaming API**: Real-time webhook subscriptions
+  - **HubSpot API v3**: CRUD operations for Contacts, Companies, Deals
+  - **HubSpot Webhooks**: Real-time update notifications
+
+**Data Storage:**
+- PostgreSQL: Field mappings, sync configurations, conflict resolution rules, sync history
+- Redis: Sync queue, webhook deduplication, OAuth token cache
+- S3: Sync error logs, conflict resolution audit trail
+
+#### Features
+
+**Must-Have:**
+1. ✅ Salesforce bidirectional sync (Leads, Contacts, Accounts, Opportunities, Activities)
+2. ✅ HubSpot bidirectional sync (Contacts, Companies, Deals, Engagement)
+3. ✅ Real-time webhook receivers with retry logic
+4. ✅ Configurable field mapping UI
+5. ✅ Conflict detection with resolution strategies
+6. ✅ Opportunity→Conversation linking for attribution
+7. ✅ Activity logging (conversations logged to CRM timeline)
+8. ✅ Sync status monitoring dashboard
+9. ✅ Duplicate detection with merge suggestions
+10. ✅ OAuth 2.0 connection flow for Salesforce and HubSpot
+
+**Nice-to-Have:**
+11. 🔄 AI-powered field mapping suggestions
+12. 🔄 Custom object sync builder
+13. 🔄 Bulk sync scheduling (overnight full refresh)
+14. 🔄 Multi-CRM simultaneous connection (Salesforce + HubSpot)
+15. 🔄 Sync simulation mode (preview changes before applying)
+
+**Feature Interactions:**
+- Discovery call completed → Lead marked "Qualified" in Platform → Syncs to Salesforce Lead (Status = "Qualified") → Sales rep receives notification
+- Sales rep creates Opportunity in Salesforce → Webhook triggers → Platform links Opportunity to previous conversations → Revenue attribution updated
+- Demo sent via Platform → Activity logged to Salesforce Contact timeline → Sales rep sees demo details in Salesforce
+- Conflicting update (CRM and Platform both updated Lead email simultaneously) → Conflict detected → Resolution strategy applied (CRM-priority) → Platform email updated
+- Customer Success updates account health score → Syncs to Salesforce custom field "Health_Score__c" → Sales rep sees churn risk in CRM
+- HubSpot Deal moves to "Closed Won" → Syncs to Platform → Analytics Service updates revenue attribution → CSM receives expansion opportunity alert
+
+#### API Specification
+
+**1. Connect CRM (OAuth Flow)**
+```http
+POST /api/v1/crm/connect
+Authorization: Bearer {organization_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "crm_provider": "salesforce",  // salesforce | hubspot
+  "oauth_code": "authorization_code_from_salesforce",  // From OAuth callback
+  "redirect_uri": "https://workflow.com/crm/callback",
+  "sandbox": false  // true for Salesforce sandbox environments
+}
+
+Response (201 Created):
+{
+  "connection_id": "uuid",
+  "crm_provider": "salesforce",
+  "status": "connected",
+  "connected_at": "2025-10-15T10:00:00Z",
+  "crm_instance_url": "https://acme.my.salesforce.com",
+  "crm_user": {
+    "name": "Jane Smith",
+    "email": "jane@acme.com",
+    "user_id": "salesforce_user_id"
+  },
+  "default_field_mappings_created": true  // Auto-created standard mappings
+}
+```
+
+**2. Configure Field Mapping**
+```http
+POST /api/v1/crm/mappings
+Authorization: Bearer {organization_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "crm_provider": "salesforce",
+  "object_type": "Lead",  // Lead | Contact | Account | Opportunity | Activity
+  "direction": "bidirectional",  // platform_to_crm | crm_to_platform | bidirectional
+  "field_mappings": [
+    {
+      "platform_field": "lead.email",
+      "crm_field": "Email",
+      "sync_direction": "bidirectional",
+      "required": true
+    },
+    {
+      "platform_field": "lead.phone",
+      "crm_field": "Phone",
+      "sync_direction": "bidirectional",
+      "required": false
+    },
+    {
+      "platform_field": "lead.qualified_status",
+      "crm_field": "Status",
+      "sync_direction": "platform_to_crm",
+      "required": true,
+      "value_mapping": {
+        "qualified": "Qualified",
+        "not_interested": "Unqualified",
+        "callback_requested": "Nurture"
+      }
+    },
+    {
+      "platform_field": "lead.conversation_sentiment_avg",
+      "crm_field": "Sentiment_Score__c",  // Custom field
+      "sync_direction": "platform_to_crm",
+      "required": false
+    }
+  ],
+  "conflict_resolution_strategy": "crm_priority",  // crm_priority | platform_priority | last_write_wins | manual
+  "sync_enabled": true
+}
+
+Response (201 Created):
+{
+  "mapping_id": "uuid",
+  "organization_id": "uuid",
+  "crm_provider": "salesforce",
+  "object_type": "Lead",
+  "field_mappings_count": 4,
+  "status": "active",
+  "created_at": "2025-10-15T10:00:00Z"
+}
+```
+
+**3. Trigger Manual Sync**
+```http
+POST /api/v1/crm/sync
+Authorization: Bearer {organization_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "crm_provider": "salesforce",
+  "sync_type": "incremental",  // full | incremental
+  "object_types": ["Lead", "Contact", "Opportunity"],
+  "direction": "bidirectional",
+  "filters": {
+    "modified_after": "2025-10-14T00:00:00Z"  // For incremental sync
+  }
+}
+
+Response (202 Accepted):
+{
+  "sync_job_id": "uuid",
+  "status": "queued",
+  "estimated_records": 1245,
+  "estimated_completion": "2025-10-15T10:15:00Z"
+}
+
+// Poll for status
+GET /api/v1/crm/sync/{sync_job_id}
+Response (200 OK):
+{
+  "sync_job_id": "uuid",
+  "status": "completed",  // queued | in_progress | completed | failed
+  "started_at": "2025-10-15T10:00:30Z",
+  "completed_at": "2025-10-15T10:12:45Z",
+  "duration_seconds": 735,
+  "records_synced": 1245,
+  "records_failed": 12,
+  "conflicts_detected": 3,
+  "conflicts_resolved": 3,
+  "errors": [
+    {
+      "crm_record_id": "salesforce_lead_id",
+      "error": "Required field 'Company' missing in Platform lead",
+      "record_type": "Lead"
+    }
+  ]
+}
+```
+
+**4. Webhook Receiver (Salesforce)**
+```http
+POST /api/v1/crm/webhooks/salesforce
+Authorization: Bearer {webhook_signature_validation}  // Salesforce signs webhooks
+Content-Type: application/json
+
+Request Body (Salesforce Streaming API format):
+{
+  "event": {
+    "type": "updated",
+    "createdDate": "2025-10-15T10:00:00.000Z",
+    "replayId": 12345
+  },
+  "sobject": {
+    "Id": "00Q5e00000A1B2C3",
+    "Email": "john.doe@example.com",
+    "Status": "Qualified",
+    "LastModifiedDate": "2025-10-15T10:00:00.000Z",
+    "LastModifiedById": "salesforce_user_id"
+  },
+  "objectType": "Lead"
+}
+
+Response (200 OK):
+{
+  "webhook_received": true,
+  "sync_queued": true,
+  "platform_record_id": "uuid",
+  "conflicts_detected": false
+}
+
+Internal Action:
+1. Validates webhook signature
+2. Checks if Platform has newer version → Conflict detection
+3. Applies conflict resolution strategy
+4. Updates Platform lead record
+5. Publishes `crm_sync_completed` event to Kafka
+```
+
+**5. Get Sync Status Dashboard**
+```http
+GET /api/v1/crm/status
+Authorization: Bearer {organization_admin_jwt}
+Query Parameters:
+- organization_id: uuid
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "connections": [
+    {
+      "connection_id": "uuid",
+      "crm_provider": "salesforce",
+      "status": "healthy",  // healthy | degraded | disconnected | error
+      "connected_at": "2025-10-01T10:00:00Z",
+      "last_sync_at": "2025-10-15T09:55:00Z",
+      "sync_metrics_24h": {
+        "total_records_synced": 3456,
+        "platform_to_crm": 1823,
+        "crm_to_platform": 1633,
+        "conflicts_detected": 12,
+        "conflicts_resolved": 12,
+        "errors": 3,
+        "success_rate": 0.9991  // 99.91%
+      },
+      "object_sync_status": [
+        {
+          "object_type": "Lead",
+          "enabled": true,
+          "last_sync": "2025-10-15T09:55:00Z",
+          "records_synced_24h": 987,
+          "errors_24h": 1
+        },
+        {
+          "object_type": "Opportunity",
+          "enabled": true,
+          "last_sync": "2025-10-15T09:50:00Z",
+          "records_synced_24h": 234,
+          "errors_24h": 0
+        }
+      ],
+      "webhook_status": {
+        "subscribed": true,
+        "last_webhook_received": "2025-10-15T09:58:00Z",
+        "webhooks_received_24h": 1245,
+        "webhook_failures_24h": 0
+      }
+    }
+  ],
+  "overall_health": "healthy"
+}
+```
+
+**6. Resolve Conflict Manually**
+```http
+POST /api/v1/crm/conflicts/{conflict_id}/resolve
+Authorization: Bearer {organization_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "conflict_id": "uuid",
+  "resolution_strategy": "use_crm_version",  // use_crm_version | use_platform_version | merge
+  "merged_values": {  // Only if resolution_strategy = "merge"
+    "email": "john.doe@example.com",  // From CRM
+    "phone": "+1-555-0123",  // From Platform
+    "status": "Qualified"  // From CRM
+  }
+}
+
+Response (200 OK):
+{
+  "conflict_id": "uuid",
+  "resolved": true,
+  "resolution_applied": "use_crm_version",
+  "platform_record_updated": true,
+  "crm_record_updated": false,
+  "resolved_at": "2025-10-15T10:00:00Z"
+}
+```
+
+**7. Get Revenue Attribution (CRM-linked)**
+```http
+GET /api/v1/crm/attribution
+Authorization: Bearer {sales_ops_jwt}
+Query Parameters:
+- organization_id: uuid
+- start_date: 2025-10-01
+- end_date: 2025-10-31
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "time_period": "2025-10-01 to 2025-10-31",
+  "closed_won_opportunities": [
+    {
+      "crm_opportunity_id": "salesforce_opp_id",
+      "crm_opportunity_name": "Acme Corp - Voicebot Expansion",
+      "amount_usd": 50000,
+      "close_date": "2025-10-25",
+      "linked_conversations": [
+        {
+          "conversation_id": "uuid",
+          "conversation_type": "discovery_call",
+          "date": "2025-09-15",
+          "outcome": "qualified"
+        },
+        {
+          "conversation_id": "uuid",
+          "conversation_type": "demo",
+          "date": "2025-09-22",
+          "outcome": "requested_pricing"
+        }
+      ],
+      "linked_demos": 2,
+      "linked_prds": 1,
+      "first_touch": "discovery_call",
+      "first_touch_date": "2025-09-15",
+      "days_to_close": 40,
+      "platform_contribution_score": 0.85  // 85% attributed to Platform workflows
+    }
+  ],
+  "total_closed_won_arr": 285000,
+  "platform_influenced_arr": 242250,  // 85% of total
+  "platform_influence_rate": 0.85,
+  "average_days_to_close_platform_influenced": 38,
+  "average_days_to_close_non_platform": 67
+}
+```
+
+#### Frontend Components
+
+**1. CRM Connection Setup**
+- Component: `CRMConnectionSetup.tsx`
+- Features:
+  - OAuth connection flow for Salesforce and HubSpot
+  - Connection status indicator
+  - Disconnect/reconnect buttons
+  - Test connection button
+  - Multiple CRM support (connect both simultaneously)
+
+**2. Field Mapping Builder**
+- Component: `FieldMappingBuilder.tsx`
+- Features:
+  - Drag-and-drop field mapping interface
+  - Platform field selector (left) → CRM field selector (right)
+  - Sync direction toggle (→, ←, ↔)
+  - Value mapping for picklists (e.g., "qualified" → "Qualified")
+  - AI-powered mapping suggestions based on field names
+  - Validation warnings for missing required fields
+
+**3. Sync Status Dashboard**
+- Component: `SyncStatusDashboard.tsx`
+- Features:
+  - Real-time sync metrics (records/hour, success rate)
+  - Sync health status with color indicators
+  - Recent sync history table
+  - Error log with details
+  - Manual sync trigger button
+  - Webhook status indicator
+
+**4. Conflict Resolution UI**
+- Component: `ConflictResolutionUI.tsx`
+- Features:
+  - List of unresolved conflicts
+  - Side-by-side comparison (Platform value vs CRM value)
+  - One-click resolution buttons (Use CRM, Use Platform, Merge)
+  - Merge editor for manual value selection
+  - Conflict resolution history
+  - Auto-resolution strategy configuration
+
+**5. Revenue Attribution Report**
+- Component: `RevenueAttributionReport.tsx`
+- Features:
+  - List of closed-won opportunities with Platform contribution
+  - Conversation timeline per opportunity
+  - Platform influence score calculation
+  - Time-to-close comparison (Platform-influenced vs non-Platform)
+  - Export to CSV for sales ops reporting
+
+**State Management:**
+- React Query for CRM connection status and sync metrics with polling
+- WebSocket for real-time sync updates
+- Zustand for UI state (selected field mappings, active conflict resolution)
+- LocalStorage for user preferences (default CRM, field mapping templates)
+
+#### Stakeholders and Agents
+
+**Human Stakeholders:**
+
+1. **Sales Operations Manager**
+   - Role: Configure CRM integrations, manage field mappings, resolve sync issues
+   - Access: CRM connection setup, field mapping builder, sync status dashboard, conflict resolution
+   - Permissions: `connect:crm`, `configure:mappings`, `resolve:conflicts`, `trigger:sync`
+   - Workflows:
+     1. Connects Salesforce → Configures field mappings → Enables bidirectional sync → Monitors sync health
+     2. Reviews conflict resolution queue daily → Resolves complex conflicts → Updates mapping rules to prevent future conflicts
+   - Decision Authority: Field mapping changes, conflict resolution strategies
+
+2. **Marketing Operations Manager**
+   - Role: Ensure marketing leads flow correctly from CRM to Platform
+   - Access: CRM sync status, lead sync metrics, error logs
+   - Permissions: `read:crm_status`, `read:sync_logs`, `trigger:manual_sync`
+   - Workflows:
+     1. Monitors lead sync daily → Ensures new HubSpot Contacts sync to Platform → Verifies qualification status updates flow back to HubSpot
+   - Escalation: Escalates sync failures to Sales Ops
+
+3. **CRM Administrator**
+   - Role: Manage CRM-side webhook configurations, custom fields, permissions
+   - Access: Webhook setup documentation, custom field requirements list
+   - Permissions: CRM-side (Salesforce/HubSpot admin access)
+   - Workflows:
+     1. Creates custom fields in Salesforce → Notifies Sales Ops to update field mappings
+     2. Configures webhook subscriptions in Salesforce → Validates webhook delivery to Platform
+   - Collaboration: Works with Sales Ops to coordinate CRM schema changes
+
+**AI Agents:**
+
+1. **Field Mapping Suggestion Agent**
+   - Responsibility: Suggest field mappings based on field names and data types
+   - Tools: Fuzzy string matching, field name similarity algorithms, historical mapping patterns
+   - Autonomy: Supervised - suggests mappings, requires human approval
+   - Escalation: If no confident match found (confidence <0.7), flags for manual mapping
+
+2. **Conflict Resolution Agent**
+   - Responsibility: Apply conflict resolution strategies automatically based on rules
+   - Tools: Conflict detection algorithms, timestamp comparison, rule engine
+   - Autonomy: Semi-autonomous - resolves conflicts per configured strategy, flags complex conflicts for manual review
+   - Escalation: If conflict involves critical fields (email, opportunity amount), flags for manual review
+
+3. **Sync Health Monitor Agent**
+   - Responsibility: Monitor sync health, detect anomalies, alert on failures
+   - Tools: Sync metrics tracking, error rate monitoring, anomaly detection
+   - Autonomy: Fully autonomous - monitors continuously, alerts on issues
+   - Escalation: If error rate >5% for 15 minutes, alerts Sales Ops Manager
+
+**Approval Workflows:**
+1. CRM connection → Sales Ops initiates OAuth → Auto-approved (credentials validated by CRM provider)
+2. Field mapping change → Sales Ops configures → Auto-approved (audit log maintained)
+3. Conflict resolution (automated) → Strategy applied per configuration → Auto-approved → Audit logged
+4. Conflict resolution (manual) → Sales Ops resolves → Auto-approved (audit log maintained)
+5. Bulk sync trigger → Sales Ops initiates → Auto-approved → Sync job queued
 
 ---
 
