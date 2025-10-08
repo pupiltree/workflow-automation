@@ -4728,128 +4728,66 @@ Response (200 OK):
 
 ---
 
-## 19. Client Configuration Portal Service → CONSOLIDATED
-
-**Service 19 has been consolidated into Service 6 (PRD Builder & Configuration Workspace Service)** - See MICROSERVICES_ARCHITECTURE_PART2.md Service 6 for complete specification.
-
-**Rationale**: Both services provide client-facing UI workspaces for product management. Consolidating them creates a unified workspace for PRD creation and configuration management, reducing context switching and providing a seamless client experience.
-
-**Migration Impact**:
-- All client configuration features now in Service 6
-- Single workspace for PRD creation + config management
-- Conversational config editing moved to Service 6
-- API endpoints consolidated under Service 6
-- Database tables migrated to Service 6 schema
-
-**Former Objectives** (now part of Service 6):
-- **Primary Purpose**: Self-service configuration management with conversational editing
-- **Business Value**: Empowers clients to customize their chatbot/voicebot without engineering support
-- **Scope Boundaries**: Real-time config validation, version control, permission management
-
-**Former Features** (now integrated into Service 6):
-- Conversational configuration agent with change classification
-- Visual dashboard for chatbot/voicebot configuration
-- Member permission matrix (Admin, Config Manager, Viewer, Developer roles)
-- Git-style version control with commit messages
-- Side-by-side diff viewer and one-click rollback
-- Configuration testing sandbox with preview
-- Change risk assessment with automated approval workflows
-- Human agent escalation for complex configuration requests
-
-**See**: MICROSERVICES_ARCHITECTURE_PART2.md Service 6 for complete functionality.
-
----
-## 20. Communication & Hyperpersonalization Engine Service
-
-**Service Consolidation**: Service 20 now includes functionality previously in Service 18 (Outbound Communication Service). This consolidation unifies all communication channels (email, SMS, push notifications) with personalization logic, providing a single service for all outbound messaging with lifecycle-based optimization.
+## 20. Hyperpersonalization Engine Service
 
 #### Objectives
-- **Primary Purpose**: Unified outbound communication and AI-driven personalization of chatbot/voicebot responses based on customer lifecycle stage, cohort behavior, and real-time experimentation
-- **Business Value**: Increase conversion rates by 25%, reduce churn by 15%, optimize engagement per customer segment, automate transactional and lifecycle communications
+- **Primary Purpose**: AI-driven personalization of chatbot/voicebot responses based on customer lifecycle stage, cohort behavior, and real-time experimentation
+- **Business Value**: Increase conversion rates by 25%, reduce churn by 15%, optimize engagement per customer segment
 - **Inspired By**: JustWords.ai approach to lifecycle marketing hyperpersonalization
 - **Scope Boundaries**:
-  - **Does**: Transactional email/SMS delivery, requirements form distribution, follow-up sequences, customer cohort segmentation, dynamic response personalization, A/B/N testing at scale, lifecycle stage automation, engagement optimization, unified template management
-  - **Does Not**: Replace core agent logic, modify tool execution, handle PII storage (Agent Orchestration does), manage authentication tokens (Organization Management does)
+  - **Does**: Customer cohort segmentation, dynamic response personalization, A/B/N testing at scale, lifecycle stage automation, engagement optimization
+  - **Does Not**: Replace core agent logic, modify tool execution, handle PII storage (Agent Orchestration does)
 
 #### Requirements
 
 **Functional Requirements:**
-
-**Outbound Communication (from Service 18):**
-1. Send transactional emails via SendGrid (requirements forms, onboarding, follow-ups)
-2. Send SMS messages via Twilio (appointment reminders, urgent notifications)
-3. Requirements form generation and delivery tracking
-4. Follow-up sequence automation (drip campaigns, nurture sequences)
-5. Email/SMS template management with variable substitution
-6. Delivery status tracking and analytics (open rates, click rates, bounce rates)
-
-**Hyperpersonalization (original Service 20):**
-7. Segment customers into cohorts based on lifecycle stage, usage patterns, engagement levels
-8. Dynamically modify chatbot/voicebot responses per cohort without changing base config
-9. Run 50-100 message variations simultaneously with multi-armed bandit optimization
-10. Automate lifecycle-stage-specific messaging (trial, active, at-risk, renewal)
-11. Learn individual user preferences and adapt messaging over time
-12. Track engagement metrics (CTR, conversion rate, session duration) per variant
-13. Auto-optimize variant weights based on success metrics
+1. Segment customers into cohorts based on lifecycle stage, usage patterns, engagement levels
+2. Dynamically modify chatbot/voicebot responses per cohort without changing base config
+3. Run 50-100 message variations simultaneously with multi-armed bandit optimization
+4. Automate lifecycle-stage-specific messaging (trial, active, at-risk, renewal)
+5. Learn individual user preferences and adapt messaging over time
+6. Track engagement metrics (CTR, conversion rate, session duration) per variant
+7. Auto-optimize variant weights based on success metrics
 
 **Non-Functional Requirements:**
-- Email delivery: <5s P95 from trigger to SendGrid handoff
-- SMS delivery: <3s P95 from trigger to Twilio handoff
 - Personalization decision: <50ms (must not impact conversation latency)
 - Support 1M+ active customer profiles
 - Experimentation throughput: 10,000+ variants tested daily
-- Email throughput: 100,000+ emails per hour
-- 99.9% uptime for communication and personalization engine
+- 99.9% uptime for personalization engine
 
 **Dependencies:**
 - **Agent Orchestration Service** *[See Service 8 above]* (consumes personalization rules for chatbot)
 - **Voice Agent Service** *[See Service 9 above]* (consumes personalization rules for voicebot)
 - **Analytics Service** *[See Service 12 above]* (provides engagement metrics for optimization)
-- **Customer Success Service** *[See Service 13 above]* (lifecycle stage data, health scores)
-- **Support Engine Service** *[See Service 14 above]* (ticket data for support follow-ups)
+- **Customer Success Service** *[See Service 13 above]* (lifecycle stage data)
 - **LLM Gateway Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 16]* (generates variant messaging)
-- **SendGrid API** (email delivery)
-- **Twilio API** (SMS delivery)
 
 **Data Storage:**
-- PostgreSQL: Cohort definitions, personalization rules, experiment configurations, email/SMS templates, delivery logs
-- Redis: Real-time user cohort assignments, variant weights, rate limiting counters
+- PostgreSQL: Cohort definitions, personalization rules, experiment configurations
+- Redis: Real-time user cohort assignments, variant weights
 - Pinecone: Individual user preference embeddings
-- ClickHouse: Engagement event logs (time-series), A/B test results, email/SMS analytics
+- ClickHouse: Engagement event logs (time-series), A/B test results
 
 #### Features
 
-**Must-Have (Outbound Communication from Service 18):**
-1. ✅ Email delivery via SendGrid with template management
-2. ✅ SMS delivery via Twilio with rate limiting
-3. ✅ Requirements form generation and email distribution
-4. ✅ Follow-up sequence automation (drip campaigns)
-5. ✅ Email/SMS delivery tracking and analytics
-6. ✅ Template variable substitution (personalization tags)
-
-**Must-Have (Hyperpersonalization - original Service 20):**
-7. ✅ Customer cohort segmentation engine (behavioral clustering)
-8. ✅ Lifecycle stage automation (trial/active/at-risk/renewal messaging)
-9. ✅ Dynamic response personalization per cohort
-10. ✅ Multi-armed bandit experimentation (Thompson Sampling)
-11. ✅ Real-time variant weight optimization
-12. ✅ Engagement metrics tracking (CTR, conversion, session duration)
-13. ✅ Individual user preference learning (collaborative filtering)
+**Must-Have:**
+1. ✅ Customer cohort segmentation engine (behavioral clustering)
+2. ✅ Lifecycle stage automation (trial/active/at-risk/renewal messaging)
+3. ✅ Dynamic response personalization per cohort
+4. ✅ Multi-armed bandit experimentation (Thompson Sampling)
+5. ✅ Real-time variant weight optimization
+6. ✅ Engagement metrics tracking (CTR, conversion, session duration)
+7. ✅ Individual user preference learning (collaborative filtering)
 
 **Nice-to-Have:**
-14. 🔄 Push notification delivery (mobile apps)
-15. 🔄 Predictive churn scoring (identify at-risk customers before lifecycle stage change)
-16. 🔄 Cross-product personalization (chatbot learns from voicebot interactions)
-17. 🔄 Seasonal/temporal messaging adjustments (holiday campaigns, product launches)
-18. 🔄 Sentiment-driven personalization (adjust tone based on customer mood)
-19. 🔄 A/B testing for email subject lines and templates
+8. 🔄 Predictive churn scoring (identify at-risk customers before lifecycle stage change)
+9. 🔄 Cross-product personalization (chatbot learns from voicebot interactions)
+10. 🔄 Seasonal/temporal messaging adjustments (holiday campaigns, product launches)
+11. 🔄 Sentiment-driven personalization (adjust tone based on customer mood)
 
 **Feature Interactions:**
 - User starts conversation → Personalization Engine assigns cohort → Returns personalized system prompt override → Agent uses modified prompt
 - Variant performs well (high CTR) → Weight increased automatically → More users see successful variant
-- PRD approved → Trigger requirements form email via SendGrid → Track delivery and opens
-- User moves to "at-risk" lifecycle stage → Trigger retention email sequence → Personalize content based on cohort
-- Follow-up sequence scheduled → Service 20 sends emails at specified intervals → Track engagement and adjust cadence
 - User moves from "trial" to "active" lifecycle stage → Messaging shifts from educational to efficiency-focused
 - Experiment reaches statistical significance → Winning variant promoted to default
 
@@ -6845,186 +6783,6 @@ This microservices architecture provides a **production-ready foundation** for a
 
 ---
 
-## Supporting Libraries
-
-### @workflow/llm-sdk
-
-**Purpose**: Direct LLM inference with intelligent routing and caching
-
-**Replaces**: Service 16 (LLM Gateway microservice) - documented in PART2
-
-**See**: MICROSERVICES_ARCHITECTURE_PART2.md "Supporting Libraries" section for complete documentation
-
-**Quick Reference**:
-- Installation: `pip install workflow-llm-sdk` or `npm install @workflow/llm-sdk`
-- Used by: Services 8, 9, 21, 13, 14, 20
-- Benefits: Eliminates 200-500ms latency per LLM call
-- Features: Model routing, semantic caching, token tracking, fallback strategies
-
----
-
-### @workflow/config-sdk
-
-**Purpose**: S3-based configuration storage with JSON Schema validation and hot-reload support
-
-**Replaces**: Service 10 (Configuration Management microservice)
-
-**Installation**:
-```bash
-# Python
-pip install workflow-config-sdk
-
-# Node.js
-npm install @workflow/config-sdk
-```
-
-**Used By**: All services requiring YAML configuration (Services 7, 8, 9, etc.)
-
-**Key Features**:
-1. **Direct S3 Access**: Read/write configs directly to S3 buckets (no intermediate service)
-2. **JSON Schema Validation**: Client-side validation before applying configs
-3. **Client-Side Caching**: Redis-backed caching for 50-100ms improvement
-4. **Hot-Reload Support**: Subscribe to config changes via Redis pub/sub
-5. **Version Control**: Track all config versions with rollback capability
-6. **Namespace Isolation**: Per-tenant S3 prefixes for multi-tenancy
-
-**Benefits**:
-- ✅ Eliminates 50-100ms latency per config fetch (no network hop)
-- ✅ Simpler architecture (no Configuration Management service)
-- ✅ Service autonomy (each service manages own config access)
-- ✅ Reduced single point of failure
-- ✅ Direct S3 observability and tracing
-
-**Usage Example (Python)**:
-```python
-from workflow_config_sdk import ConfigClient
-
-config = ConfigClient(
-    s3_bucket="workflow-configs",
-    redis_url="redis://localhost:6379",
-    tenant_id="org_123",
-    enable_caching=True,
-    hot_reload=True
-)
-
-# Fetch config with validation
-agent_config = config.get(
-    config_type="agent",
-    config_id="chatbot_sales",
-    validate=True  # JSON Schema validation
-)
-
-# Listen for changes
-@config.on_change("agent/chatbot_sales")
-def handle_config_update(new_config):
-    print(f"Config updated: {new_config}")
-    # Reload agent with new config
-```
-
-**Usage Example (Node.js)**:
-```typescript
-import { ConfigClient } from '@workflow/config-sdk';
-
-const config = new ConfigClient({
-  s3Bucket: 'workflow-configs',
-  redisUrl: 'redis://localhost:6379',
-  tenantId: 'org_123',
-  enableCaching: true,
-  hotReload: true
-});
-
-// Fetch config with validation
-const agentConfig = await config.get({
-  configType: 'agent',
-  configId: 'chatbot_sales',
-  validate: true
-});
-
-// Listen for changes
-config.onChange('agent/chatbot_sales', (newConfig) => {
-  console.log('Config updated:', newConfig);
-  // Reload agent with new config
-});
-```
-
-**Configuration Schema**:
-```yaml
-# Example: Agent Config (chatbot_sales.yaml)
-name: "Sales Assistant Chatbot"
-tenant_id: "org_123"
-model:
-  provider: "openai"
-  model_name: "gpt-4"
-  temperature: 0.7
-system_prompt: "You are a helpful sales assistant..."
-tools:
-  - name: "research_engine"
-    enabled: true
-  - name: "demo_generator"
-    enabled: true
-knowledge_bases:
-  - "village_knowledge:sales_best_practices"
-  - "tenant_data:product_catalog"
-```
-
-**S3 Structure**:
-```
-workflow-configs/
-├── org_123/                    # Tenant namespace
-│   ├── agents/
-│   │   ├── chatbot_sales.yaml
-│   │   └── voicebot_support.yaml
-│   ├── workflows/
-│   │   └── prd_generation.yaml
-│   └── metadata.json
-└── schemas/                    # JSON Schemas
-    ├── agent.schema.json
-    └── workflow.schema.json
-```
-
-**Caching Strategy**:
-- Cache key: `config:{tenant_id}:{config_type}:{config_id}`
-- TTL: 5 minutes (configurable)
-- Invalidation: Redis pub/sub on S3 updates
-- Fallback: Direct S3 read if cache miss
-
-**Hot-Reload Mechanism**:
-1. Service subscribes to Redis channel: `config:updates:{tenant_id}`
-2. On S3 config update, publish event: `{"type": "agent", "id": "chatbot_sales", "version": 2}`
-3. Services receive event and refetch config from S3
-4. Application-level reload (restart agent, update workflow)
-
-**Version Control**:
-```python
-# Get version history
-versions = config.get_versions(
-    config_type="agent",
-    config_id="chatbot_sales",
-    limit=10
-)
-
-# Rollback to previous version
-config.rollback(
-    config_type="agent",
-    config_id="chatbot_sales",
-    target_version=5
-)
-```
-
-**Error Handling**:
-- S3 access errors: Fallback to last cached version
-- Validation errors: Reject config, keep previous version
-- Redis unavailable: Disable hot-reload, direct S3 access only
-- Schema not found: Allow config but log warning
-
-**Security**:
-- S3 bucket policies: Per-tenant IAM roles
-- Encryption: S3 server-side encryption (SSE-S3)
-- Access logs: CloudTrail for all S3 operations
-- Validation: JSON Schema prevents malicious config injection
-
----
-
 **This completes the comprehensive microservices architecture specification for the Complete Workflow Automation System.**
 
-**Service Index**: For quick navigation to all services across documents, see `SERVICE_INDEX.md`
+**Service Index**: For quick navigation to all 22 services across documents, see `SERVICE_INDEX.md`

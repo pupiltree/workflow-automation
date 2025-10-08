@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ################################################################################
 # Cross-Reference Validation Script
@@ -11,9 +11,18 @@
 # Exit Codes:
 #   0 - All validations passed
 #   1 - Validation failures found
+#
+# Requirements: bash 4.0+ (for associative arrays)
 ################################################################################
 
 set -e
+
+# Check bash version
+if ((BASH_VERSINFO[0] < 4)); then
+    echo "Error: This script requires bash 4.0 or higher"
+    echo "Current version: $BASH_VERSION"
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -35,31 +44,35 @@ echo "Cross-Reference Validation Script"
 echo "========================================"
 echo ""
 
-# Define service locations (ground truth)
+# Define service locations (ground truth) - 15 Active Services
 declare -A SERVICE_LOCATIONS=(
-    ["0"]="MICROSERVICES_ARCHITECTURE.md"
-    ["0.5"]="MICROSERVICES_ARCHITECTURE.md"
-    ["1"]="MICROSERVICES_ARCHITECTURE.md"
-    ["2"]="MICROSERVICES_ARCHITECTURE.md"
-    ["3"]="MICROSERVICES_ARCHITECTURE.md"
-    ["4"]="MICROSERVICES_ARCHITECTURE.md"
-    ["5"]="MICROSERVICES_ARCHITECTURE.md"
-    ["6"]="MICROSERVICES_ARCHITECTURE_PART2.md"
-    ["7"]="MICROSERVICES_ARCHITECTURE_PART2.md"
-    ["8"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["9"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["10"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["11"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["12"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["13"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["14"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["15"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["16"]="MICROSERVICES_ARCHITECTURE_PART2.md"
-    ["17"]="MICROSERVICES_ARCHITECTURE_PART2.md"
-    ["18"]="MICROSERVICES_ARCHITECTURE.md"
-    ["19"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["20"]="MICROSERVICES_ARCHITECTURE_PART3.md"
-    ["21"]="SERVICE_21_AGENT_COPILOT.md"
+    ["0"]="docs/architecture/MICROSERVICES_ARCHITECTURE.md"
+    ["1"]="docs/architecture/MICROSERVICES_ARCHITECTURE.md"
+    ["2"]="docs/architecture/MICROSERVICES_ARCHITECTURE.md"
+    ["3"]="docs/architecture/MICROSERVICES_ARCHITECTURE.md"
+    ["6"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART2.md"
+    ["7"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART2.md"
+    ["8"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["9"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["11"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["12"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["13"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["14"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["15"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["17"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART2.md"
+    ["20"]="docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
+    ["21"]="docs/architecture/SERVICE_21_AGENT_COPILOT.md"
+)
+
+# Eliminated/Converted Services (should not be referenced directly)
+declare -A ELIMINATED_SERVICES=(
+    ["0.5"]="Service 0 (Organization & Identity Management)"
+    ["4"]="Service 3 (Sales Document Generator)"
+    ["5"]="Service 3 (Sales Document Generator)"
+    ["10"]="@workflow/config-sdk library"
+    ["16"]="@workflow/llm-sdk library"
+    ["18"]="Service 20 (Communication & Hyperpersonalization Engine)"
+    ["19"]="Service 6 (PRD Builder & Configuration Workspace)"
 )
 
 # Function to check if service reference points to correct document
@@ -72,7 +85,23 @@ check_service_reference() {
 
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 
-    # Get correct location for service
+    # Check if service has been eliminated/converted
+    local eliminated_target="${ELIMINATED_SERVICES[$service_num]}"
+    if [ -n "$eliminated_target" ]; then
+        # This is an eliminated service - check if consolidation note is present
+        if [[ "$line_content" =~ "CONSOLIDATED" ]] || [[ "$line_content" =~ "CONVERTED TO LIBRARY" ]] || [[ "$line_content" =~ "consolidated" ]] || [[ "$line_content" =~ "merged" ]]; then
+            echo -e "${GREEN}✓${NC} Service $service_num correctly documented as eliminated (→ $eliminated_target)"
+            PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        else
+            echo -e "${RED}✗${NC} Line $line_num: Service $service_num has been eliminated (→ $eliminated_target)"
+            echo "   Update reference to point to: $eliminated_target"
+            echo "   Content: $line_content"
+            FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        fi
+        return
+    fi
+
+    # Get correct location for active service
     local correct_doc="${SERVICE_LOCATIONS[$service_num]}"
 
     if [ -z "$correct_doc" ]; then
@@ -146,9 +175,9 @@ echo ""
 
 # Check if documents exist
 DOCS=(
-    "$BASE_DIR/MICROSERVICES_ARCHITECTURE.md"
-    "$BASE_DIR/MICROSERVICES_ARCHITECTURE_PART2.md"
-    "$BASE_DIR/MICROSERVICES_ARCHITECTURE_PART3.md"
+    "$BASE_DIR/docs/architecture/MICROSERVICES_ARCHITECTURE.md"
+    "$BASE_DIR/docs/architecture/MICROSERVICES_ARCHITECTURE_PART2.md"
+    "$BASE_DIR/docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md"
 )
 
 for doc in "${DOCS[@]}"; do
@@ -167,7 +196,7 @@ done
 echo ""
 echo "Checking standalone service documents..."
 echo "----------------------------------------"
-if [ -f "$BASE_DIR/SERVICE_21_AGENT_COPILOT.md" ]; then
+if [ -f "$BASE_DIR/docs/architecture/SERVICE_21_AGENT_COPILOT.md" ]; then
     echo -e "${GREEN}✓${NC} Service 21 (Agent Copilot) standalone document exists"
     PASSED_CHECKS=$((PASSED_CHECKS + 1))
 else
@@ -177,7 +206,7 @@ fi
 TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 
 # Additional check: Verify SERVICE_INDEX.md exists
-if [ -f "$BASE_DIR/SERVICE_INDEX.md" ]; then
+if [ -f "$BASE_DIR/docs/architecture/SERVICE_INDEX.md" ]; then
     echo -e "${GREEN}✓${NC} SERVICE_INDEX.md exists"
     PASSED_CHECKS=$((PASSED_CHECKS + 1))
 else
@@ -185,6 +214,34 @@ else
     WARNINGS=$((WARNINGS + 1))
 fi
 TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+# Additional check: Verify service count
+echo ""
+echo "Validating architecture consolidation..."
+echo "----------------------------------------"
+active_services=${#SERVICE_LOCATIONS[@]}
+eliminated_services=${#ELIMINATED_SERVICES[@]}
+total_services=$((active_services + eliminated_services))
+
+if [ $active_services -eq 15 ]; then
+    echo -e "${GREEN}✓${NC} Correct number of active services: 15"
+    PASSED_CHECKS=$((PASSED_CHECKS + 1))
+else
+    echo -e "${RED}✗${NC} Expected 15 active services, found: $active_services"
+    FAILED_CHECKS=$((FAILED_CHECKS + 1))
+fi
+TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+if [ $eliminated_services -eq 7 ]; then
+    echo -e "${GREEN}✓${NC} Correct number of eliminated services: 7"
+    PASSED_CHECKS=$((PASSED_CHECKS + 1))
+else
+    echo -e "${YELLOW}⚠${NC} Expected 7 eliminated services, found: $eliminated_services"
+    WARNINGS=$((WARNINGS + 1))
+fi
+TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+echo -e "Total services tracked: $total_services (15 active + 7 eliminated)"
 
 # Summary
 echo ""

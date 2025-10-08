@@ -3,19 +3,25 @@
 
 ---
 
-## 6. PRD Builder Engine Service
+## 6. PRD Builder & Configuration Workspace Service
+
+**Service Consolidation**: Service 6 now includes functionality previously in Service 19 (Client Configuration Portal). This consolidation unifies the client-facing workspace, providing a single location for both PRD creation and self-service configuration management.
 
 #### Objectives
-- **Primary Purpose**: AI-powered generation of comprehensive Product Requirement Documents (PRDs) for chatbot and voicebot products through conversational interface with cross-questioning and village knowledge integration
-- **Business Value**: Reduces PRD creation from 20+ hours to 2-3 hours, leverages multi-client learnings, ensures completeness through AI-driven edge case analysis
+- **Primary Purpose**: AI-powered generation of comprehensive Product Requirement Documents (PRDs) for chatbot and voicebot products through conversational interface with cross-questioning and village knowledge integration, plus self-service configuration management with version control and conversational editing
+- **Business Value**:
+  - PRD Creation: Reduces PRD creation from 20+ hours to 2-3 hours, leverages multi-client learnings, ensures completeness through AI-driven edge case analysis
+  - Configuration Management: 80% reduction in configuration support tickets, instant config changes, client autonomy, improved time-to-value
 - **Product Differentiation**: Supports both chatbot (LangGraph-based) and voicebot (LiveKit-based) product types with product-specific requirements, sprint planning, and integration architecture
 - **Scope Boundaries**:
-  - **Does**: Generate PRDs via webchat UI, integrate village knowledge, suggest new objectives, design A/B flows, plan integrations and escalations, differentiate chatbot vs voicebot requirements
-  - **Does Not**: Write code, deploy solutions, manage infrastructure
+  - **Does**: Generate PRDs via webchat UI, integrate village knowledge, suggest new objectives, design A/B flows, plan integrations and escalations, differentiate chatbot vs voicebot requirements, enable conversational config via AI agent, visual config dashboard, member permission management, version control UI, change classification, config preview/testing, rollback management
+  - **Does Not**: Write code, deploy solutions, manage infrastructure, validate schemas (Configuration Management Service does), implement tools (developers do)
 
 #### Requirements
 
 **Functional Requirements:**
+
+*PRD Builder:*
 1. Conversational PRD generation via webchat UI with cross-questioning
 2. Integration with village knowledge (what's working for other clients)
 3. Automatic objective suggestion based on business context and AI intelligence
@@ -26,30 +32,51 @@
 8. Log event tracking for uptime monitoring
 9. Iterative refinement until client satisfaction
 
+*Configuration Management (from Service 19):*
+10. Natural language configuration via conversational AI agent
+11. Visual configuration dashboard with product-specific controls (chatbot vs voicebot)
+12. Member-based permission system for configuration changes
+13. Git-style version control with commit messages and rollback
+14. Change classification (system_prompt, tool, voice_param, integration, etc.)
+15. Real-time configuration preview and testing sandbox
+16. Automated change risk assessment with approval workflows
+17. Human agent coordination for complex configuration needs
+
 **Non-Functional Requirements:**
 - Initial PRD generation: <15 minutes for standard use case
 - Support 50 concurrent PRD sessions
 - Village knowledge retrieval: <2s latency
-- 99% uptime for PRD generation service
+- Configuration change application: <2 minutes from request to live deployment
+- Conversational config response time: <3s for classification and preview generation
+- Support 10,000+ organizations with isolated configuration access
+- 99.9% uptime for PRD generation and configuration portal
 - Multi-client knowledge isolation (no data leakage)
+- Version history retention: 1 year minimum
 
 **Dependencies:**
 - **NDA Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 3]* (consumes nda_fully_signed event to trigger PRD session)
 - **Demo Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 2]* (demo data provides use case context for PRD)
 - **Research Engine** *[See MICROSERVICES_ARCHITECTURE.md Service 1]* (volume predictions inform PRD volume requirements)
-- **Agent Orchestration Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 8]* (village knowledge retrieval)
+- **Agent Orchestration Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 8]* (village knowledge retrieval, applies chatbot config changes)
+- **Voice Agent Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 9]* (applies voicebot config changes)
 - **Pricing Model Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 4]* (PRD approval triggers pricing generation via prd_approved event)
+- **Configuration Management Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 10]* (stores/distributes configs, validates schemas)
+- **Automation Engine** *[See Service 7 below]* (initial config generation)
+- **Organization Management Service** *[See MICROSERVICES_ARCHITECTURE.md Service 0]* (member roles and permissions)
 - **Analytics Service** (historical KPI data for benchmarking)
 
 **Data Storage:**
-- PostgreSQL: PRD metadata, versions, client feedback, approval status
+- PostgreSQL: PRD metadata, versions, client feedback, approval status, config change log, member permissions, version metadata, approval workflows
 - Qdrant: Village knowledge embeddings (successful patterns, KPIs, flows)
 - Neo4j: Integration dependency graphs, workflow relationships
-- S3: PRD documents (markdown, PDF exports)
+- S3: PRD documents (markdown, PDF exports), version snapshots, config diff visualizations
+- Redis: Conversational state (chat context for both PRD and config), config draft cache
 
 #### Features
 
 **Must-Have:**
+
+*PRD Builder Features:*
 1. ✅ Conversational PRD builder with AI cross-questioning
 2. ✅ Village knowledge integration (multi-tenant learnings)
 3. ✅ Objective suggestion engine (cross-sell, upsell, surveys)
@@ -63,13 +90,36 @@
 11. ✅ **Human agent join capability** (agents can join PRD sessions to help clients)
 12. ✅ **Collaboration chat** (side-by-side chat during PRD building)
 
+*Configuration Management Features (from Service 19):*
+13. ✅ Conversational configuration agent with change classification
+14. ✅ Visual dashboard for chatbot configuration (system prompt, tools, integrations)
+15. ✅ Visual dashboard for voicebot configuration (voice parameters, model settings, stop speaking plan)
+16. ✅ Member permission matrix (Admin, Config Manager, Viewer, Developer roles)
+17. ✅ Git-style version control with commit messages
+18. ✅ Side-by-side diff viewer (before/after comparison)
+19. ✅ One-click rollback to previous versions
+20. ✅ Configuration testing sandbox with preview
+21. ✅ Change risk assessment (low/medium/high) with automated approval for low-risk changes
+22. ✅ Human agent escalation for complex configuration requests
+
 **Nice-to-Have:**
-13. 🔄 Auto-generated user stories from PRD
-14. 🔄 Competitive analysis integration
-15. 🔄 Risk assessment and mitigation planning
-16. 🔄 ROI calculator based on automation metrics
+
+*PRD Builder:*
+23. 🔄 Auto-generated user stories from PRD
+24. 🔄 Competitive analysis integration
+25. 🔄 Risk assessment and mitigation planning
+26. 🔄 ROI calculator based on automation metrics
+
+*Configuration Management:*
+27. 🔄 AI-powered configuration optimization suggestions
+28. 🔄 Configuration templates marketplace (share configs across organizations)
+29. 🔄 Automated regression testing for config changes
+30. 🔄 Configuration import/export (JSON/YAML)
+31. 🔄 Multi-environment support (dev/staging/production branches)
 
 **Feature Interactions:**
+
+*PRD Builder:*
 - NDA signing → Auto-triggers PRD session (consumes nda_fully_signed event)
 - PRD approval → Triggers pricing model generation (publishes prd_approved event to prd_events topic)
 - Pricing completion → Proposal generation uses both PRD and pricing data
@@ -77,6 +127,12 @@
 - Help button clicked → Generates shareable code → Publishes help_requested event → Human agent joins → Real-time collaboration begins
 - Collaboration ended → Session resumes with AI PRD builder → Client continues independently
 - Requirements form data → Validates client-stated volumes against PRD technical requirements
+
+*Configuration Management (from Service 19):*
+- Client requests config change via chat → Agent classifies → Shows preview → Client approves → Hot-reload applied
+- Visual slider changed (voicebot speed) → Immediate preview in test call → Save creates new version
+- Risky change detected → Requires organization admin approval → Sends notification
+- Configuration error after deployment → Auto-rollback triggered → Platform engineer alerted
 
 #### API Specification
 
@@ -860,6 +916,205 @@ Server → Client Events:
 - 50 canvas edits per hour per collaboration session
 - 1000 API requests per minute per tenant
 
+---
+
+### Configuration Management APIs (from Service 19)
+
+**1. Conversational Configuration Chat**
+```http
+POST /api/v1/client-config/chat
+Authorization: Bearer {client_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "config_id": "uuid",
+  "message": "Make the voicebot speak slower and add a refund tool",
+  "conversation_id": "uuid",
+  "product_type": "voicebot"
+}
+
+Response (200 OK):
+{
+  "response": "I'll help you with that. I've detected two changes:\n\n1. **Voice speed adjustment** (slower)\n   - Current: 1.0x speed\n   - Proposed: 0.7x speed\n   \n2. **Adding refund tool**\n   - Found 'initiate_refund' in our catalog\n   - Status: Implemented and ready\n   \nWould you like me to apply these changes?",
+  "detected_changes": [
+    {
+      "type": "voice_parameter_change",
+      "parameter": "speed",
+      "current_value": 1.0,
+      "proposed_value": 0.7,
+      "confidence": 0.95,
+      "risk_level": "low"
+    },
+    {
+      "type": "tool_change",
+      "action": "add",
+      "tool_name": "initiate_refund",
+      "tool_status": "implemented",
+      "confidence": 0.88,
+      "risk_level": "medium"
+    }
+  ],
+  "preview_url": "https://config.workflow.com/preview/uuid",
+  "requires_approval": false,
+  "conversation_id": "uuid"
+}
+```
+
+**2. Visual Configuration Update**
+```http
+POST /api/v1/client-config/visual/update
+Authorization: Bearer {client_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "config_id": "uuid",
+  "product_type": "voicebot",
+  "changes": {
+    "voice_settings": {
+      "background_sound": {
+        "type": "office",
+        "custom_url": null
+      },
+      "input_min_characters": 10,
+      "punctuation_boundaries": [".", "!", "?", "..."],
+      "model_settings": {
+        "model": "gpt-4",
+        "clarity_similarity": 0.75,
+        "speed": 0.8,
+        "style_exaggeration": 0,
+        "optimize_streaming_latency": 3,
+        "use_speaker_boost": true,
+        "auto_mode": false
+      },
+      "max_tokens": 150,
+      "stop_speaking_plan": {
+        "number_of_words": 5,
+        "voice_seconds": 0.7,
+        "back_off_seconds": 3
+      }
+    }
+  },
+  "commit_message": "Adjusted voice speed and interruption handling",
+  "apply_immediately": false
+}
+
+Response (200 OK):
+{
+  "version": "v48",
+  "status": "pending_approval",
+  "preview_url": "https://config.workflow.com/preview/uuid",
+  "test_call_url": "https://config.workflow.com/test-call/uuid",
+  "validation": {
+    "valid": true,
+    "warnings": [],
+    "estimated_impact": "Low - voice parameter changes only",
+    "affected_conversations": 0
+  },
+  "diff": {
+    "voice_settings.speed": {"old": 1.0, "new": 0.8},
+    "voice_settings.stop_speaking_plan.number_of_words": {"old": 3, "new": 5}
+  },
+  "created_at": "2025-10-15T14:23:00Z"
+}
+```
+
+**3. Get Version History**
+```http
+GET /api/v1/client-config/{config_id}/versions
+Authorization: Bearer {client_jwt}
+Query Parameters:
+- limit: 20 (default)
+- offset: 0
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "product_type": "chatbot",
+  "current_version": "v48",
+  "versions": [
+    {
+      "version": "v48",
+      "commit_message": "Changed tone to casual, added refund tool",
+      "author": {
+        "user_id": "uuid",
+        "email": "jane@acme.com",
+        "role": "organization_admin"
+      },
+      "changes": [
+        {"type": "system_prompt_change", "field": "tone", "old_value": "professional", "new_value": "casual"},
+        {"type": "tool_change", "action": "add", "tool_name": "initiate_refund"}
+      ],
+      "risk_level": "low",
+      "applied_at": "2025-10-15T14:23:00Z",
+      "rollback_available": true
+    }
+  ],
+  "total_versions": 48,
+  "pagination": {
+    "has_more": true,
+    "next_offset": 20
+  }
+}
+```
+
+**4. Rollback to Previous Version**
+```http
+POST /api/v1/client-config/{config_id}/rollback
+Authorization: Bearer {client_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "target_version": "v47",
+  "reason": "New voice speed causing customer complaints",
+  "notify_team": true
+}
+
+Response (200 OK):
+{
+  "config_id": "uuid",
+  "rolled_back_from": "v48",
+  "rolled_back_to": "v47",
+  "new_current_version": "v49",
+  "commit_message": "Rollback to v47: New voice speed causing customer complaints",
+  "applied_at": "2025-10-15T15:00:00Z",
+  "kafka_event_published": true,
+  "estimated_propagation_time": "60 seconds"
+}
+```
+
+**5. Get Member Configuration Permissions**
+```http
+GET /api/v1/client-config/permissions
+Authorization: Bearer {client_jwt}
+Query Parameters:
+- organization_id: uuid
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "members": [
+    {
+      "user_id": "uuid",
+      "email": "jane@acme.com",
+      "role": "organization_admin",
+      "config_permissions": {
+        "view_config": true,
+        "edit_system_prompt": true,
+        "add_remove_tools": true,
+        "modify_integrations": true,
+        "change_voice_params": true,
+        "deploy_to_production": true,
+        "rollback_versions": true,
+        "manage_permissions": true
+      }
+    }
+  ]
+}
+```
+
 #### Frontend Components
 
 **1. PRD Chat Interface**
@@ -963,10 +1218,57 @@ Server → Client Events:
   - Session notes for internal tracking
   - Collaboration metrics (avg duration, client satisfaction)
 
+**11. Configuration Chat Interface (from Service 19)**
+- Component: `ConfigChatInterface.tsx`
+- Features:
+  - Conversational config editing with AI agent
+  - Change detection and classification
+  - Preview generation inline
+  - Approval workflow UI
+  - Confidence indicators for detected changes
+
+**12. Voicebot Configuration Panel (from Service 19)**
+- Component: `VoicebotConfigPanel.tsx`
+- Features:
+  - Visual sliders for voice parameters (speed, clarity, style)
+  - Background sound selector
+  - Model settings configurator
+  - Stop speaking plan editor
+  - Real-time preview with test call button
+  - Matches provided design mockups
+
+**13. Chatbot Configuration Panel (from Service 19)**
+- Component: `ChatbotConfigPanel.tsx`
+- Features:
+  - System prompt editor with tone presets
+  - Tool catalog with add/remove controls
+  - Integration connection manager
+  - Escalation rule builder
+  - Live chat preview
+
+**14. Version History Timeline (from Service 19)**
+- Component: `VersionHistoryTimeline.tsx`
+- Features:
+  - Git-style commit history
+  - Side-by-side diff viewer
+  - One-click rollback button
+  - Filter by change type
+  - Author attribution with avatars
+  - Risk level badges
+
+**15. Permission Matrix (from Service 19)**
+- Component: `PermissionMatrix.tsx`
+- Features:
+  - Member list with role badges
+  - Permission toggle grid
+  - Role templates (Admin, Manager, Viewer)
+  - Invite member workflow
+  - Permission change audit log
+
 **State Management:**
-- Zustand for chat state and PRD content
+- Zustand for chat state, PRD content, and config state
 - React Query for API data fetching
-- WebSocket for real-time AI responses
+- WebSocket for real-time AI responses and config hot-reload notifications
 - IndexedDB for offline draft support
 
 #### Stakeholders and Agents
@@ -1000,6 +1302,31 @@ Server → Client Events:
    - Workflows: Monitors help request queue → Joins session via shareable code → Chats with client → Edits canvas collaboratively → Resolves issue → Ends session
    - Approval: None (agent-initiated collaboration on client request)
 
+5. **Organization Admin (Client) - from Service 19**
+   - Role: Full configuration control, permission management for deployed products
+   - Access: All configuration features for their organization's chatbot/voicebot
+   - Permissions: All config_permissions enabled (view, edit, deploy, rollback, manage permissions)
+   - Workflows: Changes config via chat/visual UI, manages team permissions, reviews version history
+   - Approval: Can approve high-risk configuration changes
+
+6. **Config Manager (Client) - from Service 19**
+   - Role: Day-to-day configuration management for deployed products
+   - Access: Most configuration features except deployment and permission management
+   - Permissions: View, edit prompts/voice params, rollback (no deployment, no permission management)
+   - Workflows: Adjusts chatbot tone, modifies voice settings, tests changes
+
+7. **Config Viewer (Client) - from Service 19**
+   - Role: Read-only config access for stakeholders
+   - Access: View-only dashboard
+   - Permissions: view_config only
+   - Workflows: Reviews current configuration, views change history
+
+8. **Support Agent (Platform) - from Service 19**
+   - Role: Assists clients with complex configuration requests
+   - Access: Join client config sessions, create GitHub tool requests
+   - Permissions: read:client_configs, create:github_issues, join:config_sessions
+   - Workflows: Receives escalation from config agent, helps client configure advanced features, creates tool requests
+
 **AI Agents:**
 
 1. **PRD Builder Agent**
@@ -1026,13 +1353,33 @@ Server → Client Events:
    - Autonomy: Fully autonomous
    - Escalation: Alerts on critical data gaps that block objectives
 
+5. **Configuration Assistant Agent (from Service 19)**
+   - Responsibility: Classifies configuration requests, generates previews, validates changes
+   - Tools: LLM for intent classification, tool catalog search, config diff generator, schema validator
+   - Autonomy: Fully autonomous for low-risk changes (auto-apply), requests approval for medium/high risk
+   - Escalation: Human support agent for unrecognized requests or failed classifications
+
+6. **Config Validation Agent (from Service 19)**
+   - Responsibility: Validates configuration changes before deployment, detects breaking changes
+   - Tools: JSON Schema validator, conflict detector, impact analyzer
+   - Autonomy: Fully autonomous validation
+   - Escalation: Platform engineer alert for validation failures or high-risk changes
+
 **Approval Workflows:**
+
+*PRD Builder:*
 1. PRD Creation → Auto-approved for standard use cases, Product Manager review for complex
 2. Village Knowledge Suggestions → Client acceptance required (opt-in)
 3. A/B Flow Design → Technical Architect approval for >3 variants or complex logic
 4. Integration Architecture → Technical Architect approval for custom integrations
 5. Final PRD → Client Business Owner approval required
 6. Sprint Roadmap → Product Manager + Technical Architect alignment required
+
+*Configuration Management (from Service 19):*
+7. Low-risk changes (voice params, tone adjustments) → Auto-approved
+8. Medium-risk changes (tool additions, escalation rules) → Organization Admin approval
+9. High-risk changes (integration modifications, tool removals) → Organization Admin + Platform Engineer approval
+10. Failed changes (validation errors) → Auto-rollback + Support Agent notification
 
 ---
 
@@ -1840,292 +2187,24 @@ The hot-reload mechanism uses version pinning to ensure in-progress conversation
 
 ---
 
-## 16. LLM Gateway Service
+## 16. LLM Gateway Service → CONVERTED TO LIBRARY
 
-#### Objectives
-- **Primary Purpose**: Centralized LLM inference with model routing, semantic caching, token monitoring, and cost optimization across all AI-powered services
-- **Business Value**: Reduces LLM costs by 40-60% through caching and smart routing, provides unified interface for multi-provider support, enables real-time cost tracking
-- **Scope Boundaries**:
-  - **Does**: Route requests to optimal models, cache semantically similar prompts, track token usage, provide fallback mechanisms, support streaming responses
-  - **Does Not**: Train models, fine-tune models, manage model deployment infrastructure
+**Service 16 has been converted to @workflow/llm-sdk library** - See "Supporting Libraries" section below for complete specification.
 
-#### Requirements
+**Rationale**: Service 16 was a pass-through microservice adding 200-500ms latency to every LLM call. Converting to a library eliminates this network hop, allowing services to call LLM providers (OpenAI, Anthropic) directly while still benefiting from model routing, semantic caching, and token counting features.
 
-**Functional Requirements:**
-1. Multi-provider support (OpenAI GPT-4/3.5, Anthropic Claude, Google Gemini, Azure OpenAI)
-2. Semantic caching with similarity threshold (e.g., 95% similar → cache hit)
-3. Model routing based on complexity, cost, latency requirements
-4. Token usage tracking per tenant, per service, per model
-5. Streaming response support for real-time conversations
-6. Fallback routing when primary model unavailable
-7. Rate limiting per provider API limits
-8. Cost budgeting and alerting
+**Migration Impact**:
+- Services 8, 9, 21, 13, 14 now import `@workflow/llm-sdk` directly
+- No API calls to Service 16
+- LLM API keys managed per-service (already required for autonomy)
+- 200-500ms latency improvement per LLM call
 
-**Non-Functional Requirements:**
-- Inference latency: <500ms P95 (excluding model processing time)
-- Cache hit rate: >40% (target 60%)
-- Support 10,000+ requests/second
-- 99.99% uptime (critical for all AI workflows)
-- Cost reduction: 40-60% vs. direct API calls
-
-**Dependencies:**
-- Agent Orchestration Service (primary consumer)
-- Voice Agent Service (real-time inference)
-- PRD Builder (document generation)
-- Demo Generator (content creation)
-- Redis (semantic cache storage)
-- Analytics Service (cost tracking)
-
-**Data Storage:**
-- Redis: Semantic cache (prompt embeddings + responses), rate limiting counters
-- PostgreSQL: Token usage logs, cost attribution per tenant
-- TimescaleDB: Time-series cost analytics, usage trends
-
-#### Features
-
-**Must-Have:**
-1. ✅ Multi-provider routing (OpenAI, Anthropic, Google)
-2. ✅ Semantic caching with embedding-based similarity
-3. ✅ Token usage tracking (per tenant, per service, per model)
-4. ✅ Streaming response support (SSE)
-5. ✅ Automatic fallback routing on provider failures
-6. ✅ Cost budgeting with alerts (daily/monthly limits)
-7. ✅ Model selection API (cheap, balanced, premium)
-8. ✅ Real-time cost dashboard
-
-**Nice-to-Have:**
-9. 🔄 Fine-tuned model deployment
-10. 🔄 A/B testing different models
-11. 🔄 Prompt optimization suggestions
-12. 🔄 Cost forecasting based on usage patterns
-
-#### API Specification
-
-**1. Chat Completion (Routed)**
-```http
-POST /api/v1/llm/chat
-Authorization: Bearer {jwt_token}
-X-Tenant-ID: {tenant_id}
-X-Service-Name: agent_orchestration
-Content-Type: application/json
-
-Request Body:
-{
-  "messages": [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "What is the capital of France?"}
-  ],
-  "product_type": "chatbot",
-  "model_preference": "balanced",  // cheap | balanced | premium
-  "max_tokens": 500,
-  "temperature": 0.7,
-  "stream": false,
-  "enable_cache": true
-}
-
-Response (200 OK):
-{
-  "id": "chatcmpl-uuid",
-  "model_used": "gpt-3.5-turbo",  // Actual model routed to
-  "choices": [
-    {
-      "message": {
-        "role": "assistant",
-        "content": "The capital of France is Paris."
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 25,
-    "completion_tokens": 8,
-    "total_tokens": 33,
-    "estimated_cost_usd": 0.000066
-  },
-  "cache_hit": false,
-  "latency_ms": 420
-}
-```
-
-**2. Streaming Chat Completion**
-```http
-POST /api/v1/llm/chat
-Authorization: Bearer {jwt_token}
-X-Tenant-ID: {tenant_id}
-Content-Type: application/json
-
-Request Body:
-{
-  "messages": [...],
-  "model_preference": "premium",
-  "stream": true
-}
-
-Response (200 OK - Server-Sent Events):
-data: {"delta": {"content": "The"}, "model_used": "gpt-4"}
-data: {"delta": {"content": " capital"}}
-data: {"delta": {"content": " of France is Paris."}}
-data: {"usage": {"total_tokens": 33, "estimated_cost_usd": 0.00099}, "finish_reason": "stop"}
-data: [DONE]
-```
-
-**3. Generate Embeddings**
-```http
-POST /api/v1/llm/embeddings
-Authorization: Bearer {jwt_token}
-X-Tenant-ID: {tenant_id}
-Content-Type: application/json
-
-Request Body:
-{
-  "input": "Semantic search query text",
-  "model": "text-embedding-3-small"  // or text-embedding-ada-002
-}
-
-Response (200 OK):
-{
-  "embeddings": [[0.023, -0.015, 0.042, ...]],  // 1536-dim vector
-  "model_used": "text-embedding-3-small",
-  "usage": {
-    "prompt_tokens": 5,
-    "total_tokens": 5,
-    "estimated_cost_usd": 0.000001
-  }
-}
-```
-
-**4. Get Model Availability**
-```http
-GET /api/v1/llm/models
-Authorization: Bearer {jwt_token}
-
-Response (200 OK):
-{
-  "models": [
-    {
-      "id": "gpt-4",
-      "provider": "openai",
-      "tier": "premium",
-      "status": "available",
-      "cost_per_1k_tokens": 0.03,
-      "max_tokens": 8192,
-      "supports_streaming": true
-    },
-    {
-      "id": "gpt-3.5-turbo",
-      "provider": "openai",
-      "tier": "cheap",
-      "status": "available",
-      "cost_per_1k_tokens": 0.002,
-      "max_tokens": 4096,
-      "supports_streaming": true
-    },
-    {
-      "id": "claude-3-opus",
-      "provider": "anthropic",
-      "tier": "premium",
-      "status": "unavailable",  // Fallback routing active
-      "cost_per_1k_tokens": 0.015,
-      "max_tokens": 200000,
-      "supports_streaming": true
-    }
-  ]
-}
-```
-
-**5. Get Cost Analytics**
-```http
-GET /api/v1/llm/analytics/costs
-Authorization: Bearer {jwt_token}
-X-Tenant-ID: {tenant_id}
-Query Parameters:
-- start_date: 2025-10-01
-- end_date: 2025-10-06
-- group_by: service | model | day
-
-Response (200 OK):
-{
-  "total_cost_usd": 142.35,
-  "total_tokens": 4750000,
-  "cache_hit_rate": 0.58,
-  "cost_saved_usd": 95.20,
-  "breakdown": [
-    {
-      "service_name": "agent_orchestration",
-      "model": "gpt-3.5-turbo",
-      "total_tokens": 2100000,
-      "cost_usd": 42.00,
-      "requests": 12450
-    },
-    {
-      "service_name": "voice_agent",
-      "model": "gpt-4",
-      "total_tokens": 850000,
-      "cost_usd": 76.50,
-      "requests": 3200
-    }
-  ],
-  "daily_trend": [
-    {"date": "2025-10-01", "cost_usd": 22.40, "tokens": 750000},
-    {"date": "2025-10-02", "cost_usd": 28.75, "tokens": 960000}
-  ]
-}
-```
-
-#### Model Routing Logic
-
-**Model Selection Strategy:**
-```
-User requests "cheap":
-  → Route to gpt-3.5-turbo (OpenAI) or Claude Instant (Anthropic)
-  → Fallback: Gemini Pro (Google)
-
-User requests "balanced":
-  → Route to gpt-4-turbo (OpenAI) or Claude Sonnet (Anthropic)
-  → Fallback: gpt-3.5-turbo
-
-User requests "premium":
-  → Route to gpt-4 (OpenAI) or Claude Opus (Anthropic)
-  → Fallback: gpt-4-turbo
-```
-
-**Semantic Caching:**
-```
-1. Generate embedding for incoming prompt
-2. Search Redis for similar embeddings (cosine similarity > 0.95)
-3. If cache hit:
-   a. Return cached response
-   b. Log cache hit, save cost
-   c. Increment cache_hit_rate metric
-4. If cache miss:
-   a. Call LLM provider
-   b. Store embedding + response in Redis (TTL: 24 hours)
-   c. Return response
-```
-
-#### Stakeholders and Agents
-
-**Human Stakeholders:**
-
-1. **Platform Engineer**
-   - Role: Monitors LLM costs, adjusts routing logic, manages API keys
-   - Access: Cost dashboards, model configuration
-   - Permissions: admin:llm_gateway, manage:api_keys, configure:routing
-   - Workflows: Reviews daily cost reports, adjusts budgets, optimizes caching
-
-**AI Agents:**
-
-1. **Cost Optimization Agent**
-   - Responsibility: Analyzes usage patterns, suggests model downgrades, identifies cache opportunities
-   - Tools: Analytics queries, cost calculators, usage pattern detectors
-   - Autonomy: Recommendations only, human approval required for routing changes
-   - Escalation: Alerts Platform Engineer when costs exceed budget
-
-2. **Fallback Routing Agent**
-   - Responsibility: Monitors provider health, switches to backup providers on failures
-   - Tools: Health check APIs, circuit breakers, retry logic
-   - Autonomy: Fully autonomous
-   - Escalation: Alerts on sustained provider outages (>5 minutes)
+**Benefits**:
+- Eliminates network hop and service orchestration overhead
+- Reduces single point of failure
+- Simpler observability (direct tracing to LLM provider)
+- Service autonomy (each service manages own LLM interactions)
+- Cost tracking still maintained via library instrumentation
 
 ---
 
@@ -2688,6 +2767,185 @@ Topic: client_events
      - Flags for review if absolute discrepancy >30%
      - Captures additional_requirements and corrections_needed text
      - Publishes validation results to Demo Generator for confirmed requirements
+
+---
+
+## Supporting Libraries
+
+### @workflow/llm-sdk
+
+**Purpose**: Direct LLM inference with intelligent routing, semantic caching, and cost optimization
+
+**Replaces**: Service 16 (LLM Gateway microservice)
+
+**Installation**:
+```bash
+# Python
+pip install workflow-llm-sdk
+
+# Node.js
+npm install @workflow/llm-sdk
+```
+
+**Used By**:
+- Service 8 (Agent Orchestration) - *[See MICROSERVICES_ARCHITECTURE_PART3.md]*
+- Service 9 (Voice Agent) - *[See MICROSERVICES_ARCHITECTURE_PART3.md]*
+- Service 13 (Customer Success) - *[See MICROSERVICES_ARCHITECTURE_PART3.md]*
+- Service 14 (Support Engine) - *[See MICROSERVICES_ARCHITECTURE_PART3.md]*
+- Service 21 (Agent Copilot) - *[See MICROSERVICES_ARCHITECTURE_PART3.md]*
+
+**Key Features**:
+1. **Model Routing**: Automatically route requests to GPT-4, GPT-3.5, Claude based on complexity
+2. **Semantic Caching**: Cache similar prompts to reduce API costs (40-60% cost reduction)
+3. **Token Counting**: Accurate token estimation before API calls
+4. **Cost Tracking**: Per-tenant LLM usage tracking with real-time cost analytics
+5. **Fallback Strategy**: Automatic failover to backup models on provider failures
+6. **Streaming Support**: Server-Sent Events (SSE) for real-time response streaming
+7. **Multi-Provider**: OpenAI, Anthropic, Google Gemini, Azure OpenAI
+
+**Benefits**:
+- ✅ Eliminates 200-500ms latency per LLM call (no network hop)
+- ✅ Reduces single point of failure
+- ✅ Simpler observability (direct tracing to LLM provider)
+- ✅ Service autonomy (each service manages own LLM interactions)
+- ✅ Cost tracking still maintained via library instrumentation
+
+**Usage Example (Python)**:
+```python
+from workflow_llm_sdk import LLMClient
+
+llm = LLMClient(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    fallback_api_key=os.getenv("ANTHROPIC_API_KEY"),
+    enable_caching=True,
+    tenant_id="org_123"
+)
+
+# Automatic routing based on complexity
+response = llm.complete(
+    prompt="Generate a comprehensive PRD for...",
+    max_tokens=2000,
+    temperature=0.7,
+    model_preference="balanced"  # cheap | balanced | premium
+)
+
+print(f"Response: {response.content}")
+print(f"Model used: {response.model_used}")
+print(f"Cost: ${response.usage.estimated_cost_usd}")
+print(f"Cache hit: {response.cache_hit}")
+```
+
+**Usage Example (Node.js)**:
+```typescript
+import { LLMClient } from '@workflow/llm-sdk';
+
+const llm = new LLMClient({
+  apiKey: process.env.OPENAI_API_KEY,
+  fallbackApiKey: process.env.ANTHROPIC_API_KEY,
+  enableCaching: true,
+  tenantId: 'org_123'
+});
+
+const response = await llm.complete({
+  prompt: 'Generate a comprehensive PRD for...',
+  maxTokens: 2000,
+  temperature: 0.7,
+  modelPreference: 'balanced'
+});
+
+console.log(`Response: ${response.content}`);
+console.log(`Model used: ${response.modelUsed}`);
+console.log(`Cost: $${response.usage.estimatedCostUsd}`);
+console.log(`Cache hit: ${response.cacheHit}`);
+```
+
+**Configuration**:
+- Primary model: GPT-4 (for complex tasks requiring premium quality)
+- Secondary model: GPT-3.5 (for simple tasks requiring speed/cost efficiency)
+- Fallback: Claude Opus-4 (when OpenAI unavailable)
+- Cache TTL: 1 hour (configurable per tenant)
+- Cost threshold for auto-routing: Estimate tokens, use cheaper model if <500 tokens
+
+**Model Routing Logic**:
+```
+User requests "cheap":
+  → Route to gpt-3.5-turbo (OpenAI) or Claude Instant (Anthropic)
+  → Fallback: Gemini Pro (Google)
+
+User requests "balanced":
+  → Route to gpt-4-turbo (OpenAI) or Claude Sonnet (Anthropic)
+  → Fallback: gpt-3.5-turbo
+
+User requests "premium":
+  → Route to gpt-4 (OpenAI) or Claude Opus (Anthropic)
+  → Fallback: gpt-4-turbo
+```
+
+**Semantic Caching Implementation**:
+```
+1. Generate embedding for incoming prompt (text-embedding-3-small)
+2. Search Redis for similar embeddings (cosine similarity > 0.95)
+3. If cache hit:
+   a. Return cached response
+   b. Log cache hit, save cost
+   c. Increment cache_hit_rate metric
+4. If cache miss:
+   a. Call LLM provider
+   b. Store embedding + response in Redis (TTL: 1 hour)
+   c. Return response
+```
+
+**Cost Analytics**:
+The library automatically tracks:
+- Token usage per tenant, per service, per model
+- Cost per request with real-time totals
+- Cache hit rates and cost savings
+- Daily/monthly cost trends
+
+Data is stored in:
+- PostgreSQL: Token usage logs, cost attribution per tenant
+- TimescaleDB: Time-series cost analytics, usage trends
+- Redis: Semantic cache storage, rate limiting counters
+
+**Error Handling**:
+- Provider failures → Automatic failover to backup provider
+- Rate limits → Exponential backoff with retry
+- Invalid requests → Validation errors with clear messages
+- Cost budget exceeded → Alert + optional throttling
+
+---
+
+### @workflow/config-sdk
+
+**Purpose**: S3-based configuration storage with JSON Schema validation and hot-reload
+
+**Replaces**: Service 10 (Configuration Management microservice) - *documented in MICROSERVICES_ARCHITECTURE_PART3.md*
+
+**Installation**:
+```bash
+# Python
+pip install workflow-config-sdk
+
+# Node.js
+npm install @workflow/config-sdk
+```
+
+**Used By**: All services requiring YAML configuration (Services 8, 9, and others)
+
+**Key Features**:
+1. **Direct S3 Access**: No intermediate service, read configs directly from S3
+2. **JSON Schema Validation**: Client-side config validation before applying
+3. **Client-Side Caching**: Redis-backed caching for performance
+4. **Hot-Reload Support**: Watch for config changes via Redis pub/sub
+5. **Version Control**: Track config versions with rollback support
+
+**Benefits**:
+- ✅ Eliminates 50-100ms latency per config fetch
+- ✅ Simpler architecture (no Config Management service needed)
+- ✅ Service autonomy (each service manages own config access)
+- ✅ Reduced infrastructure overhead
+
+**See**: MICROSERVICES_ARCHITECTURE_PART3.md "Supporting Libraries" section for complete @workflow/config-sdk documentation
 
 ---
 
