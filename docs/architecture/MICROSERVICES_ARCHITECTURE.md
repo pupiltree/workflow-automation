@@ -4261,6 +4261,1027 @@ CREATE POLICY approvals_isolation ON approval_workflows
 
 ---
 
+### 22. Billing & Revenue Management Service
+
+#### Objectives
+- **Primary Purpose**: Automated billing, payment processing, subscription management, and revenue recognition for client accounts with integrated dunning and financial reporting
+- **Business Value**: Automates 95% of billing operations, reduces payment collection time from 30+ days to <7 days, eliminates manual invoice generation, ensures accurate revenue recognition
+- **Scope Boundaries**:
+  - **Does**: Process credit card payments, generate invoices, manage subscriptions, handle failed payment recovery, track usage-based billing, integrate with accounting systems, send payment reminders, manage subscription lifecycle
+  - **Does Not**: Provide tax advice, replace accounting system of record, handle complex revenue recognition scenarios requiring CPA review, manage payroll or vendor payments
+
+#### Requirements
+
+**Functional Requirements:**
+
+**Credit Card Processing:**
+1. Stripe integration for credit card processing (primary payment gateway)
+2. Automatic charge scheduling based on subscription billing cycle
+3. Failed payment handling with retry logic (3 attempts over 7 days)
+4. Payment method storage and encryption (PCI compliance)
+5. Support for multiple payment methods per customer
+6. 3D Secure authentication for international transactions
+7. Real-time payment confirmation and receipt generation
+8. Refund and chargeback management
+9. Fraud detection integration (Stripe Radar)
+
+**Invoice Generation:**
+10. Automated invoice generation from subscription plans and usage data
+11. Usage-based billing calculation (conversations, voice minutes, API calls)
+12. Invoice line item breakdown with service descriptions
+13. Email delivery of invoices to billing contacts
+14. Invoice payment tracking and status management
+15. Support for proration during subscription changes
+16. Multi-currency support (USD, EUR, GBP)
+17. PDF invoice generation with company branding
+18. Invoice reconciliation with payment transactions
+
+**Subscription Management:**
+19. Subscription creation from signed proposals (triggered by proposal_signed event)
+20. Support for multiple subscription plans (Starter, Professional, Enterprise)
+21. Subscription upgrades and downgrades with proration
+22. Subscription pause and resume capabilities
+23. Subscription cancellation with end-of-term or immediate options
+24. Trial period management (14-30 days)
+25. Annual/monthly billing cycle support
+26. Volume-based discounting application
+27. Enterprise custom pricing support
+
+**Dunning Management:**
+28. Automated follow-up sequences for overdue invoices
+29. Escalation workflow: reminder at 7 days, warning at 14 days, suspension notice at 21 days
+30. Account suspension for non-payment (>30 days overdue)
+31. Service restoration upon payment
+32. Dunning analytics and success metrics
+33. Customizable dunning email templates
+34. Integration with Customer Success for high-value account escalations
+
+**Revenue Recognition & Reporting:**
+35. Deferred revenue tracking for annual subscriptions
+36. Monthly revenue recognition based on subscription period
+37. Usage revenue recognition in real-time
+38. Financial reporting dashboard (MRR, ARR, churn, LTV)
+39. QuickBooks Online integration for accounting sync
+40. Avalara integration for tax calculation and compliance
+41. Revenue forecasting based on active subscriptions
+42. Cohort analysis and retention metrics
+
+**Non-Functional Requirements:**
+- Payment processing: <3 seconds response time
+- Invoice generation: <30 seconds from trigger
+- Failed payment retry: Within 24, 72, 168 hours (1, 3, 7 days)
+- Dunning emails: Sent within 1 hour of due date trigger
+- 99.99% uptime for payment processing
+- PCI DSS Level 1 compliance
+- Support 10,000+ active subscriptions
+- Support 50,000+ invoices per month
+- Real-time revenue metrics (<5 minute lag)
+- Audit trail for all financial transactions
+- Data retention: 7 years for compliance
+
+**Dependencies:**
+- Service 0 (Organization & Identity Management) - authentication, tenant isolation, billing contact management
+- Service 3 (Sales Document Generator) - consumes proposal_signed events to create subscriptions, retrieves pricing data
+- Service 20 (Communication & Hyperpersonalization) - email delivery for invoices, receipts, dunning messages
+- Service 12 (Analytics) - usage data for usage-based billing calculations
+- External APIs: Stripe (payments), QuickBooks (accounting), Avalara (tax), SendGrid (email delivery via Service 20)
+
+**Data Storage:**
+- PostgreSQL: Subscriptions, invoices, payment methods (encrypted), payment transactions, billing history, dunning logs, revenue recognition schedules
+- S3: Invoice PDFs, payment receipts, audit documents (encrypted at rest)
+- Redis: Payment processing locks, billing cycle cache, real-time revenue metrics
+- Vault: Stripe API keys, payment method encryption keys, QuickBooks credentials
+
+#### Features
+
+**Must-Have:**
+1. ✅ Stripe credit card processing integration
+2. ✅ Automatic recurring billing based on subscription cycle
+3. ✅ Failed payment retry logic with 3 attempts
+4. ✅ Automated invoice generation and email delivery
+5. ✅ Usage-based billing calculation (conversations, voice minutes)
+6. ✅ Subscription creation from signed proposals
+7. ✅ Subscription upgrade/downgrade with proration
+8. ✅ Subscription cancellation workflows
+9. ✅ Dunning automation with 3-tier escalation (7/14/21 days)
+10. ✅ Account suspension for non-payment (>30 days)
+11. ✅ Payment method management (add/update/delete)
+12. ✅ Invoice PDF generation with branding
+13. ✅ Revenue recognition for subscriptions
+14. ✅ Financial dashboard (MRR, ARR, churn)
+15. ✅ QuickBooks Online integration
+16. ✅ Audit trail for all transactions
+
+**Nice-to-Have:**
+17. 🔄 Multi-currency support with real-time exchange rates
+18. 🔄 ACH/bank transfer payment support
+19. 🔄 PayPal integration
+20. 🔄 Avalara tax calculation integration
+21. 🔄 Custom billing schedules (quarterly, semi-annual)
+22. 🔄 Credit memo and adjustment management
+23. 🔄 Billing portal for customers (self-service)
+24. 🔄 Subscription analytics and churn prediction
+25. 🔄 Automated dunning optimization (ML-based timing)
+26. 🔄 Revenue forecasting with predictive analytics
+27. 🔄 NetSuite integration for enterprise customers
+
+**Feature Interactions:**
+- Proposal signed → Creates subscription and schedules first invoice
+- Subscription created → Generates initial invoice with prorated charges
+- Usage data from Analytics → Calculates usage-based billing line items
+- Payment succeeded → Generates receipt, updates revenue recognition schedule
+- Payment failed → Triggers retry logic, publishes failed payment event
+- 3rd payment failure → Triggers dunning sequence
+- Invoice overdue 7 days → Sends first dunning reminder
+- Invoice overdue 21 days → Publishes account_at_risk event to Customer Success
+- Account suspended → Publishes suspension event to Services 8, 9 (agent runtime)
+- Payment received after suspension → Restores service, notifies customer
+- Subscription upgraded → Prorates charges, generates adjustment invoice
+- End of billing period → Recognizes deferred revenue for the period
+
+#### API Specification
+
+**Subscription Endpoints**
+
+**1. Create Subscription**
+```http
+POST /api/v1/billing/subscriptions
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "proposal_id": "uuid",
+  "plan_id": "uuid",
+  "billing_cycle": "monthly",
+  "start_date": "2025-10-15",
+  "trial_days": 14,
+  "payment_method_id": "pm_stripe_abc123",
+  "billing_contact": {
+    "name": "Jane Smith",
+    "email": "billing@acme.com",
+    "phone": "+1-415-555-0199"
+  }
+}
+
+Response (201 Created):
+{
+  "subscription_id": "uuid",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "plan_id": "uuid",
+  "status": "trial",
+  "billing_cycle": "monthly",
+  "current_period_start": "2025-10-15",
+  "current_period_end": "2025-10-29",
+  "trial_end": "2025-10-29",
+  "next_billing_date": "2025-10-29",
+  "amount": 3499.00,
+  "currency": "USD",
+  "created_at": "2025-10-15T10:00:00Z"
+}
+
+Error Responses:
+400 Bad Request: Invalid plan_id or payment method
+422 Unprocessable Entity: Missing required billing contact
+503 Service Unavailable: Stripe API unavailable
+```
+
+**2. Get Subscription**
+```http
+GET /api/v1/billing/subscriptions/{id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "subscription_id": "uuid",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "plan_id": "uuid",
+  "plan_name": "Professional Plan",
+  "status": "active",
+  "billing_cycle": "monthly",
+  "current_period_start": "2025-11-15",
+  "current_period_end": "2025-12-15",
+  "next_billing_date": "2025-12-15",
+  "amount": 3499.00,
+  "currency": "USD",
+  "payment_method": {
+    "id": "pm_stripe_abc123",
+    "type": "card",
+    "last4": "4242",
+    "brand": "visa",
+    "exp_month": 12,
+    "exp_year": 2026
+  },
+  "usage_summary": {
+    "conversations": 4523,
+    "voice_minutes": 1834,
+    "api_calls": 12456
+  },
+  "created_at": "2025-10-15T10:00:00Z",
+  "updated_at": "2025-11-15T10:00:00Z"
+}
+```
+
+**3. Update Subscription (Upgrade/Downgrade)**
+```http
+PUT /api/v1/billing/subscriptions/{id}
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "plan_id": "uuid",
+  "proration_behavior": "create_prorations",
+  "effective_date": "immediate"
+}
+
+Response (200 OK):
+{
+  "subscription_id": "uuid",
+  "plan_id": "uuid",
+  "new_plan_name": "Enterprise Plan",
+  "status": "active",
+  "amount": 6999.00,
+  "proration_amount": 1166.33,
+  "next_billing_date": "2025-12-15",
+  "updated_at": "2025-11-20T14:30:00Z"
+}
+```
+
+**4. Cancel Subscription**
+```http
+POST /api/v1/billing/subscriptions/{id}/cancel
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "cancellation_type": "end_of_period",
+  "reason": "Customer requested cancellation",
+  "feedback": "Switching to competitor due to pricing"
+}
+
+Response (200 OK):
+{
+  "subscription_id": "uuid",
+  "status": "canceling",
+  "cancel_at": "2025-12-15T23:59:59Z",
+  "canceled_at": "2025-11-22T10:00:00Z",
+  "access_until": "2025-12-15T23:59:59Z"
+}
+```
+
+**Invoice Endpoints**
+
+**5. Generate Invoice**
+```http
+POST /api/v1/billing/invoices/generate
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "subscription_id": "uuid",
+  "billing_period_start": "2025-11-15",
+  "billing_period_end": "2025-12-15",
+  "line_items": [
+    {
+      "description": "Professional Plan - Monthly Subscription",
+      "amount": 3499.00,
+      "quantity": 1
+    },
+    {
+      "description": "Additional Conversations (523 over plan limit)",
+      "amount": 104.60,
+      "quantity": 523,
+      "unit_price": 0.20
+    }
+  ],
+  "auto_send": true
+}
+
+Response (201 Created):
+{
+  "invoice_id": "uuid",
+  "invoice_number": "INV-2025-11-001234",
+  "subscription_id": "uuid",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "status": "sent",
+  "subtotal": 3603.60,
+  "tax": 288.29,
+  "total": 3891.89,
+  "currency": "USD",
+  "due_date": "2025-12-15",
+  "invoice_url": "https://billing.workflow.com/invoices/uuid",
+  "pdf_url": "https://storage.workflow.com/invoices/INV-2025-11-001234.pdf",
+  "sent_to": "billing@acme.com",
+  "sent_at": "2025-11-15T10:05:00Z",
+  "created_at": "2025-11-15T10:00:00Z"
+}
+```
+
+**6. Get Invoice**
+```http
+GET /api/v1/billing/invoices/{id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "invoice_id": "uuid",
+  "invoice_number": "INV-2025-11-001234",
+  "subscription_id": "uuid",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "status": "paid",
+  "subtotal": 3603.60,
+  "tax": 288.29,
+  "total": 3891.89,
+  "amount_paid": 3891.89,
+  "currency": "USD",
+  "due_date": "2025-12-15",
+  "paid_at": "2025-11-16T14:23:00Z",
+  "payment_method": "Visa •••• 4242",
+  "line_items": [...],
+  "invoice_url": "https://billing.workflow.com/invoices/uuid",
+  "pdf_url": "https://storage.workflow.com/invoices/INV-2025-11-001234.pdf",
+  "created_at": "2025-11-15T10:00:00Z"
+}
+```
+
+**7. Get Invoice Status**
+```http
+GET /api/v1/billing/invoices/{id}/status
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "invoice_id": "uuid",
+  "invoice_number": "INV-2025-11-001234",
+  "status": "overdue",
+  "total": 3891.89,
+  "amount_paid": 0.00,
+  "amount_due": 3891.89,
+  "due_date": "2025-12-15",
+  "days_overdue": 3,
+  "payment_attempts": [
+    {
+      "attempt_date": "2025-12-15T00:05:00Z",
+      "status": "failed",
+      "failure_reason": "insufficient_funds"
+    },
+    {
+      "attempt_date": "2025-12-16T00:05:00Z",
+      "status": "failed",
+      "failure_reason": "insufficient_funds"
+    }
+  ],
+  "next_retry_date": "2025-12-19T00:05:00Z"
+}
+```
+
+**Payment Endpoints**
+
+**8. Charge Payment Method**
+```http
+POST /api/v1/billing/payments/charge
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "invoice_id": "uuid",
+  "payment_method_id": "pm_stripe_abc123",
+  "amount": 3891.89,
+  "currency": "USD",
+  "idempotency_key": "charge_20251115_uuid"
+}
+
+Response (200 OK):
+{
+  "payment_id": "uuid",
+  "invoice_id": "uuid",
+  "status": "succeeded",
+  "amount": 3891.89,
+  "currency": "USD",
+  "payment_method": "Visa •••• 4242",
+  "receipt_url": "https://storage.workflow.com/receipts/receipt_uuid.pdf",
+  "stripe_payment_intent_id": "pi_stripe_xyz789",
+  "processed_at": "2025-11-16T14:23:00Z"
+}
+
+Error Responses:
+402 Payment Required: Card declined
+422 Unprocessable Entity: Invalid payment method
+500 Internal Server Error: Stripe API error
+```
+
+**9. Add Payment Method**
+```http
+POST /api/v1/billing/payment-methods
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "stripe_payment_method_id": "pm_stripe_xyz789",
+  "set_as_default": true
+}
+
+Response (201 Created):
+{
+  "payment_method_id": "uuid",
+  "organization_id": "uuid",
+  "type": "card",
+  "card": {
+    "brand": "mastercard",
+    "last4": "5555",
+    "exp_month": 6,
+    "exp_year": 2027
+  },
+  "is_default": true,
+  "created_at": "2025-11-16T15:00:00Z"
+}
+```
+
+**10. Update Payment Method**
+```http
+PUT /api/v1/billing/payment-methods/{id}
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "exp_month": 8,
+  "exp_year": 2028,
+  "billing_address": {
+    "line1": "123 Main St",
+    "city": "San Francisco",
+    "state": "CA",
+    "postal_code": "94105",
+    "country": "US"
+  }
+}
+
+Response (200 OK):
+{
+  "payment_method_id": "uuid",
+  "updated_at": "2025-11-16T15:30:00Z"
+}
+```
+
+**11. Delete Payment Method**
+```http
+DELETE /api/v1/billing/payment-methods/{id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "payment_method_id": "uuid",
+  "status": "deleted",
+  "deleted_at": "2025-11-16T16:00:00Z"
+}
+```
+
+**Dunning Endpoints**
+
+**12. Get Dunning Status**
+```http
+GET /api/v1/billing/dunning/{organization_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "dunning_status": "warning",
+  "overdue_invoices": [
+    {
+      "invoice_id": "uuid",
+      "invoice_number": "INV-2025-11-001234",
+      "amount_due": 3891.89,
+      "days_overdue": 10,
+      "dunning_stage": "warning",
+      "last_reminder_sent": "2025-12-18T10:00:00Z"
+    }
+  ],
+  "total_overdue_amount": 3891.89,
+  "suspension_date": "2025-12-29",
+  "days_until_suspension": 11
+}
+```
+
+**13. Send Manual Dunning Reminder**
+```http
+POST /api/v1/billing/dunning/remind
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "invoice_id": "uuid",
+  "reminder_type": "custom",
+  "message": "We noticed your recent payment didn't go through. Please update your payment method to avoid service interruption."
+}
+
+Response (200 OK):
+{
+  "invoice_id": "uuid",
+  "reminder_sent": true,
+  "sent_to": "billing@acme.com",
+  "sent_at": "2025-12-18T14:30:00Z"
+}
+```
+
+**Reporting Endpoints**
+
+**14. Get Revenue Metrics**
+```http
+GET /api/v1/billing/reports/revenue
+Authorization: Bearer {jwt_token}
+Query Parameters: ?period=month&start_date=2025-01-01&end_date=2025-12-31
+
+Response (200 OK):
+{
+  "period": "month",
+  "start_date": "2025-01-01",
+  "end_date": "2025-12-31",
+  "mrr": 125430.00,
+  "arr": 1505160.00,
+  "new_mrr": 18900.00,
+  "expansion_mrr": 5200.00,
+  "contraction_mrr": -1800.00,
+  "churned_mrr": -3500.00,
+  "net_new_mrr": 18800.00,
+  "active_subscriptions": 42,
+  "churn_rate": 2.8,
+  "ltv": 45680.00,
+  "currency": "USD"
+}
+```
+
+**15. Get Subscription Analytics**
+```http
+GET /api/v1/billing/reports/subscriptions
+Authorization: Bearer {jwt_token}
+Query Parameters: ?period=quarter&year=2025&quarter=Q4
+
+Response (200 OK):
+{
+  "period": "Q4 2025",
+  "total_subscriptions": 42,
+  "subscriptions_by_plan": {
+    "starter": 15,
+    "professional": 20,
+    "enterprise": 7
+  },
+  "new_subscriptions": 8,
+  "canceled_subscriptions": 3,
+  "upgraded_subscriptions": 4,
+  "downgraded_subscriptions": 1,
+  "retention_rate": 92.5,
+  "average_subscription_value": 2986.43
+}
+```
+
+#### Human Agents & AI Agents
+
+**Human Agents:**
+
+1. **Finance Manager**
+   - Role: Oversees billing operations, revenue recognition, financial reporting
+   - Access: Full access to all billing data, reports, dunning management
+   - Permissions: read:all_billing, manage:subscriptions, approve:refunds, manage:dunning
+   - Workflows: Reviews monthly revenue, approves refunds, handles escalated billing disputes
+
+2. **Billing Administrator**
+   - Role: Manages day-to-day billing operations, invoice corrections, payment issues
+   - Access: Create/edit subscriptions, manage invoices, process refunds
+   - Permissions: create:subscription, update:invoice, process:refund, manage:payment_methods
+   - Workflows: Corrects billing errors, processes manual adjustments, assists with payment issues
+
+3. **Accountant**
+   - Role: Manages revenue recognition, accounting system sync, tax compliance
+   - Access: Read-only access to revenue data, full access to QuickBooks sync
+   - Permissions: read:revenue, manage:accounting_sync, export:financial_reports
+   - Workflows: Monthly revenue reconciliation, QuickBooks journal entry review, tax reporting
+
+**AI Agents:**
+
+1. **Billing Automation Agent**
+   - Responsibility: Generates invoices, processes recurring billing, calculates usage charges
+   - Tools: Stripe API, usage data aggregation, PDF generator, email service
+   - Autonomy: Fully autonomous for standard billing cycles
+   - Escalation: Finance Manager review required for invoices >$50K or unusual usage spikes
+
+2. **Payment Processing Agent**
+   - Responsibility: Processes payments, handles failed payment retries, updates payment status
+   - Tools: Stripe API, payment retry logic, fraud detection
+   - Autonomy: Fully autonomous for standard payments
+   - Escalation: Billing Administrator review required for fraud alerts or 3+ consecutive failures
+
+3. **Dunning Management Agent**
+   - Responsibility: Sends dunning reminders, escalates overdue accounts, triggers suspensions
+   - Tools: Email service (via Service 20), dunning sequence rules, escalation logic
+   - Autonomy: Fully autonomous for standard dunning sequences
+   - Escalation: Customer Success Manager notified for accounts >$10K ARR overdue >14 days
+
+4. **Revenue Recognition Agent**
+   - Responsibility: Calculates deferred revenue, recognizes monthly revenue, updates financial records
+   - Tools: Subscription data, revenue recognition schedule, QuickBooks API
+   - Autonomy: Fully autonomous for standard subscriptions
+   - Escalation: Accountant review required for complex revenue scenarios (multi-year contracts, custom terms)
+
+**Approval Workflows:**
+1. Standard Invoice Generation → Auto-approved and sent
+2. Invoice >$50K → Finance Manager review before sending
+3. Refund Request <$500 → Billing Administrator approval
+4. Refund Request ≥$500 → Finance Manager approval
+5. Payment Dispute → Billing Administrator investigation, Finance Manager approval for resolution
+6. Account Suspension → Auto-executed after 30 days overdue (notification sent to Customer Success)
+7. Manual Dunning Override → Billing Administrator approval
+8. Subscription Cancellation Refund → Finance Manager approval if prorated amount >$1K
+9. Custom Payment Plan → Finance Manager approval
+10. QuickBooks Sync Error → Accountant review and manual reconciliation
+
+#### Database Schema
+
+**Subscription Tables:**
+```sql
+CREATE TABLE subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  client_id UUID NOT NULL,
+  proposal_id UUID REFERENCES proposals(id),
+  plan_id UUID REFERENCES subscription_plans(id),
+  status VARCHAR(50) NOT NULL, -- 'trial', 'active', 'past_due', 'canceled', 'suspended'
+  billing_cycle VARCHAR(20) NOT NULL, -- 'monthly', 'annual'
+  current_period_start DATE NOT NULL,
+  current_period_end DATE NOT NULL,
+  trial_start DATE,
+  trial_end DATE,
+  canceled_at TIMESTAMPTZ,
+  cancel_at TIMESTAMPTZ,
+  amount DECIMAL(10,2) NOT NULL,
+  currency VARCHAR(3) DEFAULT 'USD',
+  payment_method_id UUID REFERENCES payment_methods(id),
+  stripe_subscription_id VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_client_id (client_id),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE subscription_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  tier VARCHAR(50) NOT NULL, -- 'starter', 'professional', 'enterprise'
+  monthly_price DECIMAL(10,2) NOT NULL,
+  annual_price DECIMAL(10,2),
+  included_conversations INT,
+  included_voice_minutes INT,
+  included_api_calls INT,
+  overage_rate_conversations DECIMAL(5,2),
+  overage_rate_voice_minutes DECIMAL(5,2),
+  overage_rate_api_calls DECIMAL(5,4),
+  features JSONB,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE subscription_changes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+  change_type VARCHAR(50) NOT NULL, -- 'created', 'upgraded', 'downgraded', 'canceled', 'suspended', 'reactivated'
+  old_plan_id UUID REFERENCES subscription_plans(id),
+  new_plan_id UUID REFERENCES subscription_plans(id),
+  proration_amount DECIMAL(10,2),
+  reason TEXT,
+  changed_by UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Invoice Tables:**
+```sql
+CREATE TABLE invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  client_id UUID NOT NULL,
+  subscription_id UUID REFERENCES subscriptions(id),
+  invoice_number VARCHAR(100) UNIQUE NOT NULL,
+  status VARCHAR(50) NOT NULL, -- 'draft', 'sent', 'paid', 'overdue', 'void'
+  subtotal DECIMAL(10,2) NOT NULL,
+  tax DECIMAL(10,2) DEFAULT 0,
+  total DECIMAL(10,2) NOT NULL,
+  amount_paid DECIMAL(10,2) DEFAULT 0,
+  amount_due DECIMAL(10,2) NOT NULL,
+  currency VARCHAR(3) DEFAULT 'USD',
+  billing_period_start DATE NOT NULL,
+  billing_period_end DATE NOT NULL,
+  due_date DATE NOT NULL,
+  paid_at TIMESTAMPTZ,
+  invoice_url TEXT,
+  pdf_url TEXT,
+  stripe_invoice_id VARCHAR(255),
+  sent_to VARCHAR(255),
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_client_id (client_id),
+  INDEX idx_subscription_id (subscription_id),
+  INDEX idx_status (status),
+  INDEX idx_due_date (due_date)
+);
+
+CREATE TABLE invoice_line_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  quantity DECIMAL(10,2) DEFAULT 1,
+  unit_price DECIMAL(10,2) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  item_type VARCHAR(50), -- 'subscription', 'usage_overage', 'one_time', 'proration'
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE payment_methods (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  type VARCHAR(50) NOT NULL, -- 'card', 'bank_account', 'paypal'
+  stripe_payment_method_id VARCHAR(255) NOT NULL,
+  card_brand VARCHAR(50),
+  card_last4 VARCHAR(4),
+  card_exp_month INT,
+  card_exp_year INT,
+  billing_address JSONB,
+  is_default BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id)
+);
+
+CREATE TABLE payment_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  invoice_id UUID REFERENCES invoices(id),
+  payment_method_id UUID REFERENCES payment_methods(id),
+  status VARCHAR(50) NOT NULL, -- 'pending', 'succeeded', 'failed', 'refunded'
+  amount DECIMAL(10,2) NOT NULL,
+  currency VARCHAR(3) DEFAULT 'USD',
+  stripe_payment_intent_id VARCHAR(255),
+  failure_reason TEXT,
+  receipt_url TEXT,
+  processed_at TIMESTAMPTZ,
+  refunded_at TIMESTAMPTZ,
+  refund_amount DECIMAL(10,2),
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_invoice_id (invoice_id),
+  INDEX idx_status (status)
+);
+```
+
+**Billing History & Dunning Tables:**
+```sql
+CREATE TABLE billing_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  subscription_id UUID REFERENCES subscriptions(id),
+  invoice_id UUID REFERENCES invoices(id),
+  event_type VARCHAR(100) NOT NULL, -- 'invoice_created', 'payment_succeeded', 'payment_failed', 'subscription_canceled', etc.
+  event_data JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_subscription_id (subscription_id),
+  INDEX idx_event_type (event_type)
+);
+
+CREATE TABLE dunning_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  invoice_id UUID NOT NULL REFERENCES invoices(id),
+  dunning_stage VARCHAR(50) NOT NULL, -- 'reminder', 'warning', 'suspension_notice'
+  days_overdue INT NOT NULL,
+  reminder_sent BOOLEAN DEFAULT false,
+  sent_to VARCHAR(255),
+  sent_at TIMESTAMPTZ,
+  response_received BOOLEAN DEFAULT false,
+  response_type VARCHAR(50), -- 'payment_updated', 'payment_promised', 'dispute', 'no_response'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_invoice_id (invoice_id),
+  INDEX idx_dunning_stage (dunning_stage)
+);
+
+CREATE TABLE revenue_recognition (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  subscription_id UUID REFERENCES subscriptions(id),
+  invoice_id UUID REFERENCES invoices(id),
+  recognition_date DATE NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  currency VARCHAR(3) DEFAULT 'USD',
+  recognition_type VARCHAR(50), -- 'monthly_subscription', 'usage', 'one_time'
+  deferred_revenue_balance DECIMAL(10,2),
+  quickbooks_journal_entry_id VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_recognition_date (recognition_date)
+);
+```
+
+**Row-Level Security (RLS) Policies:**
+```sql
+-- All tables must filter by organization_id for multi-tenant isolation
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY subscriptions_isolation ON subscriptions
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY invoices_isolation ON invoices
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
+CREATE POLICY payment_methods_isolation ON payment_methods
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE payment_transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY transactions_isolation ON payment_transactions
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE billing_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY billing_history_isolation ON billing_history
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE dunning_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dunning_isolation ON dunning_logs
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE revenue_recognition ENABLE ROW LEVEL SECURITY;
+CREATE POLICY revenue_isolation ON revenue_recognition
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+```
+
+#### Kafka Events
+
+**Topic**: `billing_events`
+
+**Event Schema:**
+```json
+{
+  "event_type": "subscription_created | subscription_updated | subscription_canceled | invoice_generated | payment_succeeded | payment_failed | dunning_reminder_sent | account_suspended | account_restored",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "subscription_id": "uuid",
+  "invoice_id": "uuid",
+  "metadata": {
+    // Event-specific metadata
+  },
+  "timestamp": "2025-10-08T..."
+}
+```
+
+**Published Events:**
+
+1. **Subscription Created**
+```json
+{
+  "event_type": "subscription_created",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "subscription_id": "uuid",
+  "metadata": {
+    "plan_id": "uuid",
+    "plan_name": "Professional Plan",
+    "billing_cycle": "monthly",
+    "amount": 3499.00,
+    "trial_end": "2025-10-29",
+    "created_from_proposal": true
+  },
+  "timestamp": "2025-10-15T10:00:00Z"
+}
+```
+**Consumers**: Customer Success (track new customer onboarding), Analytics (track subscription metrics)
+
+2. **Payment Succeeded**
+```json
+{
+  "event_type": "payment_succeeded",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "subscription_id": "uuid",
+  "invoice_id": "uuid",
+  "metadata": {
+    "amount": 3891.89,
+    "currency": "USD",
+    "payment_method": "Visa •••• 4242",
+    "receipt_url": "https://storage.workflow.com/receipts/receipt_uuid.pdf"
+  },
+  "timestamp": "2025-11-16T14:23:00Z"
+}
+```
+**Consumers**: Communication Service (send receipt email), Analytics (track payment success rate)
+
+3. **Payment Failed**
+```json
+{
+  "event_type": "payment_failed",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "subscription_id": "uuid",
+  "invoice_id": "uuid",
+  "metadata": {
+    "amount": 3891.89,
+    "failure_reason": "insufficient_funds",
+    "retry_attempt": 1,
+    "next_retry_date": "2025-12-16T00:05:00Z"
+  },
+  "timestamp": "2025-12-15T00:05:00Z"
+}
+```
+**Consumers**: Communication Service (send payment failure notification), Dunning Agent (track for escalation)
+
+4. **Account Suspended**
+```json
+{
+  "event_type": "account_suspended",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "subscription_id": "uuid",
+  "metadata": {
+    "suspension_reason": "payment_overdue",
+    "days_overdue": 32,
+    "amount_overdue": 3891.89,
+    "suspended_at": "2025-12-30T00:00:00Z"
+  },
+  "timestamp": "2025-12-30T00:00:00Z"
+}
+```
+**Consumers**: Agent Orchestration (Service 8), Voice Agent (Service 9) - disable runtime access; Customer Success (escalate to CSM)
+
+5. **Dunning Reminder Sent**
+```json
+{
+  "event_type": "dunning_reminder_sent",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "invoice_id": "uuid",
+  "metadata": {
+    "dunning_stage": "warning",
+    "days_overdue": 14,
+    "amount_due": 3891.89,
+    "sent_to": "billing@acme.com"
+  },
+  "timestamp": "2025-12-25T10:00:00Z"
+}
+```
+**Consumers**: Customer Success (high-value account alerts), Analytics (dunning effectiveness tracking)
+
+**Consumed Events:**
+- `proposal_signed` (from Service 3 Sales Document Generator) → Creates subscription and schedules first invoice
+- `usage_reported` (from Service 12 Analytics) → Aggregates usage data for usage-based billing calculations
+
+#### Stakeholders
+
+**Internal Stakeholders:**
+1. **Finance Team** - Revenue oversight, financial reporting, compliance
+2. **Billing Administrators** - Day-to-day billing operations, customer billing support
+3. **Accountants** - Revenue recognition, accounting system sync, tax compliance
+4. **Customer Success Managers** - Notified of at-risk accounts (payment issues), coordinates payment recovery
+5. **Product Management** - Pricing plan design, subscription metrics analysis
+
+**External Stakeholders:**
+1. **Clients (Billing Contacts)** - Receive invoices, manage payment methods, view billing history
+2. **Stripe** - Primary payment processor
+3. **QuickBooks** - Accounting system of record
+4. **Avalara** - Tax calculation and compliance (Nice-to-Have)
+
+**External Integrations:**
+- **Stripe API** - Credit card processing, subscription management, webhook events
+- **QuickBooks Online API** - Accounting sync, journal entries, revenue recognition
+- **Avalara API** - Tax calculation for invoices (Nice-to-Have)
+- **SendGrid** - Email delivery (via Service 20) for invoices, receipts, dunning messages
+
+---
+
 ### 4. Pricing Model Generator Service → CONSOLIDATED INTO SERVICE 3
 
 **This service has been consolidated into Service 3 (Sales Document Generator).**

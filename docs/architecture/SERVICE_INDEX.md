@@ -1,6 +1,6 @@
 # Microservices Architecture - Master Service Index
 
-**Total Services: 16** (optimized from 22)
+**Total Services: 17** (optimized from 22)
 **Supporting Libraries: 2** (@workflow/llm-sdk, @workflow/config-sdk)
 
 This index provides quick navigation to all microservices across the three architecture documents.
@@ -12,7 +12,7 @@ This index provides quick navigation to all microservices across the three archi
 ## Service Locations by Document
 
 ### MICROSERVICES_ARCHITECTURE.md (Part 1)
-**5 Services**
+**6 Services**
 
 | Service # | Service Name | Purpose |
 |-----------|--------------|---------|
@@ -20,6 +20,7 @@ This index provides quick navigation to all microservices across the three archi
 | 1 | Research Engine | Automated market research, volume prediction, competitor analysis |
 | 2 | Demo Generator | AI-powered chatbot/voicebot demo creation |
 | 3 | Sales Document Generator | Unified NDA, pricing, and proposal generation with e-signature |
+| 22 | Billing & Revenue Management | Subscription management, invoicing, payment processing, dunning automation |
 
 **Consolidated**:
 - Service 0.5 (Human Agent Management) → merged into Service 0
@@ -46,7 +47,7 @@ This index provides quick navigation to all microservices across the three archi
 ---
 
 ### MICROSERVICES_ARCHITECTURE_PART3.md (Part 3)
-**7 Services**
+**8 Services**
 
 | Service # | Service Name | Purpose |
 |-----------|--------------|---------|
@@ -54,13 +55,16 @@ This index provides quick navigation to all microservices across the three archi
 | 9 | Voice Agent (Voicebot) | LiveKit-based voicebot runtime, real-time voice processing |
 | 11 | Monitoring Engine | Real-time monitoring, alerting, quality assurance |
 | 12 | Analytics | Usage analytics, KPI tracking, business intelligence |
-| 13 | Customer Success | Health scoring, playbooks, QBR automation, churn prediction |
+| 13 | Customer Success | Health scoring, playbooks, QBR automation, churn prediction, strategic advisory |
 | 14 | Support Engine | AI-powered support automation, ticket management |
 | 15 | CRM Integration | Salesforce, HubSpot, Zendesk integration |
 | 20 | Communication & Hyperpersonalization Engine | Email/SMS, templates, lifecycle personalization, A/B testing |
 
 **Consolidated**:
 - Service 18 (Outbound Communication) → merged into Service 20
+
+**Feature Integrations**:
+- Feature 4 (Success Innovation Advisory) → integrated into Service 13
 
 ---
 
@@ -70,6 +74,10 @@ This index provides quick navigation to all microservices across the three archi
 | Service # | Service Name | Document | Purpose |
 |-----------|--------------|----------|---------|
 | 21 | Agent Copilot | SERVICE_21_AGENT_COPILOT.md | AI-powered context management and action planning for human agents |
+
+**Feature Integrations**:
+- Feature 2 (Human Agent Co-Pilot) → already implemented in Service 21
+- Feature 3 (Action Planning System) → enhanced capabilities integrated into Service 21
 
 ---
 
@@ -87,14 +95,15 @@ This index provides quick navigation to all microservices across the three archi
 | 9 | Voice Agent (Voicebot) | PART3 |
 | 11 | Monitoring Engine | PART3 |
 | 12 | Analytics | PART3 |
-| 13 | Customer Success | PART3 |
+| **13** | **Customer Success** | **PART3** |
 | 14 | Support Engine | PART3 |
 | 15 | CRM Integration | PART3 |
 | 17 | RAG Pipeline | PART2 |
 | **20** | **Communication & Hyperpersonalization Engine** | **PART3** |
-| 21 | Agent Copilot | Standalone |
+| **21** | **Agent Copilot** | **Standalone** |
+| 22 | Billing & Revenue Management | PART1 |
 
-**Bold** = Consolidated service (contains functionality from multiple previous services)
+**Bold** = Consolidated service (contains functionality from multiple previous services or enhanced with new features)
 
 ---
 
@@ -153,6 +162,7 @@ This index provides quick navigation to all microservices across the three archi
 - **Service 1**: Research Engine
 - **Service 2**: Demo Generator
 - **Service 3**: Sales Document Generator *(unified NDA/pricing/proposal)*
+- **Service 22**: Billing & Revenue Management
 
 ### **Implementation (Onboarding)**
 - **Service 6**: PRD Builder & Configuration Workspace *(includes client config portal)*
@@ -202,9 +212,9 @@ Primary Services:
 
 ## Event-Driven Communication
 
-### **Kafka Topics (17 Total)**
+### **Kafka Topics (18 Total)**
 
-**Note**: Reduced from 19 topics - consolidated some topics after service mergers.
+**Note**: Reduced from 19 topics - consolidated some topics after service mergers, added 1 new topic for billing.
 
 | Topic | Primary Producers | Primary Consumers |
 |-------|------------------|-------------------|
@@ -213,7 +223,8 @@ Primary Services:
 | `research_events` | Service 1 | Service 2 |
 | `client_events` | Service 0 | Multiple |
 | `demo_events` | Service 2 | Service 3 |
-| `sales_doc_events` | Service 3 | Service 6 *(unified: nda/pricing/proposal)* |
+| `sales_doc_events` | Service 3 | Services 6, 22 *(unified: nda/pricing/proposal)* |
+| `billing_events` | Service 22 | Services 8, 9, 13, 20 |
 | `prd_events` | Service 6 | Service 7 |
 | `config_events` | Service 7 | Services 8, 9 |
 | `conversation_events` | Services 8, 9 | Services 11, 12, 20 |
@@ -230,12 +241,15 @@ Primary Services:
 - `nda_events`, `pricing_events`, `proposal_events` → `sales_doc_events`
 - `outreach_events`, `personalization_events` → `communication_events`
 
+**New Topics**:
+- `billing_events` - Payment processing, subscription management, dunning automation (Service 22)
+
 ---
 
 ## Consolidation Summary
 
 ### Architecture Improvements
-- **Service Count**: 22 → 16 (27% reduction)
+- **Service Count**: 22 → 17 (23% reduction)
 - **Network Hops**: 36% reduction in service-to-service connections
 - **Latency Improvements**:
   - AI workflows: 200-500ms faster (eliminated LLM Gateway hop)
@@ -256,6 +270,13 @@ Primary Services:
 ✅ **Template Management**: Service 3 (sales), Service 20 (communication)
 ✅ **Configuration Validation**: Service 7 provides SDK
 ✅ **Webchat UI**: Documented as shared frontend component library
+
+### New Features Integrated (5 Features)
+✅ **Feature 1 (Billing & Invoicing)**: New Service 22 - Billing & Revenue Management
+✅ **Feature 2 (Human Agent Co-Pilot)**: Already exists in Service 21 (Agent Copilot)
+✅ **Feature 3 (Action Planning)**: Enhanced capabilities integrated into Service 21
+✅ **Feature 4 (Success Innovation Advisory)**: Integrated into Service 13 (Customer Success)
+✅ **Feature 5 (Dependency Tracking)**: Integrated into Service 6 (PRD Builder)
 
 ---
 

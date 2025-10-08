@@ -42,6 +42,18 @@
 16. Automated change risk assessment with approval workflows
 17. Human agent coordination for complex configuration needs
 
+*Dependency Tracking (Feature 5):*
+18. Automatic dependency extraction during PRD creation (API keys, webhooks, credentials, approvals, data access)
+19. Dependency categorization by type (technical, business, compliance, data)
+20. Dependency ownership assignment with contact tracking
+21. Due date management with timeline visualization
+22. Automated follow-up email scheduling based on dependency status and due dates
+23. Dependency status tracking (pending, in_progress, blocked, completed, overdue)
+24. Dependency completion verification workflow
+25. Escalation alerts for overdue dependencies (7-day warning, 14-day escalation)
+26. Dependency impact analysis (blocking vs non-blocking)
+27. Integration with Service 20 for automated follow-up communications
+
 **Non-Functional Requirements:**
 - Initial PRD generation: <15 minutes for standard use case
 - Support 50 concurrent PRD sessions
@@ -102,20 +114,36 @@
 21. ✅ Change risk assessment (low/medium/high) with automated approval for low-risk changes
 22. ✅ Human agent escalation for complex configuration requests
 
+*Dependency Tracking Features (Feature 5):*
+23. ✅ Automatic dependency detection during PRD generation
+24. ✅ Dependency dashboard with status overview
+25. ✅ Dependency categorization and ownership management
+26. ✅ Timeline visualization with due dates
+27. ✅ Automated follow-up email scheduling via Service 20
+28. ✅ Overdue dependency alerts with escalation workflow
+29. ✅ Dependency completion verification and sign-off
+30. ✅ Blocking dependency identification and impact analysis
+
 **Nice-to-Have:**
 
 *PRD Builder:*
-23. 🔄 Auto-generated user stories from PRD
-24. 🔄 Competitive analysis integration
-25. 🔄 Risk assessment and mitigation planning
-26. 🔄 ROI calculator based on automation metrics
+31. 🔄 Auto-generated user stories from PRD
+32. 🔄 Competitive analysis integration
+33. 🔄 Risk assessment and mitigation planning
+34. 🔄 ROI calculator based on automation metrics
 
 *Configuration Management:*
-27. 🔄 AI-powered configuration optimization suggestions
-28. 🔄 Configuration templates marketplace (share configs across organizations)
-29. 🔄 Automated regression testing for config changes
-30. 🔄 Configuration import/export (JSON/YAML)
-31. 🔄 Multi-environment support (dev/staging/production branches)
+35. 🔄 AI-powered configuration optimization suggestions
+36. 🔄 Configuration templates marketplace (share configs across organizations)
+37. 🔄 Automated regression testing for config changes
+38. 🔄 Configuration import/export (JSON/YAML)
+39. 🔄 Multi-environment support (dev/staging/production branches)
+
+*Dependency Tracking:*
+40. 🔄 Dependency templates for common integration patterns
+41. 🔄 Slack/Teams integration for dependency notifications
+42. 🔄 Dependency health score and risk metrics
+43. 🔄 Automated dependency resolution suggestions
 
 **Feature Interactions:**
 
@@ -133,6 +161,15 @@
 - Visual slider changed (voicebot speed) → Immediate preview in test call → Save creates new version
 - Risky change detected → Requires organization admin approval → Sends notification
 - Configuration error after deployment → Auto-rollback triggered → Platform engineer alerted
+
+*Dependency Tracking (Feature 5):*
+- PRD generation → AI extracts dependencies from requirements → Creates dependency records with due dates
+- Dependency created → Scheduled follow-up emails sent via Service 20 based on due date
+- Due date approaching (7 days) → Warning email sent to dependency owner
+- Dependency overdue (14 days) → Escalation email sent to onboarding specialist and client admin
+- Dependency completed → Triggers verification workflow → Updates PRD implementation status
+- Blocking dependency overdue → Alerts Automation Engine (Service 7) to pause deployment
+- All dependencies completed → PRD marked as ready for implementation → Publishes prd_dependencies_completed event
 
 #### API Specification
 
@@ -1115,6 +1152,183 @@ Response (200 OK):
 }
 ```
 
+**Dependency Tracking Endpoints (Feature 5)**
+
+**16. Get PRD Dependencies**
+```http
+GET /api/v1/prd/{prd_id}/dependencies
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "prd_id": "uuid",
+  "dependencies": [
+    {
+      "dependency_id": "uuid",
+      "type": "technical",
+      "category": "api_key",
+      "description": "Shopify API key for order history integration",
+      "owner_name": "John Smith",
+      "owner_email": "john@acme.com",
+      "owner_role": "Technical Lead",
+      "status": "pending",
+      "due_date": "2025-10-25",
+      "is_blocking": true,
+      "created_at": "2025-10-10T10:00:00Z",
+      "last_follow_up_sent": null,
+      "completion_date": null
+    },
+    {
+      "dependency_id": "uuid",
+      "type": "business",
+      "category": "approval",
+      "description": "Privacy team approval for customer data access",
+      "owner_name": "Jane Doe",
+      "owner_email": "jane@acme.com",
+      "owner_role": "Chief Privacy Officer",
+      "status": "in_progress",
+      "due_date": "2025-10-22",
+      "is_blocking": true,
+      "created_at": "2025-10-10T10:00:00Z",
+      "last_follow_up_sent": "2025-10-18T09:00:00Z",
+      "completion_date": null
+    },
+    {
+      "dependency_id": "uuid",
+      "type": "data",
+      "category": "data_access",
+      "description": "Database read access for agent to query customer order history",
+      "owner_name": "DevOps Team",
+      "owner_email": "devops@acme.com",
+      "owner_role": "Infrastructure",
+      "status": "completed",
+      "due_date": "2025-10-18",
+      "is_blocking": false,
+      "created_at": "2025-10-10T10:00:00Z",
+      "last_follow_up_sent": "2025-10-15T09:00:00Z",
+      "completion_date": "2025-10-17T14:23:00Z"
+    }
+  ],
+  "summary": {
+    "total_dependencies": 3,
+    "pending": 1,
+    "in_progress": 1,
+    "completed": 1,
+    "overdue": 0,
+    "blocking": 2,
+    "completion_percentage": 33.3
+  }
+}
+```
+
+**17. Create Dependency**
+```http
+POST /api/v1/prd/{prd_id}/dependencies
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "type": "technical",
+  "category": "webhook",
+  "description": "Zendesk webhook endpoint configuration for ticket escalation",
+  "owner_name": "Support Team Lead",
+  "owner_email": "support-lead@acme.com",
+  "owner_role": "Support Operations",
+  "due_date": "2025-10-28",
+  "is_blocking": true,
+  "follow_up_schedule": {
+    "initial_days": 3,
+    "reminder_days": 7,
+    "escalation_days": 14
+  }
+}
+
+Response (201 Created):
+{
+  "dependency_id": "uuid",
+  "prd_id": "uuid",
+  "type": "technical",
+  "category": "webhook",
+  "description": "Zendesk webhook endpoint configuration for ticket escalation",
+  "owner_name": "Support Team Lead",
+  "owner_email": "support-lead@acme.com",
+  "status": "pending",
+  "due_date": "2025-10-28",
+  "is_blocking": true,
+  "created_at": "2025-10-20T11:00:00Z",
+  "next_follow_up_date": "2025-10-23T09:00:00Z"
+}
+```
+
+**18. Update Dependency Status**
+```http
+PUT /api/v1/prd/dependencies/{dep_id}/status
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "status": "completed",
+  "completion_notes": "API key provided and verified in sandbox environment",
+  "verification_url": "https://sandbox.workflow.com/test/shopify-integration"
+}
+
+Response (200 OK):
+{
+  "dependency_id": "uuid",
+  "status": "completed",
+  "completion_date": "2025-10-24T15:30:00Z",
+  "completed_by": "uuid",
+  "completion_notes": "API key provided and verified in sandbox environment",
+  "verification_url": "https://sandbox.workflow.com/test/shopify-integration"
+}
+
+Event Published to Kafka:
+Topic: prd_events
+{
+  "event_type": "dependency_completed",
+  "prd_id": "uuid",
+  "dependency_id": "uuid",
+  "dependency_type": "technical",
+  "is_blocking": true,
+  "timestamp": "2025-10-24T15:30:00Z"
+}
+```
+
+**19. Get Overdue Dependencies**
+```http
+GET /api/v1/prd/dependencies/overdue
+Authorization: Bearer {jwt_token}
+Query Parameters: ?onboarding_specialist_id={uuid}
+
+Response (200 OK):
+{
+  "overdue_dependencies": [
+    {
+      "prd_id": "uuid",
+      "client_name": "Acme Corp",
+      "dependency_id": "uuid",
+      "description": "Shopify API key for order history integration",
+      "owner_email": "john@acme.com",
+      "due_date": "2025-10-25",
+      "days_overdue": 5,
+      "is_blocking": true,
+      "status": "pending",
+      "last_follow_up_sent": "2025-10-28T09:00:00Z",
+      "escalation_level": "warning"
+    }
+  ],
+  "summary": {
+    "total_overdue": 1,
+    "blocking_overdue": 1,
+    "warning_level": 1,
+    "escalation_level": 0,
+    "critical_level": 0
+  }
+}
+```
+
 #### Frontend Components
 
 **1. PRD Chat Interface**
@@ -1270,6 +1484,63 @@ Response (200 OK):
 - React Query for API data fetching
 - WebSocket for real-time AI responses and config hot-reload notifications
 - IndexedDB for offline draft support
+
+#### Database Schema
+
+**Dependency Tracking Tables (Feature 5):**
+```sql
+CREATE TABLE prd_dependencies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prd_id UUID NOT NULL REFERENCES prds(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL,
+  type VARCHAR(50) NOT NULL, -- 'technical', 'business', 'compliance', 'data'
+  category VARCHAR(100), -- 'api_key', 'webhook', 'approval', 'credentials', 'data_access'
+  description TEXT NOT NULL,
+  owner_name VARCHAR(255),
+  owner_email VARCHAR(255),
+  owner_role VARCHAR(100),
+  status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'blocked', 'completed', 'overdue'
+  due_date DATE,
+  is_blocking BOOLEAN DEFAULT false,
+  last_follow_up_sent TIMESTAMPTZ,
+  completion_date TIMESTAMPTZ,
+  completed_by UUID,
+  completion_notes TEXT,
+  verification_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_prd_id (prd_id),
+  INDEX idx_organization_id (organization_id),
+  INDEX idx_status (status),
+  INDEX idx_due_date (due_date),
+  INDEX idx_is_blocking (is_blocking)
+);
+
+CREATE TABLE dependency_follow_ups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  dependency_id UUID NOT NULL REFERENCES prd_dependencies(id) ON DELETE CASCADE,
+  follow_up_type VARCHAR(50) NOT NULL, -- 'initial', 'reminder', 'warning', 'escalation'
+  scheduled_date DATE NOT NULL,
+  sent_at TIMESTAMPTZ,
+  recipient_email VARCHAR(255),
+  email_template_id VARCHAR(100),
+  status VARCHAR(50) DEFAULT 'scheduled', -- 'scheduled', 'sent', 'failed', 'canceled'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  INDEX idx_dependency_id (dependency_id),
+  INDEX idx_scheduled_date (scheduled_date),
+  INDEX idx_status (status)
+);
+
+-- Row-Level Security for multi-tenant isolation
+ALTER TABLE prd_dependencies ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dependency_isolation ON prd_dependencies
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE dependency_follow_ups ENABLE ROW LEVEL SECURITY;
+CREATE POLICY follow_up_isolation ON dependency_follow_ups
+  USING (dependency_id IN (SELECT id FROM prd_dependencies WHERE organization_id = current_setting('app.current_organization_id')::UUID));
+```
 
 #### Stakeholders and Agents
 

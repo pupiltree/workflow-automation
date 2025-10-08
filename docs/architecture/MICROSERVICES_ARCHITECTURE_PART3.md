@@ -2998,6 +2998,15 @@ Response (202 Accepted):
 11. Integration with Hyperpersonalization Service for targeted campaigns
 12. NPS/CSAT survey orchestration and trend analysis
 
+**Success Innovation Advisory Module (Feature 4):**
+13. Industry benchmarking and competitive intelligence aggregation
+14. Strategic recommendation generation based on client vertical and business context
+15. Innovation opportunity identification (new use cases, market trends, emerging technologies)
+16. Business growth roadmap creation with prioritized initiatives
+17. Predictive impact modeling for recommended innovations (ROI, implementation effort, risk assessment)
+18. QBR enhancement with strategic insights section (industry trends, competitive positioning, growth opportunities)
+19. Advisory dashboard for CSMs with curated industry insights and recommendations per account
+
 **Non-Functional Requirements:**
 - Health score calculation: <5s for real-time updates
 - Churn prediction accuracy: >85% with 14-21 day lead time
@@ -3040,12 +3049,20 @@ Response (202 Accepted):
 10. ✅ Success plan templates and tracking
 11. ✅ NPS/CSAT survey orchestration
 
+**Success Innovation Advisory Features (Feature 4):**
+12. ✅ Industry benchmarking dashboard with vertical-specific KPIs
+13. ✅ Strategic advisory recommendation engine
+14. ✅ Innovation opportunity scoring and prioritization
+15. ✅ Business growth roadmap generator
+16. ✅ QBR enhancement with strategic insights section
+17. ✅ CSM advisory dashboard with curated insights
+
 **Nice-to-Have:**
-12. 🔄 Predictive expansion timing ("Contact in 45 days for optimal upsell")
-13. 🔄 Executive sponsor engagement tracking
-14. 🔄 Automated success story generation for case studies
-15. 🔄 Competitive win/loss analysis integration
-16. 🔄 Revenue waterfall forecasting with churn/expansion
+18. 🔄 Predictive expansion timing ("Contact in 45 days for optimal upsell")
+19. 🔄 Executive sponsor engagement tracking
+20. 🔄 Automated success story generation for case studies
+21. 🔄 Competitive win/loss analysis integration
+22. 🔄 Revenue waterfall forecasting with churn/expansion
 
 **Feature Interactions:**
 - Health score drops below 50 → Churn risk playbook triggered → CSM notified → Task created → Outreach email sent via Hyperpersonalization Service
@@ -3462,6 +3479,196 @@ Response (200 OK):
 }
 ```
 
+**8. Get Strategic Advisory Recommendations (Success Innovation Advisory - Feature 4)**
+```http
+GET /api/v1/customer-success/advisory/{organization_id}
+Authorization: Bearer {csm_jwt}
+
+Response (200 OK):
+{
+  "organization_id": "uuid",
+  "organization_name": "Acme Corp",
+  "industry": "e-commerce",
+  "recommendations": [
+    {
+      "recommendation_id": "uuid",
+      "category": "innovation_opportunity",
+      "title": "Implement Voice Commerce Integration",
+      "description": "E-commerce leaders are seeing 23% higher conversion rates by enabling voice-based ordering",
+      "priority": "high",
+      "estimated_roi": "18-25% revenue increase",
+      "implementation_effort": "medium",  // low | medium | high
+      "estimated_timeline": "3-4 months",
+      "risk_level": "low",
+      "source": "industry_benchmark",
+      "confidence": 0.84,
+      "supporting_data": {
+        "industry_adoption_rate": 0.42,
+        "peer_success_rate": 0.78,
+        "market_trend": "accelerating"
+      }
+    },
+    {
+      "recommendation_id": "uuid",
+      "category": "competitive_positioning",
+      "title": "Enhance Multi-Language Support",
+      "description": "Your top competitors are expanding to 15+ languages. Current gap: 8 languages behind market leaders",
+      "priority": "medium",
+      "estimated_roi": "12-18% market expansion",
+      "implementation_effort": "high",
+      "estimated_timeline": "6-8 months",
+      "risk_level": "medium",
+      "source": "competitive_intelligence",
+      "confidence": 0.91
+    },
+    {
+      "recommendation_id": "uuid",
+      "category": "business_growth",
+      "title": "Launch Post-Sales Support Bot",
+      "description": "Clients with both pre-sales + post-sales bots see 35% higher customer lifetime value",
+      "priority": "high",
+      "estimated_roi": "$45K ARR expansion (cross-sell)",
+      "implementation_effort": "low",
+      "estimated_timeline": "1-2 months",
+      "risk_level": "low",
+      "source": "village_knowledge",
+      "confidence": 0.88
+    }
+  ],
+  "industry_insights": {
+    "vertical": "e-commerce",
+    "benchmarks": {
+      "average_bot_automation_rate": 0.82,
+      "client_current_automation_rate": 0.75,
+      "gap_analysis": "7% below industry average",
+      "top_performers_automation_rate": 0.91
+    },
+    "emerging_trends": [
+      {
+        "trend": "AI-powered product recommendations during support",
+        "adoption_rate": 0.38,
+        "growth_trajectory": "+18% quarterly",
+        "relevance_to_client": "high"
+      },
+      {
+        "trend": "Conversational commerce (buy via chat)",
+        "adoption_rate": 0.29,
+        "growth_trajectory": "+25% quarterly",
+        "relevance_to_client": "high"
+      }
+    ]
+  },
+  "competitive_positioning": {
+    "market_position": "mid-tier",  // leader | mid-tier | emerging
+    "strengths": ["High automation rate", "Strong NPS"],
+    "gaps": ["Limited language support", "No voice commerce"],
+    "opportunities": ["Voice channel expansion", "International markets"]
+  },
+  "strategic_roadmap": {
+    "next_30_days": [
+      {
+        "initiative": "Launch post-sales support bot",
+        "expected_outcome": "$45K ARR expansion",
+        "key_milestones": ["PRD creation", "Config setup", "Pilot launch"]
+      }
+    ],
+    "next_90_days": [
+      {
+        "initiative": "Voice commerce integration",
+        "expected_outcome": "18-25% conversion rate improvement",
+        "key_milestones": ["Voice API integration", "Order processing flow", "Payment security"]
+      }
+    ],
+    "next_12_months": [
+      {
+        "initiative": "Multi-language expansion",
+        "expected_outcome": "12-18% market growth",
+        "key_milestones": ["Language model training", "Regional compliance", "Localization"]
+      }
+    ]
+  },
+  "generated_at": "2025-10-15T10:00:00Z"
+}
+```
+
+**9. Get Industry Insights (Success Innovation Advisory - Feature 4)**
+```http
+GET /api/v1/customer-success/industry-insights
+Authorization: Bearer {csm_jwt}
+Query Parameters:
+- industry: e-commerce | saas | healthcare | finance (required)
+- topic: automation_trends | competitive_landscape | emerging_tech (optional)
+
+Response (200 OK):
+{
+  "industry": "e-commerce",
+  "insights": [
+    {
+      "insight_id": "uuid",
+      "topic": "automation_trends",
+      "title": "Conversational Commerce Adoption Surges",
+      "summary": "E-commerce companies enabling chat-based purchases see 23% higher conversion rates",
+      "data_points": {
+        "adoption_rate": 0.29,
+        "yoy_growth": 0.45,
+        "roi_range": "18-30%"
+      },
+      "source": "Industry Report Q3 2025",
+      "published_date": "2025-09-15",
+      "relevance_score": 0.92
+    },
+    {
+      "insight_id": "uuid",
+      "topic": "competitive_landscape",
+      "title": "Top E-Commerce Bots Support 15+ Languages",
+      "summary": "Market leaders offer multi-language support as table stakes",
+      "data_points": {
+        "market_leader_avg_languages": 18,
+        "mid_tier_avg_languages": 9,
+        "competitive_gap_impact": "12-15% market share loss"
+      },
+      "source": "Competitive Analysis",
+      "published_date": "2025-10-01",
+      "relevance_score": 0.88
+    }
+  ],
+  "total_insights": 24,
+  "last_updated": "2025-10-15T00:00:00Z"
+}
+```
+
+**10. Generate Advisory Recommendations (Success Innovation Advisory - Feature 4)**
+```http
+POST /api/v1/customer-success/recommendations/generate
+Authorization: Bearer {csm_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "organization_id": "uuid",
+  "focus_areas": ["innovation", "competitive_positioning", "growth"],  // Optional filters
+  "include_roadmap": true,
+  "include_impact_modeling": true
+}
+
+Response (202 Accepted):
+{
+  "job_id": "uuid",
+  "status": "generating",
+  "estimated_completion": "2025-10-15T10:05:00Z"
+}
+
+// Poll for completion
+GET /api/v1/customer-success/recommendations/jobs/{job_id}
+Response (200 OK):
+{
+  "job_id": "uuid",
+  "status": "completed",
+  "recommendations": [...],  // Same structure as endpoint #8
+  "completed_at": "2025-10-15T10:04:32Z"
+}
+```
+
 #### Frontend Components
 
 **1. Account Health Dashboard**
@@ -3549,6 +3756,18 @@ Response (200 OK):
 - WebSocket for real-time health score updates (critical signals)
 - Zustand for UI state (selected account, active filters, dashboard views)
 - LocalStorage for CSM preferences (default segment filter, dashboard layout)
+
+#### Database Schema
+
+**Core Tables:** health_scores, churn_predictions, expansion_opportunities, qbr_documents, playbooks, playbook_executions, account_segments, success_plans
+
+**Success Innovation Advisory Tables (Feature 4):**
+- `advisory_recommendations` - Strategic recommendations per organization (innovation opportunities, competitive positioning, growth initiatives)
+- `industry_benchmarks` - Industry-specific KPI benchmarks (automation rates, feature adoption, satisfaction scores by vertical)
+- `innovation_opportunities` - Emerging trends and opportunities catalog (adoption rates, growth trajectories, relevance criteria)
+- `strategic_roadmaps` - Generated business growth roadmaps (30-day, 90-day, 12-month initiatives with expected outcomes)
+
+All tables include organization_id with Row-Level Security policies for multi-tenant isolation.
 
 #### Stakeholders and Agents
 
@@ -6824,6 +7043,13 @@ This microservices architecture provides a **production-ready foundation** for a
 **Purpose**: AI-powered context management and action planning for human agents (Sales, Onboarding, Support, Success) based on role-specific objectives and client lifecycle stage.
 
 **Key Features**:
+- **Human Agent Co-Pilot (Feature 2)**: Already implemented - unified agent dashboard providing single pane of glass for all client context
+- **Action Planning System (Feature 3)**: Enhanced action planning capabilities including:
+  - AI-powered action plan generation with predictive outcomes
+  - Action sequence optimization based on historical success patterns
+  - Impact modeling for recommended actions (expected outcomes, effort, success probability)
+  - Continuous learning loop from action execution results
+  - Real-time action reprioritization based on changing context
 - Unified agent dashboard (single pane of glass for all client context)
 - AI action planner (daily prioritized task lists with next-best-action suggestions)
 - Communication drafter (email, meeting agenda, QBR deck generation)
