@@ -235,7 +235,7 @@ Primary Services:
 ## Consolidation Summary
 
 ### Architecture Improvements
-- **Service Count**: 22 → 15 (30% reduction)
+- **Service Count**: 22 → 16 (27% reduction)
 - **Network Hops**: 36% reduction in service-to-service connections
 - **Latency Improvements**:
   - AI workflows: 200-500ms faster (eliminated LLM Gateway hop)
