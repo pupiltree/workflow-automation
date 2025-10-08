@@ -2,8 +2,9 @@
 
 This document breaks down the complete platform workflow into digestible, renderable diagrams organized by phase and concern.
 
-**Architecture:** 16 microservices (15 core + 2 libraries) coordinated via 17 Kafka topics
+**Architecture:** 17 microservices (16 core + 2 libraries) coordinated via 18 Kafka topics
 **Performance:** 400-900ms faster workflows through service consolidation and direct library integration
+**Agent Productivity:** Service 21 (Agent Copilot) provides unified dashboard for all human agents, enabling 3x capacity increase
 
 ---
 
@@ -20,8 +21,9 @@ This document breaks down the complete platform workflow into digestible, render
 9. [Phase 5: Client Self-Service & Personalization](#9-phase-5-client-self-service--personalization)
 10. [Phase 6: Iteration & Expansion](#10-phase-6-iteration--expansion)
 11. [Human Agent Handoff Workflows](#11-human-agent-handoff-workflows)
-12. [Event Flow Architecture](#12-event-flow-architecture)
-13. [Service Dependencies](#13-service-dependencies)
+12. [Service 21: Agent Copilot Dashboard](#12-service-21-agent-copilot-dashboard)
+13. [Event Flow Architecture](#13-event-flow-architecture)
+14. [Service Dependencies](#14-service-dependencies)
 
 ---
 
@@ -574,11 +576,116 @@ flowchart TB
 
 ---
 
-## 12. Event Flow Architecture
+## 12. Service 21: Agent Copilot Dashboard
+
+```mermaid
+flowchart TB
+    subgraph HumanAgents["Human Agents (All Roles)"]
+        Sales["Sales Agent"]
+        Onboard["Onboarding Specialist"]
+        Support["Support Specialist"]
+        Success["Success Manager"]
+        SalesSpec["Sales Specialist"]
+    end
+
+    subgraph Service21["Service 21: Agent Copilot"]
+        Dashboard["Unified Dashboard<br/>WebSocket Real-Time Updates"]
+
+        subgraph CoreFeatures["7 Core Features"]
+            Context["Context Aggregation<br/>(17 Kafka Topics)"]
+            ActionPlan["AI Action Planning<br/>(@workflow/llm-sdk)"]
+            CommDraft["Communication Drafting<br/>(Emails, Agendas, QBRs)"]
+            Approval["Approval Orchestration<br/>(Intelligent Routing)"]
+            CRMSync["CRM Auto-Sync<br/>(Salesforce, HubSpot, Zendesk)"]
+            Village["Village Knowledge<br/>(Semantic Search - Qdrant)"]
+            Perf["Performance Dashboard<br/>(Metrics, Coaching, Benchmarks)"]
+        end
+    end
+
+    subgraph EventSources["Event Sources (17 Kafka Topics)"]
+        Auth["auth_events<br/>agent_events"]
+        Research["research_events"]
+        Demo["demo_events"]
+        SalesDoc["sales_doc_events"]
+        Billing["billing_events"]
+        PRD["prd_events"]
+        Config["config_events"]
+        Conv["conversation_events"]
+        Voice["voice_events"]
+        Monitor["monitoring_incidents"]
+        Analytics["analytics_experiments"]
+        CS["customer_success_events"]
+        SupportE["support_events"]
+        Comm["communication_events"]
+        Escal["escalation_events"]
+        Cross["cross_product_events"]
+        CRM["crm_events"]
+    end
+
+    subgraph Integrations["External Integrations"]
+        LLMSDK["@workflow/llm-sdk<br/>(Action Planning)"]
+        Service15["Service 15: CRM Integration"]
+        Service17["Service 17: RAG Pipeline<br/>(Village Knowledge)"]
+    end
+
+    Sales --> Dashboard
+    Onboard --> Dashboard
+    Support --> Dashboard
+    Success --> Dashboard
+    SalesSpec --> Dashboard
+
+    Dashboard --> Context
+    Dashboard --> ActionPlan
+    Dashboard --> CommDraft
+    Dashboard --> Approval
+    Dashboard --> CRMSync
+    Dashboard --> Village
+    Dashboard --> Perf
+
+    Auth --> Context
+    Research --> Context
+    Demo --> Context
+    SalesDoc --> Context
+    Billing --> Context
+    PRD --> Context
+    Config --> Context
+    Conv --> Context
+    Voice --> Context
+    Monitor --> Context
+    Analytics --> Context
+    CS --> Context
+    SupportE --> Context
+    Comm --> Context
+    Escal --> Context
+    Cross --> Context
+    CRM --> Context
+
+    ActionPlan --> LLMSDK
+    CommDraft --> LLMSDK
+    CRMSync --> Service15
+    Village --> Service17
+
+    style Dashboard fill:#e3f2fd
+    style Context fill:#e1f5e1
+    style ActionPlan fill:#fff3e0
+    style CommDraft fill:#fff3e0
+    style Village fill:#f3e5f5
+```
+
+**Service 21 Benefits:**
+- **3x Agent Capacity:** Agents manage 3x more clients with AI assistance
+- **Context Switching Eliminated:** From 10+ systems → 1 unified dashboard
+- **Decision Time Reduced:** AI action planning reduces decision time from hours to minutes
+- **Quality Consistency:** Communication drafting ensures brand voice across all agents
+- **Knowledge Sharing:** Village knowledge surfaces best practices from 100+ implementations
+
+---
+
+## 13. Event Flow Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Producers["Event Producers (16 Services)"]
+    subgraph Producers["Event Producers (17 Services)"]
         S0["Service 0:<br/>Auth + Agent Events"]
         S1["Service 1:<br/>Research Events"]
         S2["Service 2:<br/>Demo Events"]
@@ -587,10 +694,13 @@ flowchart LR
         S7["Service 7:<br/>Config Events"]
         S8["Service 8:<br/>Conversation Events"]
         S9["Service 9:<br/>Voice Events"]
+        S13["Service 13:<br/>Customer Success Events"]
         S20["Service 20:<br/>Communication Events<br/>(Outreach+Personalization)"]
+        S21["Service 21:<br/>Agent Action Events"]
+        S22["Service 22:<br/>Billing Events"]
     end
 
-    subgraph Kafka["Apache Kafka (17 Topics - Optimized)"]
+    subgraph Kafka["Apache Kafka (18 Topics - Optimized)"]
         T1["auth_events"]
         T2["agent_events"]
         T3["research_events"]
@@ -599,14 +709,15 @@ flowchart LR
         T6["demo_events"]
         T7["sales_doc_events"]
         T8["prd_events"]
+        T9["billing_events"]
         T11["config_events"]
         T12["conversation_events"]
         T13["voice_events"]
         T14["cross_product_events"]
-        T15["monitoring_events"]
-        T16["analytics_events"]
+        T15["monitoring_incidents"]
+        T16["analytics_experiments"]
         T17["support_events"]
-        T18["success_events"]
+        T18["customer_success_events"]
         T19["crm_events"]
     end
 
@@ -617,6 +728,7 @@ flowchart LR
         C_PRD["PRD Builder<br/>Triggers"]
         C_Auto["Automation Engine<br/>Triggers"]
         C_Runtime["Runtime Services<br/>(Hot-Reload via<br/>@workflow/config-sdk)"]
+        C_Copilot["Agent Copilot<br/>(Consumes 17 Topics)"]
         C_Analytics["Analytics Service<br/>(All Events)"]
         C_Monitor["Monitoring Engine<br/>(All Events)"]
     end
@@ -633,12 +745,40 @@ flowchart LR
     S9 --> T13
     S20 --> T4
 
+    S1 --> T3
+    S2 --> T6
+    S3 --> T7
+    S6 --> T8
+    S7 --> T11
+    S8 --> T12
+    S9 --> T13
+    S13 --> T18
+    S20 --> T4
+    S22 --> T9
+
     T1 --> C_Research
     T4 --> C_Demo
     T6 --> C_Sales
     T7 --> C_PRD
     T8 --> C_Auto
     T11 --> C_Runtime
+
+    T1 --> C_Copilot
+    T2 --> C_Copilot
+    T3 --> C_Copilot
+    T4 --> C_Copilot
+    T6 --> C_Copilot
+    T7 --> C_Copilot
+    T9 --> C_Copilot
+    T8 --> C_Copilot
+    T11 --> C_Copilot
+    T12 --> C_Copilot
+    T13 --> C_Copilot
+    T15 --> C_Copilot
+    T16 --> C_Copilot
+    T17 --> C_Copilot
+    T18 --> C_Copilot
+    T19 --> C_Copilot
 
     T1 --> C_Analytics
     T2 --> C_Analytics
@@ -648,6 +788,7 @@ flowchart LR
     T6 --> C_Analytics
     T7 --> C_Analytics
     T8 --> C_Analytics
+    T9 --> C_Analytics
     T11 --> C_Analytics
     T12 --> C_Analytics
     T13 --> C_Analytics
@@ -658,11 +799,12 @@ flowchart LR
     T13 --> C_Monitor
 
     style Kafka fill:#f3e5f5
+    style C_Copilot fill:#e3f2fd
 ```
 
 ---
 
-## 13. Service Dependencies
+## 14. Service Dependencies
 
 ```mermaid
 flowchart TB
@@ -685,6 +827,7 @@ flowchart TB
         Monitor["Service 11: Monitoring"]
         Analytics["Service 12: Analytics"]
         Comm["Service 20: Communication &<br/>Hyperpersonalization"]
+        Copilot["Service 21: Agent Copilot<br/>(uses @workflow/llm-sdk)"]
     end
 
     subgraph Tier3["Tier 3: Background Services (Manual fallback)"]
@@ -693,6 +836,7 @@ flowchart TB
         Sales["Service 3: Sales Doc Generator"]
         Success["Service 13: Customer Success<br/>(uses @workflow/llm-sdk)"]
         Support["Service 14: Support Engine<br/>(uses @workflow/llm-sdk)"]
+        Billing["Service 22: Billing & Revenue Management"]
     end
 
     Kong --> Auth
@@ -706,6 +850,10 @@ flowchart TB
     VoiceAgent --> LLMSDK
     VoiceAgent --> ConfigSDK
 
+    Copilot --> LLMSDK
+    Copilot --> Kafka
+    Copilot --> RAG
+
     LLMSDK --> Redis
     ConfigSDK --> Redis
 
@@ -714,6 +862,7 @@ flowchart TB
     Sales --> Kafka
     Success --> Analytics
     Support --> Auth
+    Billing --> Kafka
 
     Analytics --> Kafka
     Monitor --> Kafka
@@ -722,6 +871,7 @@ flowchart TB
     style Tier1 fill:#fff3e0
     style Tier2 fill:#e3f2fd
     style Tier3 fill:#f3e5f5
+    style Copilot fill:#e3f2fd
 ```
 
 ---
@@ -730,23 +880,28 @@ flowchart TB
 
 These modular diagrams break down the complete platform workflow into digestible sections that will render properly in GitHub, Notion, or any mermaid-compatible viewer.
 
-**Architecture Consolidation (22 → 16 Services):**
+**Architecture Consolidation (22 → 17 Services):**
 - **Service 0.5 → Service 0:** Unified organization & agent management
 - **Services 3, 4, 5 → Service 3:** Unified sales document generation (150-300ms faster)
 - **Service 18 → Service 20:** Unified communication & hyperpersonalization
 - **Service 19 → Service 6:** Client self-service integrated into PRD workspace
 - **Service 10 → @workflow/config-sdk:** Direct config access (50-100ms faster)
 - **Service 16 → @workflow/llm-sdk:** Direct LLM calls (200-500ms faster per call)
+- **Service 21: Agent Copilot:** NEW - AI-powered unified dashboard for human agents (3x capacity increase)
+- **Service 22: Billing & Revenue Management:** NEW - Subscription, invoicing, payment processing
 
 **Performance Improvements:**
 - **Sales pipeline:** 150-300ms faster (3-service → 1-service)
 - **LLM calls:** 200-500ms faster per call (no gateway hop)
 - **Config operations:** 50-100ms faster (direct S3 access)
+- **Agent productivity:** 3x capacity increase (Service 21 unified dashboard)
 - **Total workflow:** 400-900ms faster per complete client lifecycle
 
-**Kafka Topics:** 17 topics (optimized from 19 original topics)
+**Kafka Topics:** 18 topics (optimized from 19 original topics)
 - `sales_doc_events` replaces `nda_events`, `pricing_events`, `proposal_events`
 - `communication_events` replaces `outreach_events`, `personalization_events`
+- `billing_events` added for Service 22 (payment processing, subscription management)
+- **Service 21 consumes 17 topics** for real-time agent context aggregation
 
 **Key Patterns Across Diagrams:**
 - **Green boxes** (🤖 AUTO): Fully automated by AI/system
@@ -760,5 +915,6 @@ These modular diagrams break down the complete platform workflow into digestible
 2. Follow the phases sequentially (0→6) for the complete journey
 3. Dive into **Runtime Operations** (6-7) to see chatbot/voicebot workflows
 4. Review **Human Agent Handoffs** (11) for understanding human orchestration
-5. Study **Event Flow** (12) and **Dependencies** (13) for technical architecture
+5. See **Service 21: Agent Copilot Dashboard** (12) for human agent productivity system
+6. Study **Event Flow** (13) and **Dependencies** (14) for technical architecture
 
