@@ -3401,7 +3401,7 @@ Response (202 Accepted):
 - **Monitoring Engine Service** *[See Service 11 above]* (SLA compliance, uptime metrics)
 - **Support Engine Service** *[See Service 14 below]* (support ticket data, resolution times, CSAT scores)
 - **CRM Integration Service** *[See Service 15 below]* (account data, ARR, renewal dates from Salesforce/HubSpot)
-- **Hyperpersonalization Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md]* (lifecycle messaging, email campaigns)
+- **Hyperpersonalization Service** *[See Service 20 below]* (lifecycle messaging, email campaigns)
 - **Agent Orchestration Service** *[See Service 8 above]* (conversation sentiment, engagement quality)
 - External APIs:
   - **Calendly/Cal.com**: QBR meeting scheduling
@@ -4053,7 +4053,7 @@ Response (200 OK):
 - **Customer Success Service** *[See Service 13 above]* (CSAT score updates, ticket count for health scoring)
 - **Organization Management Service** *[See MICROSERVICES_ARCHITECTURE.md Service 0]* (user permissions, organization data)
 - **Agent Orchestration Service** *[See Service 8 above]* (deployment status, conversation logs)
-- **Hyperpersonalization Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md]* (email notifications)
+- **Hyperpersonalization Service** *[See Service 20 below]* (email notifications)
 - External APIs:
   - **SendGrid**: Email ticket creation and notifications
   - **Slack API**: Slack-based ticket creation and agent notifications
@@ -7836,4 +7836,36 @@ This microservices architecture provides a **production-ready foundation** for a
 
 ---
 
+## Additional Services
+
+### Service 21: Agent Copilot Service
+
+**Note**: Service 21 (Agent Copilot) is documented separately in `SERVICE_21_AGENT_COPILOT.md` due to its comprehensive scope and cross-cutting nature.
+
+**Purpose**: AI-powered context management and action planning for human agents (Sales, Onboarding, Support, Success) based on role-specific objectives and client lifecycle stage.
+
+**Key Features**:
+- Unified agent dashboard (single pane of glass for all client context)
+- AI action planner (daily prioritized task lists with next-best-action suggestions)
+- Communication drafter (email, meeting agenda, QBR deck generation)
+- Approval orchestration (intelligent routing based on type + risk level)
+- CRM auto-update (Salesforce, HubSpot, Zendesk bi-directional sync)
+- Village knowledge integration (best practices from similar clients)
+- Performance dashboard (metrics vs. objectives, coaching suggestions)
+
+**Integration Points**:
+- Consumes events from all 20 services (auth, research, demo, PRD, config, conversations, support, customer success)
+- Integrates with Service 0.5 (Human Agent Management) for role definitions and handoffs
+- Integrates with Service 13 (Customer Success) for health scores and playbooks
+- Integrates with Service 14 (Support Engine) for ticket management
+- Integrates with Service 15 (CRM Integration) for Salesforce/HubSpot/Zendesk sync
+- Integrates with Service 16 (LLM Gateway) for action plan generation
+- Integrates with Service 17 (RAG Pipeline) for village knowledge retrieval
+
+**For Complete Specification**: See `SERVICE_21_AGENT_COPILOT.md`
+
+---
+
 **This completes the comprehensive microservices architecture specification for the Complete Workflow Automation System.**
+
+**Service Index**: For quick navigation to all 22 services across documents, see `SERVICE_INDEX.md`

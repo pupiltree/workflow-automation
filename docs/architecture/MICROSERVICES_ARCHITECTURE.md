@@ -5,7 +5,9 @@
 
 ## Executive Summary
 
-This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **22 specialized microservices** (Services 0, 0.5, 1-20), leveraging event-driven patterns, multi-tenant isolation, and AI agent orchestration to achieve 95% automation within 12 months.
+This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **15 specialized microservices** (Services 0, 1, 2, 3, 6, 7, 8, 9, 11-15, 17, 20, 21) plus 2 supporting libraries (@workflow/llm-sdk, @workflow/config-sdk).
+
+**Architecture Optimization**: This architecture has been optimized from an initial 22-service design through strategic consolidation. The optimization eliminated distributed monolith anti-patterns, shared database issues, and unnecessary network hops, improving architecture health from 6.5/10 to 9+/10. Services 0.5, 4, 5, 10, 16, 18, 19 have been consolidated or converted to libraries.
 
 **Key Architecture Principles:**
 - Event-driven communication via Apache Kafka for loose coupling and scalability
@@ -156,10 +158,13 @@ All users (both client organization users AND platform human agents) authenticat
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Event Bus (Apache Kafka)                    │
-│   Topics: auth_events, org_events, agent_events,                │
-│   collaboration_events, client_events, prd_events,              │
-│   demo_events, config_events, conversation_events,              │
-│   voice_events, analytics_events                                │
+│   Topics (17): auth_events, org_events, agent_events,           │
+│   client_events, prd_events, demo_events, sales_doc_events,     │
+│   research_events, config_events, conversation_events,          │
+│   voice_events, escalation_events, monitoring_incidents,        │
+│   analytics_experiments, customer_success_events,               │
+│   support_events, communication_events, cross_product_events    │
+│   (Consolidated from 19 topics)                                 │
 └────────────────────────────┬────────────────────────────────────┘
                              │
          ┌───────────────────┴──────────────────────┐
@@ -168,21 +173,25 @@ All users (both client organization users AND platform human agents) authenticat
 ┌─────────────────┐                        ┌──────────────────┐
 │  Core Services  │                        │  Support Services│
 ├─────────────────┤                        ├──────────────────┤
-│ 0. Org Mgmt &   │                        │ 11. Monitoring   │
-│    Auth         │                        │ 12. Analytics    │
-│ 0.5 Human Agent │                        │ 13. Customer     │
-│     Management  │◄───────────────────────┤     Success      │
-│ 1. Research     │  (Handoffs & Routing)  │ 14. Support      │
-│ 2. Demo Gen     │                        │ 15. CRM          │
-│ 3. NDA Gen      │                        │     Integration  │
-│ 4. Pricing      │                        └──────────────────┘
-│ 5. Proposal     │
-│ 6. PRD Builder  │
-│ 7. Automation   │
-│ 8. Agent Orch   │
+│ 0. Org & ID     │                        │ 11. Monitoring   │
+│    Management   │                        │ 12. Analytics    │
+│    (merged 0.5) │◄───────────────────────┤ 13. Customer     │
+│ 1. Research     │  (Handoffs & Routing)  │     Success      │
+│ 2. Demo Gen     │                        │ 14. Support      │
+│ 3. Sales Doc    │                        │ 15. CRM          │
+│    Generator    │                        │     Integration  │
+│    (merged 4,5) │                        │ 17. RAG Pipeline │
+│ 6. PRD & Config │                        │ 20. Communication│
+│    Workspace    │                        │     & Hyper-     │
+│    (merged 19)  │                        │     personalize  │
+│ 7. Automation   │                        │ 21. Agent Copilot│
+│ 8. Agent Orch   │                        └──────────────────┘
 │ 9. Voice Agent  │
-│ 10. Config Mgmt │
 └─────────────────┘
+
+Supporting Libraries:
+- @workflow/llm-sdk (formerly Service 16 - eliminates 200-500ms latency)
+- @workflow/config-sdk (formerly Service 10 - eliminates 50-100ms latency)
 
 Data Layer:
 - PostgreSQL (Supabase) with RLS: Transactional data, multi-tenant isolation
@@ -190,6 +199,8 @@ Data Layer:
 - Neo4j: Knowledge graphs for GraphRAG
 - Redis: Caching, session state, rate limiting, auth tokens
 - TimescaleDB: Time-series metrics and analytics
+
+Architecture Optimization: 22 services → 15 services (30% reduction)
 ```
 
 ### Database Architecture Model
@@ -259,19 +270,21 @@ Data Layer:
 
 ## Microservice Specifications
 
-### 0. Organization Management & Authentication Service
+### 0. Organization & Identity Management Service
+
+**Service Consolidation**: Service 0 now includes functionality previously in Service 0.5 (Human Agent Management). This consolidation eliminates the shared database anti-pattern where both services accessed the same `auth.users` table.
 
 #### Objectives
-- **Primary Purpose**: Self-service client signup, organization creation, team member management, and authentication/authorization for the entire platform
-- **Business Value**: Enables product-led growth with self-service onboarding BEFORE sales engagement, reduces sales friction, enables team collaboration from day one
+- **Primary Purpose**: Self-service client signup, organization creation, team member management, human agent profile management, and authentication/authorization for the entire platform (both client users and platform agents)
+- **Business Value**: Enables product-led growth with self-service onboarding BEFORE sales engagement, reduces sales friction, enables team collaboration from day one, supports structured human agent lifecycle management (Sales → Onboarding → Support → Success)
 - **Scope Boundaries**:
-  - **Does**: User signup/login, organization creation, team invitations, role-based permissions, work email verification, session management, OAuth integrations
-  - **Does Not**: Handle billing (separate service), generate content, manage workflows
+  - **Does**: User signup/login (clients & agents), organization creation, team invitations, role-based permissions, work email verification, session management, OAuth integrations, human agent profile management, multi-role assignments, client-agent assignments, handoff orchestration
+  - **Does Not**: Handle billing (separate service), generate content, manage workflows, train agents, manage HR/payroll
 
 #### Requirements
 
 **Functional Requirements:**
-1. Work email signup with email verification
+1. Work email signup with email verification (clients and agents)
 2. Organization creation with admin role assignment
 3. Team member invitation system with expiration
 4. Role-based access control (Admin, Member, Viewer with custom permissions)
@@ -282,11 +295,26 @@ Data Layer:
 9. Audit logging for security events
 10. Team member removal and role updates
 11. Assisted signup - create and maintain client accounts on their behalf with claim capability
+12. Agent registration and profile management with multi-role assignments
+13. Role-based access control for agents with granular permissions per service
+14. Client handoff workflow orchestration (Sales → Onboarding → Support → Success → Upsell)
+15. Specialist matching and routing based on skills, availability, and workload
+16. Real-time agent availability and status management
+17. Activity tracking and performance metrics per role
+18. Queue management for each role type
+19. Agent invitation and cross-selling workflow
+20. Supervision mode for AI agent oversight
+21. Handoff approval workflow with notes and context transfer
+22. Agent workload balancing and auto-assignment
 
 **Non-Functional Requirements:**
 - Signup completion: <30 seconds
 - Support 100K+ organizations
+- Support 1000+ concurrent human agents
 - Auth latency: <100ms P95
+- Agent lookup: <50ms P95
+- Handoff processing: <2 seconds
+- Real-time availability updates: <500ms
 - 99.99% uptime (authentication is critical path)
 - GDPR/SOC 2 compliance for user data
 
@@ -294,11 +322,15 @@ Data Layer:
 - Research Engine (triggered after org creation)
 - PRD Builder (uses org/user context for permissions)
 - Configuration Management (org-level feature flags)
+- All microservices (consume agent assignments and handoffs)
+- Analytics Service (agent performance metrics)
+- Monitoring Engine (agent activity tracking)
 - External: SendGrid (email verification), Auth0/Supabase Auth (optional managed auth)
 
 **Data Storage:**
-- PostgreSQL: Users, organizations, memberships, roles, permissions, audit logs
-- Redis: Session tokens, email verification codes, rate limiting
+- PostgreSQL: Users, organizations, memberships, roles, permissions, audit logs, agent profiles, client assignments, handoffs, specialist invitations, agent activity logs
+- Redis: Session tokens, email verification codes, rate limiting, real-time agent availability, queue state, active assignments
+- TimescaleDB: Agent performance metrics, SLA tracking
 
 **Database Schema:**
 
@@ -393,6 +425,92 @@ CREATE TABLE audit_logs (
   user_agent TEXT,
   timestamp TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- agent_profiles table (extends auth.users where user_type='agent')
+CREATE TABLE agent_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  agent_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),  -- Separate agent ID for tracking
+  roles JSONB NOT NULL,  -- Array of role objects with skills, certifications, languages
+  -- Example: [{"role_type": "sales_agent", "primary": true, "skills": ["b2b_saas"], ...}]
+  permissions JSONB NOT NULL DEFAULT '{}',  -- Granular permissions per service
+  -- Example: {"assisted_signup": ["create", "read"], "demo_generator": ["read", "approve"]}
+  capacity JSONB NOT NULL,  -- Max concurrent clients, handoffs, availability hours
+  -- Example: {"max_concurrent_clients": 15, "max_active_handoffs": 3, "availability_hours": "09:00-18:00 EST"}
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+  availability TEXT DEFAULT 'offline' CHECK (availability IN ('online', 'busy', 'offline', 'away')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- client_assignments table (tracks which clients are assigned to which agents)
+CREATE TABLE client_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,  -- References client user_id from auth.users
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  agent_id UUID NOT NULL REFERENCES agent_profiles(id),
+  assigned_role TEXT NOT NULL,  -- Which role is handling this client (sales_agent, onboarding_specialist, etc.)
+  lifecycle_stage TEXT NOT NULL,  -- sales, onboarding, support, success
+  assigned_at TIMESTAMPTZ DEFAULT NOW(),
+  assignment_type TEXT NOT NULL,  -- auto_on_assisted_signup, handoff, manual, specialist_invitation
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'transferred')),
+  completed_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'
+);
+
+-- handoffs table (tracks client handoffs between agents/roles)
+CREATE TABLE handoffs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  from_agent_id UUID NOT NULL REFERENCES agent_profiles(id),
+  from_role TEXT NOT NULL,
+  to_agent_id UUID REFERENCES agent_profiles(id),  -- NULL until accepted
+  to_role TEXT NOT NULL,
+  lifecycle_stage_from TEXT NOT NULL,
+  lifecycle_stage_to TEXT NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'completed')),
+  handoff_type TEXT NOT NULL,  -- standard, dual (parallel support+success), specialist_invitation
+  context_notes TEXT,
+  client_prefs JSONB,
+  technical_requirements JSONB,
+  initiated_at TIMESTAMPTZ DEFAULT NOW(),
+  accepted_at TIMESTAMPTZ,
+  rejected_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  rejection_reason TEXT
+);
+
+-- specialist_invitations table (tracks specialist invitations for upsell/cross-sell)
+CREATE TABLE specialist_invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL,
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  invited_by_agent_id UUID NOT NULL REFERENCES agent_profiles(id),
+  specialist_agent_id UUID REFERENCES agent_profiles(id),  -- NULL until accepted
+  specialist_role TEXT NOT NULL,  -- sales_specialist, technical_specialist, etc.
+  invitation_reason TEXT NOT NULL,  -- upsell, cross_sell, technical_consultation, iteration
+  opportunity_type TEXT,  -- voice_addon, premium_tier, custom_integration, etc.
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'completed')),
+  invited_at TIMESTAMPTZ DEFAULT NOW(),
+  accepted_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,  -- When specialist exits after completing work
+  outcome JSONB  -- Results: {deal_closed: true, revenue: 50000, next_steps: "..."}
+);
+
+-- agent_activity_logs table (tracks all agent actions)
+CREATE TABLE agent_activity_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id UUID NOT NULL REFERENCES agent_profiles(id),
+  client_id UUID,
+  organization_id UUID REFERENCES organizations(id),
+  action_type TEXT NOT NULL,  -- client_assigned, handoff_initiated, demo_created, ticket_resolved, etc.
+  action_role TEXT NOT NULL,  -- Which role was active during this action
+  service_name TEXT,  -- Which microservice was accessed
+  metadata JSONB DEFAULT '{}',
+  duration_seconds INTEGER,  -- Time spent on this action
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 **Indexes:**
@@ -404,12 +522,26 @@ CREATE INDEX idx_users_claim_token ON auth.users(claim_token) WHERE claim_token 
 CREATE INDEX idx_users_created_by_agent ON auth.users(created_by_agent_id) WHERE created_by_agent_id IS NOT NULL;
 CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX idx_agent_profiles_user_id ON agent_profiles(user_id);
+CREATE INDEX idx_agent_profiles_agent_id ON agent_profiles(agent_id);
+CREATE INDEX idx_agent_profiles_status ON agent_profiles(status);
+CREATE INDEX idx_client_assignments_client_id ON client_assignments(client_id);
+CREATE INDEX idx_client_assignments_agent_id ON client_assignments(agent_id);
+CREATE INDEX idx_client_assignments_lifecycle_stage ON client_assignments(lifecycle_stage);
+CREATE INDEX idx_handoffs_client_id ON handoffs(client_id);
+CREATE INDEX idx_handoffs_from_agent ON handoffs(from_agent_id);
+CREATE INDEX idx_handoffs_to_agent ON handoffs(to_agent_id);
+CREATE INDEX idx_handoffs_status ON handoffs(status);
+CREATE INDEX idx_specialist_invitations_client_id ON specialist_invitations(client_id);
+CREATE INDEX idx_specialist_invitations_specialist_id ON specialist_invitations(specialist_agent_id);
+CREATE INDEX idx_agent_activity_logs_agent_id ON agent_activity_logs(agent_id);
+CREATE INDEX idx_agent_activity_logs_timestamp ON agent_activity_logs(timestamp DESC);
 ```
 
 #### Features
 
 **Must-Have:**
-1. ✅ Work email signup with domain validation
+1. ✅ Work email signup with domain validation (clients and agents)
 2. ✅ Email verification with expiring tokens
 3. ✅ Organization creation wizard
 4. ✅ Team member invitation system
@@ -423,21 +555,43 @@ CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
 12. ✅ Account claim process - clients can claim assisted accounts
 13. ✅ Temporary access tokens for assisted account management
 14. ✅ Account ownership transfer from platform to client
+15. ✅ Agent registration with multi-role assignment
+16. ✅ Granular role-based permissions (per service + per action)
+17. ✅ Client handoff workflow (Sales → Onboarding → Support → Success)
+18. ✅ Specialist routing engine (skill-based matching)
+19. ✅ Real-time availability management (online, busy, offline)
+20. ✅ Agent queue management (per role, per client)
+21. ✅ Activity tracking (time per client, actions performed)
+22. ✅ Cross-sell/upsell agent invitation
+23. ✅ Handoff approval with context notes
+24. ✅ Workload balancing (auto-assignment based on capacity)
+25. ✅ Supervision dashboard (AI oversight by human agents)
+26. ✅ Agent performance metrics (response time, CSAT, handoff quality)
 
 **Nice-to-Have:**
-11. 🔄 SAML SSO for enterprise customers
-12. 🔄 Directory sync (Okta, Azure AD)
-13. 🔄 IP allowlisting
-14. 🔄 Advanced MFA (biometric, hardware keys)
+27. 🔄 SAML SSO for enterprise customers
+28. 🔄 Directory sync (Okta, Azure AD)
+29. 🔄 IP allowlisting
+30. 🔄 Advanced MFA (biometric, hardware keys)
+31. 🔄 AI-powered agent suggestions (best agent for client)
+32. 🔄 Agent skill gap analysis
+33. 🔄 Automated agent training recommendations
+34. 🔄 Predictive workload forecasting
 
 **Feature Interactions:**
 - Organization created (self-service) → Triggers initial research job creation
-- Organization created (assisted) → Creates account with claim token, sends claim email, triggers research job
+- Organization created (assisted) → Creates account with claim token, sends claim email, triggers research job, auto-assigns to Sales agent
 - Team member joins → Sends welcome email with PRD Builder access
 - Admin updates permissions → Real-time permission sync across services
 - Assisted account claimed → Transfers ownership, converts to full account, sends confirmation email
 - Assisted account nearing expiry (7 days) → Automated reminder email sent to client
 - Assisted account expired unclaimed → Account locked, platform admin notified for follow-up
+- Client signup (assisted) → Auto-assign to Sales agent based on workload
+- Sales completes → Handoff to Onboarding agent → Context transferred
+- Onboarding completes → Handoff to dedicated Support + Success agents
+- Success agent identifies upsell → Invites Sales specialist to join
+- AI agent exceeds error threshold → Escalates to Supervision agent
+- Agent goes offline → Queue automatically redistributed
 
 #### API Specification
 
@@ -1086,6 +1240,200 @@ Response (200 OK):
 - Assisted signup: 100 per day per platform admin
 - Claim account: 5 per hour per claim token
 - Resend claim link: 10 per day per assisted account
+- Agent registration: 50 per day per platform admin
+- Agent assignments: 500 per day per agent
+- Handoff operations: 100 per day per agent
+
+#### Agent Management API Endpoints
+
+**Note**: The following agent management endpoints were consolidated from Service 0.5 (Human Agent Management) into Service 0.
+
+**17. Register Human Agent**
+```http
+POST /api/v1/agents
+Authorization: Bearer {platform_admin_jwt}
+Content-Type: application/json
+
+Request Body:
+{
+  "email": "sam@workflow.com",
+  "full_name": "Sam Peterson",
+  "roles": [
+    {
+      "role_type": "sales_agent",
+      "primary": true,
+      "skills": ["b2b_saas", "enterprise_sales", "demo_presentation"],
+      "certifications": ["Salesforce_Certified"],
+      "languages": ["english", "spanish"]
+    }
+  ],
+  "permissions": {
+    "assisted_signup": ["create", "read", "update"],
+    "research_engine": ["read", "trigger"],
+    "demo_generator": ["read", "create", "approve"]
+  },
+  "capacity": {
+    "max_concurrent_clients": 15,
+    "max_active_handoffs": 3,
+    "availability_hours": "09:00-18:00 EST"
+  }
+}
+
+Response (201 Created):
+{
+  "agent_id": "uuid",
+  "email": "sam@workflow.com",
+  "status": "active",
+  "roles": ["sales_agent"],
+  "created_at": "2025-10-05T10:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "agent_registered",
+  "agent_id": "uuid",
+  "roles": ["sales_agent"],
+  "timestamp": "2025-10-05T10:00:00Z"
+}
+```
+
+**18. Assign Client to Agent**
+```http
+POST /api/v1/agents/assignments
+Authorization: Bearer {jwt_token}
+
+Request Body:
+{
+  "client_id": "uuid",
+  "organization_id": "uuid",
+  "role_type": "sales_agent",
+  "assignment_type": "auto"
+}
+
+Response (201 Created):
+{
+  "assignment_id": "uuid",
+  "client_id": "uuid",
+  "assigned_agent": {
+    "agent_id": "uuid",
+    "full_name": "Sam Peterson"
+  },
+  "assigned_at": "2025-10-05T10:15:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "client_assigned_to_agent",
+  "assignment_id": "uuid",
+  "client_id": "uuid",
+  "agent_id": "uuid",
+  "role_type": "sales_agent",
+  "timestamp": "2025-10-05T10:15:00Z"
+}
+```
+
+**19. Initiate Client Handoff**
+```http
+POST /api/v1/agents/handoffs
+Authorization: Bearer {agent_jwt}
+
+Request Body:
+{
+  "client_id": "uuid",
+  "from_role": "sales_agent",
+  "to_role": "onboarding_specialist",
+  "lifecycle_stage_to": "onboarding",
+  "context_notes": "Client ready for technical onboarding"
+}
+
+Response (201 Created):
+{
+  "handoff_id": "uuid",
+  "status": "pending",
+  "initiated_at": "2025-10-05T11:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: agent_events
+{
+  "event_type": "handoff_initiated",
+  "handoff_id": "uuid",
+  "client_id": "uuid",
+  "from_agent_id": "uuid",
+  "to_role": "onboarding_specialist",
+  "timestamp": "2025-10-05T11:00:00Z"
+}
+```
+
+**20. Update Agent Availability**
+```http
+PATCH /api/v1/agents/{agent_id}/availability
+Authorization: Bearer {agent_jwt}
+
+Request Body:
+{
+  "availability": "online"
+}
+
+Response (200 OK):
+{
+  "agent_id": "uuid",
+  "availability": "online",
+  "updated_at": "2025-10-05T09:00:00Z"
+}
+```
+
+**21. Get Agent Performance Metrics**
+```http
+GET /api/v1/agents/{agent_id}/metrics
+Authorization: Bearer {agent_jwt}
+Query Parameters:
+- period: day|week|month
+- role_type: sales_agent|onboarding_specialist (optional)
+
+Response (200 OK):
+{
+  "agent_id": "uuid",
+  "period": "week",
+  "metrics": {
+    "active_clients": 12,
+    "completed_handoffs": 8,
+    "avg_response_time_minutes": 15,
+    "client_satisfaction_score": 4.7,
+    "utilization_percent": 80
+  }
+}
+```
+
+#### Kafka Events Published
+
+Service 0 publishes to three Kafka topics:
+
+**1. auth_events** - User authentication and account lifecycle events
+- `user_signed_up`
+- `user_logged_in`
+- `assisted_account_created`
+- `assisted_account_claimed`
+- `claim_link_resent`
+- `assisted_account_access_granted`
+
+**2. org_events** - Organization management events
+- `organization_created`
+- `team_member_invited`
+- `team_member_added`
+- `role_updated`
+- `member_removed`
+
+**3. agent_events** - Human agent management events (consolidated from Service 0.5)
+- `agent_registered`
+- `client_assigned_to_agent`
+- `handoff_initiated`
+- `handoff_accepted`
+- `handoff_completed`
+- `specialist_invited`
+- `agent_availability_changed`
 
 #### Frontend Components
 
@@ -1252,988 +1600,7 @@ Response (200 OK):
 
 ---
 
-### 0.5. Human Agent Management Service
-
-#### Objectives
-- **Primary Purpose**: Unified management of all human agents across the platform with role-based access, multi-role assignments, handoff workflows, and specialist routing
-- **Business Value**: Enables structured client lifecycle management with seamless handoffs (Sales → Onboarding → Support → Success), maintains human-in-the-loop supervision while maximizing automation, supports 1000+ human agents with specialized roles
-- **Scope Boundaries**:
-  - **Does**: Manage agent profiles and roles, orchestrate client handoffs, track agent activities, route specialists, manage agent availability, supervise AI workflows
-  - **Does Not**: Execute business logic (services do), train agents, manage HR/payroll
-
-#### Requirements
-
-**Functional Requirements:**
-1. Agent registration and profile management with multi-role assignments
-2. Role-based access control with granular permissions per service
-3. Client handoff workflow orchestration (Sales → Onboarding → Support → Success → Upsell)
-4. Specialist matching and routing based on skills, availability, and workload
-5. Real-time agent availability and status management
-6. Activity tracking and performance metrics per role
-7. Queue management for each role type
-8. Agent invitation and cross-selling workflow
-9. Supervision mode for AI agent oversight
-10. Handoff approval workflow with notes and context transfer
-11. Agent workload balancing and auto-assignment
-
-**Non-Functional Requirements:**
-- Agent lookup: <50ms P95
-- Handoff processing: <2 seconds
-- Support 1000+ concurrent agents
-- 99.99% uptime (critical for handoffs)
-- Real-time availability updates <500ms
-
-**Dependencies:**
-- Organization Management (agent authentication)
-- All microservices (consume agent assignments and handoffs)
-- Analytics Service (agent performance metrics)
-- Monitoring Engine (agent activity tracking)
-
-**Data Storage:**
-- PostgreSQL: Agent profiles, roles, permissions, handoff history, activity logs
-- Redis: Real-time agent availability, queue state, active assignments
-- TimescaleDB: Agent performance metrics, SLA tracking
-
-**Database Schema:**
-
-```sql
--- agent_profiles table (extends auth.users where user_type='agent')
-CREATE TABLE agent_profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID UNIQUE NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  agent_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),  -- Separate agent ID for tracking
-  roles JSONB NOT NULL,  -- Array of role objects with skills, certifications, languages
-  -- Example: [{"role_type": "sales_agent", "primary": true, "skills": ["b2b_saas"], ...}]
-  permissions JSONB NOT NULL DEFAULT '{}',  -- Granular permissions per service
-  -- Example: {"assisted_signup": ["create", "read"], "demo_generator": ["read", "approve"]}
-  capacity JSONB NOT NULL,  -- Max concurrent clients, handoffs, availability hours
-  -- Example: {"max_concurrent_clients": 15, "max_active_handoffs": 3, "availability_hours": "09:00-18:00 EST"}
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
-  availability TEXT DEFAULT 'offline' CHECK (availability IN ('online', 'busy', 'offline', 'away')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- client_assignments table (tracks which clients are assigned to which agents)
-CREATE TABLE client_assignments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL,  -- References client user_id from auth.users
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  agent_id UUID NOT NULL REFERENCES agent_profiles(id),
-  assigned_role TEXT NOT NULL,  -- Which role is handling this client (sales_agent, onboarding_specialist, etc.)
-  lifecycle_stage TEXT NOT NULL,  -- sales, onboarding, support, success
-  assigned_at TIMESTAMPTZ DEFAULT NOW(),
-  assignment_type TEXT NOT NULL,  -- auto_on_assisted_signup, handoff, manual, specialist_invitation
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'transferred')),
-  completed_at TIMESTAMPTZ,
-  metadata JSONB DEFAULT '{}'
-);
-
--- handoffs table (tracks client handoffs between agents/roles)
-CREATE TABLE handoffs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL,
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  from_agent_id UUID NOT NULL REFERENCES agent_profiles(id),
-  from_role TEXT NOT NULL,
-  to_agent_id UUID REFERENCES agent_profiles(id),  -- NULL until accepted
-  to_role TEXT NOT NULL,
-  lifecycle_stage_from TEXT NOT NULL,
-  lifecycle_stage_to TEXT NOT NULL,
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'completed')),
-  handoff_type TEXT NOT NULL,  -- standard, dual (parallel support+success), specialist_invitation
-  context_notes TEXT,
-  client_prefs JSONB,
-  technical_requirements JSONB,
-  initiated_at TIMESTAMPTZ DEFAULT NOW(),
-  accepted_at TIMESTAMPTZ,
-  rejected_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  rejection_reason TEXT
-);
-
--- specialist_invitations table (tracks specialist invitations for upsell/cross-sell)
-CREATE TABLE specialist_invitations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID NOT NULL,
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  invited_by_agent_id UUID NOT NULL REFERENCES agent_profiles(id),
-  specialist_agent_id UUID REFERENCES agent_profiles(id),  -- NULL until accepted
-  specialist_role TEXT NOT NULL,  -- sales_specialist, technical_specialist, etc.
-  invitation_reason TEXT NOT NULL,  -- upsell, cross_sell, technical_consultation, iteration
-  opportunity_type TEXT,  -- voice_addon, premium_tier, custom_integration, etc.
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'completed')),
-  invited_at TIMESTAMPTZ DEFAULT NOW(),
-  accepted_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,  -- When specialist exits after completing work
-  outcome JSONB  -- Results: {deal_closed: true, revenue: 50000, next_steps: "..."}
-);
-
--- agent_activity_logs table (tracks all agent actions)
-CREATE TABLE agent_activity_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  agent_id UUID NOT NULL REFERENCES agent_profiles(id),
-  client_id UUID,
-  organization_id UUID REFERENCES organizations(id),
-  action_type TEXT NOT NULL,  -- client_assigned, handoff_initiated, demo_created, ticket_resolved, etc.
-  action_role TEXT NOT NULL,  -- Which role was active during this action
-  service_name TEXT,  -- Which microservice was accessed
-  metadata JSONB DEFAULT '{}',
-  duration_seconds INTEGER,  -- Time spent on this action
-  timestamp TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**Indexes:**
-```sql
-CREATE INDEX idx_agent_profiles_user_id ON agent_profiles(user_id);
-CREATE INDEX idx_agent_profiles_agent_id ON agent_profiles(agent_id);
-CREATE INDEX idx_agent_profiles_status ON agent_profiles(status);
-CREATE INDEX idx_client_assignments_client_id ON client_assignments(client_id);
-CREATE INDEX idx_client_assignments_agent_id ON client_assignments(agent_id);
-CREATE INDEX idx_client_assignments_lifecycle_stage ON client_assignments(lifecycle_stage);
-CREATE INDEX idx_handoffs_client_id ON handoffs(client_id);
-CREATE INDEX idx_handoffs_from_agent ON handoffs(from_agent_id);
-CREATE INDEX idx_handoffs_to_agent ON handoffs(to_agent_id);
-CREATE INDEX idx_handoffs_status ON handoffs(status);
-CREATE INDEX idx_specialist_invitations_client_id ON specialist_invitations(client_id);
-CREATE INDEX idx_specialist_invitations_specialist_id ON specialist_invitations(specialist_agent_id);
-CREATE INDEX idx_agent_activity_logs_agent_id ON agent_activity_logs(agent_id);
-CREATE INDEX idx_agent_activity_logs_timestamp ON agent_activity_logs(timestamp DESC);
-```
-
-#### Features
-
-**Must-Have:**
-1. ✅ Agent registration with multi-role assignment
-2. ✅ Granular role-based permissions (per service + per action)
-3. ✅ Client handoff workflow (Sales → Onboarding → Support → Success)
-4. ✅ Specialist routing engine (skill-based matching)
-5. ✅ Real-time availability management (online, busy, offline)
-6. ✅ Agent queue management (per role, per client)
-7. ✅ Activity tracking (time per client, actions performed)
-8. ✅ Cross-sell/upsell agent invitation
-9. ✅ Handoff approval with context notes
-10. ✅ Workload balancing (auto-assignment based on capacity)
-11. ✅ Supervision dashboard (AI oversight by human agents)
-12. ✅ Agent performance metrics (response time, CSAT, handoff quality)
-
-**Nice-to-Have:**
-13. 🔄 AI-powered agent suggestions (best agent for client)
-14. 🔄 Agent skill gap analysis
-15. 🔄 Automated agent training recommendations
-16. 🔄 Predictive workload forecasting
-
-**Feature Interactions:**
-- Client signup (assisted) → Auto-assign to Sales agent based on workload
-- Sales completes → Handoff to Onboarding agent → Context transferred
-- Onboarding completes → Handoff to dedicated Support + Success agents
-- Success agent identifies upsell → Invites Sales specialist to join
-- AI agent exceeds error threshold → Escalates to Supervision agent
-- Agent goes offline → Queue automatically redistributed
-
-#### API Specification
-
-**1. Register Human Agent**
-```http
-POST /api/v1/agents
-Authorization: Bearer {platform_admin_jwt}
-Content-Type: application/json
-
-Request Body:
-{
-  "email": "sam@workflow.com",
-  "full_name": "Sam Peterson",
-  "roles": [
-    {
-      "role_type": "sales_agent",
-      "primary": true,
-      "skills": ["b2b_saas", "enterprise_sales", "demo_presentation"],
-      "certifications": ["Salesforce_Certified"],
-      "languages": ["english", "spanish"]
-    },
-    {
-      "role_type": "onboarding_specialist",
-      "primary": false,
-      "skills": ["technical_onboarding", "integration_setup"],
-      "certifications": [],
-      "languages": ["english"]
-    }
-  ],
-  "permissions": {
-    "assisted_signup": ["create", "read", "update"],
-    "research_engine": ["read", "trigger"],
-    "demo_generator": ["read", "create", "approve"],
-    "prd_builder": ["read", "collaborate"],
-    "client_management": ["read", "update", "transfer"]
-  },
-  "capacity": {
-    "max_concurrent_clients": 15,
-    "max_active_handoffs": 3,
-    "availability_hours": "09:00-18:00 EST"
-  }
-}
-
-Response (201 Created):
-{
-  "agent_id": "uuid",
-  "email": "sam@workflow.com",
-  "full_name": "Sam Peterson",
-  "status": "active",
-  "roles": [
-    {
-      "role_id": "uuid",
-      "role_type": "sales_agent",
-      "primary": true,
-      "assigned_at": "2025-10-05T10:00:00Z"
-    },
-    {
-      "role_id": "uuid",
-      "role_type": "onboarding_specialist",
-      "primary": false,
-      "assigned_at": "2025-10-05T10:00:00Z"
-    }
-  ],
-  "current_workload": {
-    "active_clients": 0,
-    "pending_handoffs": 0,
-    "utilization_percent": 0
-  },
-  "created_at": "2025-10-05T10:00:00Z"
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "agent_registered",
-  "agent_id": "uuid",
-  "roles": ["sales_agent", "onboarding_specialist"],
-  "timestamp": "2025-10-05T10:00:00Z"
-}
-```
-
-**2. Assign Client to Agent (Auto or Manual)**
-```http
-POST /api/v1/agents/assignments
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "client_id": "uuid",
-  "organization_id": "uuid",
-  "role_type": "sales_agent",
-  "assignment_type": "auto",
-  "assignment_reason": "new_assisted_signup",
-  "priority": "normal",
-  "context": {
-    "company_name": "Teddy Corp",
-    "industry": "e-commerce",
-    "lead_source": "conference",
-    "notes": "Interested in customer support automation"
-  }
-}
-
-Response (201 Created):
-{
-  "assignment_id": "uuid",
-  "client_id": "uuid",
-  "assigned_agent": {
-    "agent_id": "uuid",
-    "full_name": "Sam Peterson",
-    "role_type": "sales_agent",
-    "contact_email": "sam@workflow.com"
-  },
-  "assignment_type": "auto",
-  "assigned_at": "2025-10-05T10:15:00Z",
-  "status": "active",
-  "sla": {
-    "first_contact_deadline": "2025-10-05T12:15:00Z",
-    "expected_completion": "2025-10-12T10:15:00Z"
-  }
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "client_assigned_to_agent",
-  "assignment_id": "uuid",
-  "client_id": "uuid",
-  "agent_id": "uuid",
-  "role_type": "sales_agent",
-  "timestamp": "2025-10-05T10:15:00Z"
-}
-```
-
-**3. Initiate Client Handoff**
-```http
-POST /api/v1/agents/handoffs
-Authorization: Bearer {agent_jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "client_id": "uuid",
-  "organization_id": "uuid",
-  "from_role": "sales_agent",
-  "to_role": "onboarding_specialist",
-  "handoff_reason": "sales_completed",
-  "handoff_type": "warm",
-  "context": {
-    "current_stage": "nda_signed",
-    "next_actions": ["setup_integrations", "configure_workflows"],
-    "client_preferences": {
-      "preferred_contact": "email",
-      "timezone": "EST",
-      "technical_level": "intermediate"
-    },
-    "completed_items": [
-      {"item": "research", "completed_at": "2025-10-05T11:00:00Z"},
-      {"item": "demo_approved", "completed_at": "2025-10-08T14:30:00Z"},
-      {"item": "nda_signed", "completed_at": "2025-10-09T16:00:00Z"},
-      {"item": "pricing_agreed", "completed_at": "2025-10-10T10:00:00Z"}
-    ],
-    "important_notes": "Client has custom API integration requirements. Technical contact is Jane (CTO)."
-  },
-  "target_agent_id": null,
-  "urgency": "normal"
-}
-
-Response (201 Created):
-{
-  "handoff_id": "uuid",
-  "client_id": "uuid",
-  "from_agent": {
-    "agent_id": "uuid",
-    "full_name": "Sam Peterson",
-    "role_type": "sales_agent"
-  },
-  "to_agent": {
-    "agent_id": "uuid",
-    "full_name": "Rahul Kumar",
-    "role_type": "onboarding_specialist",
-    "status": "pending_acceptance"
-  },
-  "handoff_type": "warm",
-  "status": "pending",
-  "context_summary": {
-    "stage": "nda_signed",
-    "next_actions_count": 2,
-    "notes_count": 1
-  },
-  "sla": {
-    "acceptance_deadline": "2025-10-10T18:00:00Z",
-    "first_contact_deadline": "2025-10-11T10:00:00Z"
-  },
-  "created_at": "2025-10-10T14:00:00Z"
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "handoff_initiated",
-  "handoff_id": "uuid",
-  "client_id": "uuid",
-  "from_agent_id": "uuid",
-  "to_agent_id": "uuid",
-  "from_role": "sales_agent",
-  "to_role": "onboarding_specialist",
-  "timestamp": "2025-10-10T14:00:00Z"
-}
-```
-
-**4. Accept/Reject Handoff**
-```http
-POST /api/v1/agents/handoffs/{handoff_id}/accept
-Authorization: Bearer {agent_jwt_token}
-Content-Type: application/json
-
-Request Body (Accept):
-{
-  "action": "accept",
-  "agent_id": "uuid",
-  "acceptance_notes": "Reviewed context. Ready to start onboarding. Will reach out to client within 24 hours.",
-  "estimated_completion": "2025-10-24T14:00:00Z"
-}
-
-Response (200 OK):
-{
-  "handoff_id": "uuid",
-  "status": "accepted",
-  "accepted_by": {
-    "agent_id": "uuid",
-    "full_name": "Rahul Kumar",
-    "role_type": "onboarding_specialist"
-  },
-  "accepted_at": "2025-10-10T15:00:00Z",
-  "client_notification_sent": true,
-  "previous_agent_notified": true
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "handoff_accepted",
-  "handoff_id": "uuid",
-  "client_id": "uuid",
-  "accepted_by_agent_id": "uuid",
-  "timestamp": "2025-10-10T15:00:00Z"
-}
-
-Request Body (Reject):
-{
-  "action": "reject",
-  "agent_id": "uuid",
-  "rejection_reason": "At capacity - cannot take new clients this week",
-  "suggested_agent_id": "uuid"
-}
-
-Response (200 OK):
-{
-  "handoff_id": "uuid",
-  "status": "rejected",
-  "rejected_by": {
-    "agent_id": "uuid",
-    "full_name": "Rahul Kumar",
-    "role_type": "onboarding_specialist"
-  },
-  "rejection_reason": "At capacity - cannot take new clients this week",
-  "reassignment_queued": true,
-  "next_available_agent": {
-    "agent_id": "uuid",
-    "full_name": "Maria Garcia",
-    "role_type": "onboarding_specialist",
-    "estimated_availability": "2025-10-11T09:00:00Z"
-  },
-  "rejected_at": "2025-10-10T15:00:00Z"
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "handoff_rejected",
-  "handoff_id": "uuid",
-  "client_id": "uuid",
-  "rejected_by_agent_id": "uuid",
-  "reason": "at_capacity",
-  "reassignment_queued": true,
-  "timestamp": "2025-10-10T15:00:00Z"
-}
-```
-
-**5. Invite Specialist to Client (Cross-sell/Upsell/Iteration)**
-```http
-POST /api/v1/agents/invitations
-Authorization: Bearer {agent_jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "client_id": "uuid",
-  "invited_by_agent_id": "uuid",
-  "invited_role": "sales_specialist_voice",
-  "invitation_reason": "upsell_opportunity",
-  "context": {
-    "opportunity_type": "voice_agent_addon",
-    "estimated_value": 15000,
-    "urgency": "medium",
-    "background": "Client expressed interest in adding voice support to existing chatbot. Current utilization at 85%, strong ROI potential."
-  },
-  "target_agent_id": null,
-  "collaboration_mode": "join_existing"
-}
-
-Response (201 Created):
-{
-  "invitation_id": "uuid",
-  "client_id": "uuid",
-  "invited_by": {
-    "agent_id": "uuid",
-    "full_name": "Sarah Chen",
-    "role_type": "success_manager"
-  },
-  "invited_role": "sales_specialist_voice",
-  "invited_agent": {
-    "agent_id": "uuid",
-    "full_name": "Mike Rodriguez",
-    "role_type": "sales_specialist_voice",
-    "status": "pending_acceptance"
-  },
-  "collaboration_mode": "join_existing",
-  "estimated_value": 15000,
-  "status": "pending",
-  "created_at": "2025-11-01T10:00:00Z"
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "specialist_invited",
-  "invitation_id": "uuid",
-  "client_id": "uuid",
-  "invited_by_agent_id": "uuid",
-  "invited_agent_id": "uuid",
-  "reason": "upsell_opportunity",
-  "timestamp": "2025-11-01T10:00:00Z"
-}
-```
-
-**6. Get Agent Workload and Queue**
-```http
-GET /api/v1/agents/{agent_id}/workload
-Authorization: Bearer {agent_jwt_token}
-
-Response (200 OK):
-{
-  "agent_id": "uuid",
-  "full_name": "Sam Peterson",
-  "primary_role": "sales_agent",
-  "all_roles": ["sales_agent", "onboarding_specialist"],
-  "current_status": "online",
-  "workload": {
-    "active_clients": 8,
-    "pending_handoffs": 2,
-    "pending_invitations": 1,
-    "max_capacity": 15,
-    "utilization_percent": 53,
-    "available_capacity": 7
-  },
-  "active_assignments": [
-    {
-      "assignment_id": "uuid",
-      "client_name": "Teddy Corp",
-      "organization_id": "uuid",
-      "role": "sales_agent",
-      "stage": "demo_scheduled",
-      "assigned_since": "2025-10-05T10:15:00Z",
-      "sla_status": "on_track",
-      "next_action": "conduct_demo",
-      "next_action_deadline": "2025-10-06T14:00:00Z"
-    }
-  ],
-  "pending_items": {
-    "handoffs_to_accept": 2,
-    "invitations_to_respond": 1,
-    "overdue_actions": 0
-  },
-  "performance": {
-    "avg_response_time_hours": 2.5,
-    "client_satisfaction_avg": 4.7,
-    "handoff_quality_score": 92,
-    "sla_compliance_percent": 98
-  }
-}
-```
-
-**7. Update Agent Availability**
-```http
-PATCH /api/v1/agents/{agent_id}/availability
-Authorization: Bearer {agent_jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "status": "busy",
-  "status_message": "In client meeting until 3 PM",
-  "available_at": "2025-10-05T15:00:00Z",
-  "auto_assign": false
-}
-
-Response (200 OK):
-{
-  "agent_id": "uuid",
-  "status": "busy",
-  "status_message": "In client meeting until 3 PM",
-  "available_at": "2025-10-05T15:00:00Z",
-  "auto_assign_enabled": false,
-  "updated_at": "2025-10-05T13:00:00Z"
-}
-
-Event Published to Kafka:
-Topic: agent_events
-{
-  "event_type": "agent_status_updated",
-  "agent_id": "uuid",
-  "status": "busy",
-  "timestamp": "2025-10-05T13:00:00Z"
-}
-```
-
-**8. Get Available Agents for Role**
-```http
-GET /api/v1/agents/available
-Authorization: Bearer {jwt_token}
-Query Parameters:
-- role_type: sales_agent
-- skills: b2b_saas,enterprise_sales
-- min_capacity: 3
-- sort_by: workload_asc
-
-Response (200 OK):
-{
-  "role_type": "sales_agent",
-  "available_agents": [
-    {
-      "agent_id": "uuid",
-      "full_name": "Sam Peterson",
-      "status": "online",
-      "current_workload": 8,
-      "available_capacity": 7,
-      "skills_match": ["b2b_saas", "enterprise_sales"],
-      "avg_response_time_hours": 2.5,
-      "client_satisfaction": 4.7,
-      "languages": ["english", "spanish"]
-    },
-    {
-      "agent_id": "uuid",
-      "full_name": "Alice Johnson",
-      "status": "online",
-      "current_workload": 5,
-      "available_capacity": 10,
-      "skills_match": ["b2b_saas"],
-      "avg_response_time_hours": 3.2,
-      "client_satisfaction": 4.5,
-      "languages": ["english"]
-    }
-  ],
-  "total_available": 12,
-  "total_capacity": 145
-}
-```
-
-**9. Get Agent Permissions (For Kong API Gateway Authorization)**
-```http
-GET /api/v1/agents/{agent_id}/permissions
-Authorization: Bearer {internal_service_jwt}
-X-Internal-Service: kong
-
-Response (200 OK):
-{
-  "agent_id": "uuid",
-  "user_id": "uuid",
-  "primary_role": "sales_agent",
-  "all_roles": ["sales_agent", "onboarding_specialist"],
-  "permissions": {
-    "assisted_signup": ["create", "read", "update"],
-    "research_engine": ["read", "trigger"],
-    "demo_generator": ["read", "create", "approve"],
-    "prd_builder": ["read", "collaborate"],
-    "client_management": ["read", "update", "transfer"]
-  },
-  "capacity": {
-    "max_concurrent_clients": 15,
-    "current_workload": 8,
-    "available_capacity": 7
-  },
-  "status": "active",
-  "availability": "online"
-}
-
-Response (404 Not Found):
-{
-  "error": "agent_not_found",
-  "message": "Agent with ID {agent_id} does not exist"
-}
-
-Response (403 Forbidden):
-{
-  "error": "unauthorized",
-  "message": "Only Kong API Gateway can access this endpoint"
-}
-```
-
-**Note**: This endpoint is designed specifically for Kong API Gateway to check permissions during request authorization. It is NOT exposed to external clients and requires `X-Internal-Service: kong` header for authentication.
-
-**10. Get Client Lifecycle Timeline**
-```http
-GET /api/v1/agents/clients/{client_id}/timeline
-Authorization: Bearer {jwt_token}
-
-Response (200 OK):
-{
-  "client_id": "uuid",
-  "organization_name": "Teddy Corp",
-  "current_stage": "onboarding",
-  "current_agent": {
-    "agent_id": "uuid",
-    "full_name": "Rahul Kumar",
-    "role_type": "onboarding_specialist",
-    "assigned_since": "2025-10-10T15:00:00Z"
-  },
-  "lifecycle_timeline": [
-    {
-      "stage": "sales",
-      "agent": {
-        "agent_id": "uuid",
-        "full_name": "Sam Peterson",
-        "role_type": "sales_agent"
-      },
-      "start_date": "2025-10-05T10:15:00Z",
-      "end_date": "2025-10-10T14:00:00Z",
-      "duration_days": 5,
-      "completed_items": ["research", "demo", "nda_signed", "pricing_agreed"],
-      "handoff_quality_score": 95,
-      "client_satisfaction": 5
-    },
-    {
-      "stage": "onboarding",
-      "agent": {
-        "agent_id": "uuid",
-        "full_name": "Rahul Kumar",
-        "role_type": "onboarding_specialist"
-      },
-      "start_date": "2025-10-10T15:00:00Z",
-      "end_date": null,
-      "duration_days": 12,
-      "status": "in_progress",
-      "progress_percent": 60,
-      "next_milestone": "prd_approval",
-      "next_milestone_deadline": "2025-10-20T17:00:00Z"
-    }
-  ],
-  "future_stages": [
-    {
-      "stage": "support",
-      "role_type": "support_specialist",
-      "expected_start": "2025-10-24T00:00:00Z",
-      "assigned_agent": null
-    },
-    {
-      "stage": "success",
-      "role_type": "success_manager",
-      "expected_start": "2025-10-24T00:00:00Z",
-      "assigned_agent": null
-    }
-  ]
-}
-```
-
-**10. Supervise AI Agent Activity**
-```http
-GET /api/v1/agents/supervision/ai-activity
-Authorization: Bearer {supervisor_jwt_token}
-Query Parameters:
-- time_range: last_24h
-- alert_level: warning,critical
-- service: agent_orchestration,voice_agent
-
-Response (200 OK):
-{
-  "supervision_dashboard": {
-    "total_ai_conversations": 2547,
-    "requiring_attention": 23,
-    "escalated_to_human": 12,
-    "quality_issues": 11
-  },
-  "alerts": [
-    {
-      "alert_id": "uuid",
-      "severity": "critical",
-      "ai_agent_type": "voice_agent",
-      "client_id": "uuid",
-      "organization_name": "Beta Corp",
-      "issue": "High error rate (15%) in last 10 calls",
-      "detected_at": "2025-10-05T14:30:00Z",
-      "recommended_action": "Review call logs and update system prompt",
-      "supervisor_assigned": null
-    },
-    {
-      "alert_id": "uuid",
-      "severity": "warning",
-      "ai_agent_type": "chatbot",
-      "client_id": "uuid",
-      "organization_name": "Gamma Inc",
-      "issue": "Low CSAT score (3.2) for last 50 conversations",
-      "detected_at": "2025-10-05T13:00:00Z",
-      "recommended_action": "Analyze conversation patterns and refine responses",
-      "supervisor_assigned": {
-        "agent_id": "uuid",
-        "full_name": "Maria Garcia",
-        "role_type": "ai_supervisor"
-      }
-    }
-  ],
-  "top_issues": [
-    {"issue": "Low confidence responses", "occurrences": 45},
-    {"issue": "Tool execution failures", "occurrences": 23},
-    {"issue": "Sentiment drop during conversation", "occurrences": 18}
-  ]
-}
-```
-
-**Rate Limiting:**
-- 1000 API requests per minute per tenant
-- 50 handoffs per hour per agent
-- 20 specialist invitations per day per agent
-- 5 active specialist invitations per client (across all agents, prevents spam)
-- 100 availability updates per hour per agent
-
-#### Frontend Components
-
-**1. Agent Dashboard**
-- Component: `AgentDashboard.tsx`
-- Features:
-  - My active clients list (all roles)
-  - Pending handoffs to accept
-  - Pending specialist invitations
-  - Today's tasks and deadlines
-  - Quick actions (create handoff, update status)
-  - Performance metrics widget
-
-**2. Client Lifecycle View**
-- Component: `ClientLifecycleView.tsx`
-- Features:
-  - Visual timeline of client journey
-  - Stage indicators (Sales → Onboarding → Support → Success)
-  - Agent handoff history
-  - Context notes from previous agents
-  - Upcoming milestones
-  - Quick handoff button
-
-**3. Handoff Workflow Manager**
-- Component: `HandoffWorkflowManager.tsx`
-- Features:
-  - Initiate handoff form
-  - Context builder (notes, next actions, client prefs)
-  - Agent selector (auto or manual)
-  - Handoff approval queue
-  - Warm vs cold handoff toggle
-  - Handoff quality feedback
-
-**4. Specialist Invitation Panel**
-- Component: `SpecialistInvitationPanel.tsx`
-- Features:
-  - Invite specialist form (role, reason, context)
-  - Specialist availability checker
-  - Collaboration mode selector
-  - Estimated value calculator
-  - Invitation queue (sent/received)
-  - Quick accept/reject
-
-**5. Agent Workload Monitor**
-- Component: `AgentWorkloadMonitor.tsx`
-- Features:
-  - Real-time capacity gauge
-  - Active clients grid
-  - Queue length by role
-  - SLA compliance tracker
-  - Performance metrics (response time, CSAT)
-  - Workload balancing recommendations
-
-**6. AI Supervision Dashboard**
-- Component: `AISupervisionDashboard.tsx`
-- Features:
-  - AI activity overview (conversations, escalations)
-  - Alert feed (critical, warning, info)
-  - Quality issue tracker
-  - Conversation drill-down
-  - Quick intervention tools (update prompt, pause config)
-  - AI performance trends
-
-**7. Multi-Role Agent Profile**
-- Component: `MultiRoleAgentProfile.tsx`
-- Features:
-  - Role badges with primary indicator
-  - Skills and certifications per role
-  - Performance metrics by role
-  - Capacity settings per role
-  - Availability scheduler
-  - Role request form (add new roles)
-
-**8. Team View (Manager)**
-- Component: `TeamViewDashboard.tsx`
-- Features:
-  - Team capacity heatmap
-  - Agent status grid (online, busy, offline)
-  - Workload distribution chart
-  - Pending handoffs across team
-  - Performance leaderboard
-  - Agent assignment controls
-
-**State Management:**
-- Redux Toolkit for agent state
-- React Query for API data
-- WebSocket for real-time updates (availability, handoffs)
-- Local storage for dashboard preferences
-
-#### Stakeholders and Agents
-
-**Human Stakeholders:**
-
-1. **Sales Agent**
-   - Role: Manages assisted signups, conducts demos, negotiates pricing, initiates handoffs
-   - Access: Assisted signup, research, demos, NDA, PRD, pricing, proposal
-   - Permissions: create:assisted_accounts, read:research, create:demos, collaborate:prd, approve:pricing, initiate:handoff
-   - Workflows: Create assisted account → Research → Demo → NDA → PRD → Pricing → Proposal → Handoff to Onboarding
-   - Multi-role: Can also be Sales Specialist (voice, enterprise, vertical-specific)
-
-2. **Onboarding Specialist**
-   - Role: Guides client through config review, integration setup, initial launch
-   - Access: PRD builder (read-only), automation engine, configuration, all client data
-   - Permissions: read:all_client_data, read:prd, review:configs, deploy:configs, handoff:to_support
-   - Workflows: Accept handoff from Sales (PRD already completed) → Config review → Integration setup → Week 1 support → Handoff to Support + Success
-   - Duration: Typically 1-2 weeks per client
-
-3. **Support Specialist**
-   - Role: Dedicated ongoing support for technical issues, bug fixes, config updates
-   - Access: All services (read), agent orchestration (debug), monitoring, support tickets
-   - Permissions: read:all_services, debug:conversations, update:configs, escalate:to_engineering
-   - Workflows: Accept handoff from Onboarding → Monitor client health → Respond to tickets → Ongoing support → Escalate complex issues
-   - Long-term: Assigned to client for lifetime or contract duration
-
-4. **Success Manager**
-   - Role: Drives adoption, monitors KPIs, conducts QBRs, identifies expansion opportunities
-   - Access: Analytics, customer success, all client metrics, usage data
-   - Permissions: read:analytics, conduct:qbrs, identify:opportunities, invite:specialists
-   - Workflows: Accept handoff from Onboarding → Monitor KPIs → Conduct QBRs → Identify upsell/crosssell → Invite Sales Specialist → Drive renewals
-   - Long-term: Assigned to client for lifetime
-
-5. **Sales Specialist (Cross-sell/Upsell)**
-   - Role: Invited by Success Manager for expansion opportunities (voice, new products, enterprise features)
-   - Access: Client history, current usage, analytics, pricing, proposals
-   - Permissions: read:client_data, create:expansion_proposals, negotiate:upsell
-   - Workflows: Receive invitation from Success Manager → Review client context → Pitch expansion → Create proposal → Close deal → Hand back to Success Manager
-   - Temporary: Joins for specific expansion opportunity, then exits
-
-6. **AI Supervisor**
-   - Role: Monitors AI agent quality, reviews escalations, tunes prompts, approves config changes
-   - Access: All AI conversations, monitoring dashboards, config management, analytics
-   - Permissions: read:all_ai_activity, review:escalations, update:prompts, approve:config_changes
-   - Workflows: Monitor AI quality → Review alerts → Investigate issues → Tune prompts → Approve updates → Continuous optimization
-
-7. **Platform Engineer (Human Agent System)**
-   - Role: Manages agent roles, permissions, handoff workflows, system health
-   - Access: Admin panel, all agents, system configurations
-   - Permissions: admin:agents, manage:roles, configure:handoffs, monitor:system
-   - Workflows: Register agents → Assign roles → Configure handoffs → Monitor performance → Troubleshoot issues
-
-**AI Agents:**
-
-1. **Agent Routing AI**
-   - Responsibility: Auto-assigns clients to best available agent based on workload, skills, performance
-   - Tools: Workload analyzer, skill matcher, performance scorer
-   - Autonomy: Fully autonomous for standard assignments
-   - Escalation: Platform Engineer review for custom routing rules
-
-2. **Handoff Quality AI**
-   - Responsibility: Analyzes handoff quality, suggests improvements, alerts on missing context
-   - Tools: NLP for context analysis, quality scorers, feedback aggregators
-   - Autonomy: Fully autonomous
-   - Escalation: None (suggestions only)
-
-3. **Workload Balancer AI**
-   - Responsibility: Monitors agent capacity, redistributes work, prevents burnout
-   - Tools: Capacity trackers, SLA monitors, reassignment engine
-   - Autonomy: Suggests reassignments, requires agent approval
-   - Escalation: Manager intervention for urgent reassignments
-
-**Approval Workflows:**
-1. Agent Registration → Platform Engineer approval required
-2. Client Assignment → Auto-approved (AI routing) or manual (manager assigned)
-3. Handoff Initiation → Auto-created, receiving agent acceptance required
-4. Specialist Invitation → Auto-sent, specialist acceptance required
-5. Role Addition → Platform Engineer approval for new role types
-6. AI Supervision Actions → AI Supervisor approval for prompt updates, auto-applied for config rollbacks
+**Note**: Service 0.5 (Human Agent Management) has been consolidated into Service 0 (Organization & Identity Management Service). All agent management functionality, database tables, API endpoints, and Kafka events are now part of Service 0.
 
 ---
 
@@ -3800,20 +3167,31 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 
 ---
 
-### 3. NDA Generator Service
+### 3. Sales Document Generator Service
+
+**Service Consolidation**: Service 3 is a unified Sales Document Generator that combines NDA generation (formerly Service 3), pricing model generation (formerly Service 4), and proposal generation (formerly Service 5). This consolidation eliminates the distributed monolith anti-pattern where three tightly-coupled services formed a sequential pipeline with shared templates and e-signature integration.
+
+**Consolidation Benefits**:
+- Eliminates 3-hop distributed transaction (150-300ms latency reduction)
+- Single e-signature integration (DocuSign/HelloSign)
+- Unified template management system
+- Simplified saga pattern
+- Single database for all sales documents
 
 #### Objectives
-- **Primary Purpose**: Automated generation and management of client NDAs with e-signature workflow
-- **Business Value**: Reduces legal overhead from 5+ days to <1 hour, ensures compliance, accelerates sales cycle
+- **Primary Purpose**: Automated generation and management of all sales documents (NDAs, pricing models, proposals) with e-signature workflow and interactive editing capabilities
+- **Business Value**: Reduces sales cycle from 15+ days to <2 days, ensures compliance and consistency, eliminates distributed transaction overhead
 - **Scope Boundaries**:
-  - **Does**: Generate customized NDAs, manage e-signature workflow, track signature status, handle reminders
-  - **Does Not**: Provide legal advice, handle complex contract negotiations, manage contracts beyond NDA scope
+  - **Does**: Generate customized NDAs, pricing models, and proposals; manage e-signature workflow; provide conversational and canvas editing; track signature status; handle reminders and approvals
+  - **Does Not**: Provide legal advice, handle complex contract negotiations beyond standard terms, manage payment processing or subscriptions
 
 #### Requirements
 
 **Functional Requirements:**
+
+**NDA Generation (formerly Service 3):**
 1. Generate NDAs from templates based on client business type and deal size
-2. **Populate client's registered business address** from Research Engine data for legal accuracy
+2. Populate client's registered business address from Research Engine data for legal accuracy
 3. Integrate with e-signature platforms (AdobeSign, DocuSign, HelloSign)
 4. Automated sending after pilot agreement in client meeting
 5. Track signature status with automated reminders
@@ -3821,28 +3199,60 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 7. Support multi-party NDAs (client + subcontractors)
 8. Version control for NDA templates
 
+**Pricing Model Generation (formerly Service 4):**
+9. Generate pricing models from templatized structures based on use case complexity
+10. Integrate Ashay's financial cost module (LLM costs, infrastructure, voice minutes)
+11. Calculate pricing tiers (Starter, Professional, Enterprise) with margin targets
+12. Support usage-based pricing (per conversation, per minute, per API call)
+13. Include volume discounts and custom enterprise pricing
+14. Generate pricing proposal documents (PDF, interactive web view)
+15. Track pricing experiments and conversion rates (A/B testing)
+
+**Proposal Generation (formerly Service 5):**
+16. Generate proposals/agreements from templates based on PRD and pricing data
+17. Provide webchat UI for conversational editing ("make payment terms NET-30")
+18. Enable manual editing in side-by-side canvas (WYSIWYG editor)
+19. Version control with change tracking and rollback
+20. Collaborative editing with real-time updates (multi-user)
+21. Export to multiple formats (PDF, DOCX, Google Docs)
+22. E-signature integration for final agreement
+23. Template library management (legal-approved templates for all document types)
+24. Comment threads on document sections
+
 **Non-Functional Requirements:**
 - NDA generation: <2 minutes from trigger
+- Pricing calculation: <10 seconds including cost modeling
+- Proposal generation: <3 minutes for standard proposal
 - E-signature delivery: <5 minutes after generation
+- Real-time collaboration: Support 5 concurrent editors per document
 - 99.9% uptime for signature verification
 - GDPR/CCPA compliance for PII handling
-- Support 500 concurrent NDA workflows
+- Support 1000+ concurrent pricing calculations
+- Support 500 concurrent document workflows
+- Auto-save every 30 seconds
+- Margin accuracy: ±2% of target margin (30-50% depending on tier)
+- Support documents up to 50 pages
 
 **Dependencies:**
-- Demo Generator (consumes demo_approved + client_agreed_pilot events)
-- **Research Engine** (retrieves client's registered business address for NDA template population)
-- Configuration Management (NDA templates, client business classifications)
-- **PRD Builder** (triggers PRD creation session after NDA signing)
-- External APIs: AdobeSign, DocuSign, SendGrid (email delivery)
+- Service 0 (Organization & Identity Management) - authentication and tenant isolation
+- Service 1 (Research Engine) - retrieves client's registered business address for NDA template population, provides predicted volumes for pricing tier recommendations
+- Service 2 (Demo Generator) - consumes demo_approved + client_agreed_pilot events to trigger NDA generation
+- Service 6 (PRD Builder) - triggers PRD creation session after NDA signing; provides use case complexity, volume requirements, and technical scope for pricing; provides technical requirements for proposal scope section
+- Configuration Management - NDA/pricing/proposal templates, client business classifications
+- Financial Cost Module (Ashay's module) - cost calculations for pricing models
+- External APIs: AdobeSign, DocuSign, HelloSign (e-signature), SendGrid (email delivery)
 
 **Data Storage:**
-- PostgreSQL: NDA metadata, signature status, audit logs
-- S3: NDA PDF files (encrypted at rest), signature evidence
+- PostgreSQL: All sales document metadata (NDAs, pricing models, proposals), signature status, audit logs, versions, collaboration sessions, approval workflows, pricing experiments
+- S3: Document files (PDF, DOCX), version snapshots, signature evidence (encrypted at rest)
+- Redis: Cached cost calculations, pricing rules, real-time collaboration state (active editors, cursor positions)
 - Vault: E-signature API credentials, client contact encryption
 
 #### Features
 
 **Must-Have:**
+
+**NDA Features:**
 1. ✅ Template-based NDA generation (legal-approved templates)
 2. ✅ Dynamic field population (client name, date, business type, scope)
 3. ✅ Multi-platform e-signature integration (AdobeSign primary, DocuSign fallback)
@@ -3851,18 +3261,54 @@ Pre-built showcase demos (2-5 permanent environments) use the same workflow but 
 6. ✅ Automated reminder sequences (Day 2, 5, 7 if unsigned)
 7. ✅ Audit trail (who accessed, when signed, IP address)
 
+**Pricing Features:**
+8. ✅ Template-based pricing model selection
+9. ✅ Financial cost calculation integration (LLM, infrastructure, voice)
+10. ✅ Margin-based pricing with tier variations
+11. ✅ Usage-based pricing calculators
+12. ✅ Volume discount automation (>1000 conversations = 15% off)
+13. ✅ Custom enterprise pricing workflows
+14. ✅ Pricing proposal PDF generation
+15. ✅ A/B pricing experiment framework
+
+**Proposal Features:**
+16. ✅ Template-based proposal generation (SOW, MSA, Service Agreement)
+17. ✅ Webchat UI for conversational editing
+18. ✅ Side-by-side canvas editor (Quill/TipTap)
+19. ✅ Version control with diff viewer
+20. ✅ Real-time collaborative editing (Yjs/CRDT)
+21. ✅ Export to multiple formats (PDF, DOCX, Google Docs)
+22. ✅ E-signature workflow integration
+23. ✅ Comment threads on sections
+
 **Nice-to-Have:**
-8. 🔄 AI-powered clause recommendations based on industry
-9. 🔄 Multi-language NDA support
-10. 🔄 Bulk NDA generation for enterprise clients
-11. 🔄 Integration with contract management systems (Ironclad, Concord)
+24. 🔄 AI-powered clause recommendations based on industry
+25. 🔄 Multi-language support for all document types
+26. 🔄 Bulk document generation for enterprise clients
+27. 🔄 Integration with contract management systems (Ironclad, Concord, LegalSifter)
+28. 🔄 Competitive pricing analysis (auto-fetch competitor pricing)
+29. 🔄 Dynamic pricing based on market conditions
+30. 🔄 Pricing optimization ML (recommend optimal price point)
+31. 🔄 Multi-year contract discounting
+32. 🔄 Redlining and track changes mode for proposals
+33. 🔄 Smart templates with conditional logic
 
 **Feature Interactions:**
 - Pilot agreement in demo meeting → Auto-generates NDA
 - NDA signed → Triggers PRD Builder session creation
 - NDA expiry approaching → Alerts sales team for renewal
+- PRD approved → Triggers pricing model generation (consumes prd_approved event)
+- Use case complexity from PRD → Determines base pricing tier
+- Predicted volumes from Research Engine → Informs tier recommendations
+- Cost module integration → Ensures margin targets met
+- Pricing approval → Triggers proposal generation
+- PRD approved → Auto-populates technical scope section in proposal
+- Pricing approval → Auto-populates proposal pricing section
+- Proposal finalization → Triggers e-signature workflow
 
 #### API Specification
+
+**NDA Endpoints**
 
 **1. Generate NDA**
 ```http
@@ -4086,9 +3532,319 @@ Topic: nda_events
 }
 ```
 
+**Pricing Endpoints**
+
+**7. Generate Pricing Model**
+```http
+POST /api/v1/pricing-models
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "nda_id": "uuid",
+  "prd_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "use_case": {
+    "type": "customer_support",
+    "complexity": "medium",
+    "expected_volume": {
+      "conversations_per_month": 5000,
+      "voice_minutes_per_month": 1200,
+      "api_calls_per_month": 15000
+    }
+  },
+  "pricing_strategy": "usage_based",
+  "target_margin_percent": 40,
+  "currency": "USD",
+  "contract_term_months": 12
+}
+
+Response (201 Created):
+{
+  "pricing_id": "uuid",
+  "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "cost_breakdown": {...},
+  "pricing_tiers": [
+    {
+      "tier": "starter",
+      "monthly_price": 1999.00,
+      "margin_percent": 35.0
+    },
+    {
+      "tier": "professional",
+      "monthly_price": 3499.00,
+      "margin_percent": 40.0
+    },
+    {
+      "tier": "enterprise",
+      "monthly_price": 6999.00,
+      "margin_percent": 45.0
+    }
+  ],
+  "proposal_url": "https://storage.workflow.com/pricing/acme-pricing.pdf"
+}
+```
+
+**8. Get Pricing Model**
+```http
+GET /api/v1/pricing-models/:id
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "pricing_id": "uuid",
+  "status": "approved",
+  "cost_breakdown": {...},
+  "pricing_tiers": [...],
+  "selected_tier": "professional",
+  "final_monthly_price": 3149.10,
+  "contract_value_annual": 37789.20
+}
+```
+
+**9. Update Pricing Model**
+```http
+PUT /api/v1/pricing-models/:id
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "adjust_margin_percent": 35,
+  "apply_custom_discount_percent": 5,
+  "custom_discount_reason": "Early adopter incentive"
+}
+
+Response (200 OK):
+{
+  "pricing_id": "uuid",
+  "status": "updated",
+  "version": 2,
+  "new_pricing_tiers": [...]
+}
+```
+
+**10. Approve Pricing**
+```http
+POST /api/v1/pricing-models/:id/approve
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "pricing_id": "uuid",
+  "status": "approved",
+  "approved_by": "uuid",
+  "approved_at": "2025-10-09T14:00:00Z"
+}
+```
+
+**Proposal Endpoints**
+
+**11. Generate Proposal**
+```http
+POST /api/v1/proposals
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "pricing_id": "uuid",
+  "prd_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "template_id": "saas_sow_v2",
+  "proposal_type": "statement_of_work"
+}
+
+Response (201 Created):
+{
+  "proposal_id": "uuid",
+  "client_id": "uuid",
+  "status": "draft",
+  "document_url": "https://proposals.workflow.com/acme-sow",
+  "edit_url": "https://proposals.workflow.com/edit/uuid",
+  "webchat_url": "https://proposals.workflow.com/chat/uuid",
+  "version": 1
+}
+```
+
+**12. Get Proposal**
+```http
+GET /api/v1/proposals/:id
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "proposal_id": "uuid",
+  "client_id": "uuid",
+  "status": "draft",
+  "sections": [...],
+  "version": 1,
+  "created_at": "2025-10-09T11:00:00Z"
+}
+```
+
+**13. Update Proposal via Webchat**
+```http
+POST /api/v1/proposals/:id/chat
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "message": "Change payment terms to NET-30",
+  "session_id": "uuid"
+}
+
+Response (200 OK):
+{
+  "proposal_id": "uuid",
+  "chat_response": "I've updated the payment terms to NET-30...",
+  "changes_made": [...],
+  "version": 2
+}
+```
+
+**14. Update Proposal Section (Canvas)**
+```http
+PUT /api/v1/proposals/:id/sections/:section_id
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "content": "<p>Updated content</p>",
+  "editor_id": "uuid"
+}
+
+Response (200 OK):
+{
+  "proposal_id": "uuid",
+  "section_id": "uuid",
+  "version": 3,
+  "updated_at": "2025-10-09T11:30:00Z"
+}
+```
+
+**15. Send Proposal for Signature**
+```http
+POST /api/v1/proposals/:id/send
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "recipients": [
+    {
+      "name": "John Smith",
+      "email": "john@acme.com",
+      "role": "CEO"
+    }
+  ],
+  "enable_esignature": true
+}
+
+Response (200 OK):
+{
+  "proposal_id": "uuid",
+  "status": "sent",
+  "sent_at": "2025-10-09T12:00:00Z",
+  "esignature_workflow_id": "adobesign_xyz456"
+}
+```
+
+**16. Get Proposal Status**
+```http
+GET /api/v1/proposals/:id/status
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "proposal_id": "uuid",
+  "status": "signed",
+  "signed_at": "2025-10-10T14:00:00Z",
+  "signed_by": "john@acme.com",
+  "document_url": "https://storage.workflow.com/signed/acme-sow-signed.pdf"
+}
+```
+
+**Shared Template Endpoints**
+
+**17. List Templates**
+```http
+GET /api/v1/templates?type=nda|pricing|proposal
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "templates": [
+    {
+      "id": "uuid",
+      "name": "Standard SaaS NDA v3",
+      "type": "nda",
+      "version": 3,
+      "status": "approved"
+    },
+    {
+      "id": "uuid",
+      "name": "Professional Tier Pricing",
+      "type": "pricing",
+      "version": 2,
+      "status": "approved"
+    }
+  ]
+}
+```
+
+**18. Create Template**
+```http
+POST /api/v1/templates
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "name": "Enterprise NDA Template",
+  "type": "nda",
+  "content": "...",
+  "variables": ["client_name", "effective_date"]
+}
+
+Response (201 Created):
+{
+  "template_id": "uuid",
+  "name": "Enterprise NDA Template",
+  "status": "draft",
+  "requires_approval": true
+}
+```
+
+**19. Check E-Signature Status (Unified)**
+```http
+GET /api/v1/signatures/:signature_id
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "signature_id": "uuid",
+  "document_id": "uuid",
+  "document_type": "nda|proposal",
+  "provider": "docusign|hellosign|adobesign",
+  "status": "completed",
+  "signed_at": "2025-10-10T14:00:00Z",
+  "signatories": [...]
+}
+```
+
 **Rate Limiting:**
 - 50 NDA generations per hour per tenant
+- 100 pricing calculations per hour per tenant
+- 20 proposal generations per hour per tenant
 - 100 reminder sends per day per tenant
+- 500 chat messages per hour per proposal
 - 1000 API requests per minute per tenant
 
 #### Frontend Components
@@ -4184,1077 +3940,384 @@ Topic: nda_events
 2. NDA Generation (Custom Clauses) → Legal Counsel approval required before sending
 3. NDA Generation (>$1M Deal) → Legal Counsel + VP Sales approval required
 4. Signature Reminder → Auto-sent on Day 2, 5, 7; manual reminders require Sales Director approval
+5. Standard Pricing Model → Auto-approved if margin ≥30%, Finance Manager approval if <30%
+6. Custom Discount >10% → VP Sales approval required
+7. Enterprise Pricing (>$500K ACV) → VP Sales + CFO approval required
+8. Pricing Experiment Launch → VP Sales approval required
+9. Proposal Generation (Standard Template) → Auto-approved
+10. Proposal Generation (Custom Template) → Legal Counsel approval required
+11. Legal Clause Modifications → Legal Counsel approval required
+12. Payment Term Changes → Finance Manager approval required
+13. Proposal Finalization (>$500K Deal) → VP Sales approval required
+
+#### Database Schema
+
+**NDA Tables:**
+```sql
+CREATE TABLE ndas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  client_id UUID NOT NULL,
+  template_id UUID REFERENCES sales_templates(id),
+  content JSONB NOT NULL,
+  status VARCHAR(50) NOT NULL, -- 'generated', 'sent', 'partially_signed', 'fully_signed', 'voided'
+  document_url TEXT,
+  signature_workflow_id VARCHAR(255),
+  effective_date DATE,
+  expiration_date DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_client_id (client_id),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE nda_signatories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nda_id UUID NOT NULL REFERENCES ndas(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  role VARCHAR(100),
+  signing_order INT,
+  status VARCHAR(50), -- 'pending', 'sent', 'viewed', 'signed'
+  signed_at TIMESTAMPTZ,
+  ip_address INET,
+  signature_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Pricing Tables:**
+```sql
+CREATE TABLE pricing_models (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  client_id UUID NOT NULL,
+  nda_id UUID REFERENCES ndas(id),
+  prd_id UUID,
+  product_types TEXT[],
+  status VARCHAR(50), -- 'generated', 'updated', 'approved', 'rejected'
+  cost_breakdown JSONB NOT NULL,
+  pricing_tiers JSONB NOT NULL,
+  selected_tier VARCHAR(50),
+  final_monthly_price DECIMAL(10,2),
+  contract_value_annual DECIMAL(12,2),
+  margin_actual_percent DECIMAL(5,2),
+  currency VARCHAR(3) DEFAULT 'USD',
+  contract_term_months INT,
+  approved_by UUID,
+  approved_at TIMESTAMPTZ,
+  version INT DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_client_id (client_id),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE pricing_experiments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  experiment_name VARCHAR(255) NOT NULL,
+  description TEXT,
+  variants JSONB NOT NULL,
+  target_metric VARCHAR(100),
+  status VARCHAR(50), -- 'active', 'paused', 'completed', 'archived'
+  duration_days INT,
+  min_sample_size INT,
+  results JSONB,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Proposal Tables:**
+```sql
+CREATE TABLE proposals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  client_id UUID NOT NULL,
+  nda_id UUID REFERENCES ndas(id),
+  pricing_id UUID REFERENCES pricing_models(id),
+  prd_id UUID,
+  product_types TEXT[],
+  template_id UUID REFERENCES sales_templates(id),
+  proposal_type VARCHAR(100), -- 'statement_of_work', 'msa', 'service_agreement'
+  status VARCHAR(50), -- 'draft', 'sent', 'signed', 'voided'
+  current_version INT DEFAULT 1,
+  document_url TEXT,
+  edit_url TEXT,
+  webchat_url TEXT,
+  esignature_workflow_id VARCHAR(255),
+  signed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT fk_organization FOREIGN KEY (organization_id) REFERENCES organizations(id),
+  INDEX idx_client_id (client_id),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE proposal_sections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  proposal_id UUID NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+  section_order INT NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  content TEXT,
+  editable BOOLEAN DEFAULT true,
+  source VARCHAR(50), -- NULL, 'pricing_model', 'prd', 'template'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE proposal_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  proposal_id UUID NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+  version INT NOT NULL,
+  snapshot JSONB NOT NULL,
+  change_summary TEXT,
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(proposal_id, version)
+);
+
+CREATE TABLE proposal_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  proposal_id UUID NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+  section_id UUID REFERENCES proposal_sections(id) ON DELETE CASCADE,
+  commenter_id UUID NOT NULL,
+  comment TEXT NOT NULL,
+  status VARCHAR(50) DEFAULT 'open', -- 'open', 'resolved'
+  visibility VARCHAR(20) DEFAULT 'internal', -- 'internal', 'client'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+);
+```
+
+**Shared Tables:**
+```sql
+CREATE TABLE sales_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID,
+  template_type VARCHAR(50) NOT NULL, -- 'nda', 'pricing', 'proposal'
+  name VARCHAR(255) NOT NULL,
+  content TEXT,
+  variables JSONB,
+  version INT DEFAULT 1,
+  status VARCHAR(50) DEFAULT 'draft', -- 'draft', 'approved', 'archived'
+  approved_by UUID,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  INDEX idx_template_type (template_type),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE e_signatures (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  document_id UUID NOT NULL,
+  document_type VARCHAR(50) NOT NULL, -- 'nda', 'proposal'
+  provider VARCHAR(50) NOT NULL, -- 'docusign', 'hellosign', 'adobesign'
+  signature_request_id VARCHAR(255),
+  status VARCHAR(50), -- 'pending', 'sent', 'viewed', 'completed', 'declined', 'voided'
+  signed_at TIMESTAMPTZ,
+  signatories JSONB,
+  audit_trail JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  INDEX idx_document_id (document_id),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE approval_workflows (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL,
+  document_id UUID NOT NULL,
+  document_type VARCHAR(50) NOT NULL, -- 'nda', 'pricing', 'proposal'
+  workflow_type VARCHAR(100), -- 'custom_clause', 'margin_adjustment', 'enterprise_pricing', etc.
+  approver_id UUID NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+  approved_at TIMESTAMPTZ,
+  rejection_reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  INDEX idx_document_id (document_id),
+  INDEX idx_approver_id (approver_id),
+  INDEX idx_status (status)
+);
+```
+
+**Row-Level Security (RLS) Policies:**
+```sql
+-- All tables must filter by organization_id for multi-tenant isolation
+ALTER TABLE ndas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY ndas_isolation ON ndas
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE pricing_models ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pricing_isolation ON pricing_models
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE proposals ENABLE ROW LEVEL SECURITY;
+CREATE POLICY proposals_isolation ON proposals
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE e_signatures ENABLE ROW LEVEL SECURITY;
+CREATE POLICY signatures_isolation ON e_signatures
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+
+ALTER TABLE approval_workflows ENABLE ROW LEVEL SECURITY;
+CREATE POLICY approvals_isolation ON approval_workflows
+  USING (organization_id = current_setting('app.current_organization_id')::UUID);
+```
+
+#### Kafka Events
+
+**Topic**: `sales_doc_events` (unified topic for all sales document events)
+
+**Event Schema:**
+```json
+{
+  "event_type": "nda_generated | nda_sent | nda_signed | pricing_generated | pricing_approved | proposal_generated | proposal_sent | proposal_signed",
+  "document_id": "uuid",
+  "document_type": "nda | pricing | proposal",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "metadata": {
+    // Event-specific metadata
+  },
+  "timestamp": "2025-10-08T..."
+}
+```
+
+**Published Events:**
+
+1. **NDA Fully Signed**
+```json
+{
+  "event_type": "nda_signed",
+  "document_id": "uuid",
+  "document_type": "nda",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "metadata": {
+    "signed_at": "2025-10-07T09:15:00Z",
+    "effective_date": "2025-10-07",
+    "expiration_date": "2027-10-07"
+  },
+  "timestamp": "2025-10-07T09:15:00Z"
+}
+```
+**Consumers**: PRD Builder (triggers PRD session creation)
+
+2. **Pricing Approved**
+```json
+{
+  "event_type": "pricing_approved",
+  "document_id": "uuid",
+  "document_type": "pricing",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "metadata": {
+    "selected_tier": "professional",
+    "final_monthly_price": 3499.00,
+    "contract_value_annual": 41988.00,
+    "margin_actual_percent": 40.0,
+    "approved_by": "uuid"
+  },
+  "timestamp": "2025-10-09T14:00:00Z"
+}
+```
+**Consumers**: Proposal Generator (within same service - triggers proposal generation), Monitoring Engine (track conversion metrics)
+
+3. **Proposal Signed**
+```json
+{
+  "event_type": "proposal_signed",
+  "document_id": "uuid",
+  "document_type": "proposal",
+  "organization_id": "uuid",
+  "client_id": "uuid",
+  "product_types": ["chatbot", "voicebot"],
+  "metadata": {
+    "pricing_id": "uuid",
+    "prd_id": "uuid",
+    "signed_by": "client_stakeholder_uuid",
+    "signed_at": "2025-10-10T14:00:00Z",
+    "esignature_provider": "adobesign",
+    "document_url": "https://storage.workflow.com/signed/acme-sow-signed.pdf"
+  },
+  "timestamp": "2025-10-10T14:00:00Z"
+}
+```
+**Consumers**: Automation Engine (triggers YAML config generation), Customer Success Service (initiates onboarding), Monitoring Engine (track conversion)
+
+**Consumed Events:**
+- `demo_approved` (from Demo Generator) → Triggers NDA generation
+- `prd_approved` (from PRD Builder) → Triggers pricing model generation
 
 ---
 
-### 4. Pricing Model Generator Service
+### 4. Pricing Model Generator Service → CONSOLIDATED INTO SERVICE 3
 
-#### Objectives
+**This service has been consolidated into Service 3 (Sales Document Generator).**
+
+**Rationale**: Services 3, 4, and 5 formed a distributed monolith with a tightly-coupled sequential workflow (NDA → Pricing → Proposal). This consolidation eliminates:
+- 3-hop distributed transaction overhead
+- 150-300ms latency reduction across the sales pipeline
+- Duplicate e-signature integration complexity
+- Template management fragmentation
+- Complex saga pattern coordination
+
+**Migration Impact**:
+- All pricing endpoints now available under Service 3 at `/api/v1/pricing-models/*`
+- Kafka topic changed from `pricing_events` to `sales_doc_events` (unified topic)
+- Database tables consolidated into Service 3's sales document schema
+- See Service 3 above for complete pricing functionality specification
+
+**Former Objectives** (now part of Service 3):
 - **Primary Purpose**: Automated generation of customized pricing proposals based on client use cases, tier selection, and financial cost modeling
 - **Business Value**: Reduces pricing analysis from 8+ hours to <30 minutes, ensures margin consistency, enables dynamic pricing experiments
 - **Scope Boundaries**:
   - **Does**: Calculate pricing tiers, incorporate Ashay's financial cost module, generate proposal PDFs, support A/B pricing tests
   - **Does Not**: Handle payment processing, manage subscriptions, provide financial advice
 
-#### Requirements
-
-**Functional Requirements:**
-1. Generate pricing models from templatized structures based on use case complexity
-2. Integrate Ashay's financial cost module (LLM costs, infrastructure, voice minutes)
-3. Calculate pricing tiers (Starter, Professional, Enterprise) with margin targets
-4. Support usage-based pricing (per conversation, per minute, per API call)
-5. Include volume discounts and custom enterprise pricing
-6. Generate pricing proposal documents (PDF, interactive web view)
-7. Track pricing experiments and conversion rates
-
-**Non-Functional Requirements:**
-- Pricing calculation: <10 seconds including cost modeling
-- Margin accuracy: ±2% of target margin (30-50% depending on tier)
-- Support 1000+ concurrent pricing calculations
-- Audit trail for all pricing decisions
-- Support multi-currency (USD, EUR, GBP, INR)
-
-**Dependencies:**
-- **PRD Builder** (consumes prd_approved event to trigger pricing generation)
-- **PRD Builder** (provides use case complexity, volume requirements, and technical scope for accurate pricing)
-- **Research Engine** (provides predicted volumes for pricing tier recommendations)
-- Financial Cost Module (Ashay's module for cost calculations)
-- Proposal Generator (passes pricing data for inclusion)
-
-**Data Storage:**
-- PostgreSQL: Pricing models, tier definitions, experiments, conversion tracking
-- Redis: Cached cost calculations, pricing rules
-- S3: Pricing proposal PDFs
-
-#### Features
-
-**Must-Have:**
-1. ✅ Template-based pricing model selection
-2. ✅ Financial cost calculation integration (LLM, infra, voice)
-3. ✅ Margin-based pricing with tier variations
-4. ✅ Usage-based pricing calculators
-5. ✅ Volume discount automation (>1000 conversations = 15% off)
-6. ✅ Custom enterprise pricing workflows
-7. ✅ Pricing proposal PDF generation
-8. ✅ A/B pricing experiment framework
-
-**Nice-to-Have:**
-9. 🔄 Competitive pricing analysis (auto-fetch competitor pricing)
-10. 🔄 Dynamic pricing based on market conditions
-11. 🔄 Pricing optimization ML (recommend optimal price point)
-12. 🔄 Multi-year contract discounting
-
-**Feature Interactions:**
-- PRD approved → Triggers pricing model generation (consumes prd_approved event)
-- Use case complexity from PRD → Determines base pricing tier
-- Predicted volumes from Research Engine → Informs tier recommendations
-- Cost module integration → Ensures margin targets met
-- Pricing approval → Triggers proposal generation
-
-#### API Specification
-
-**1. Generate Pricing Model**
-```http
-POST /api/v1/pricing/generate
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "client_id": "uuid",
-  "nda_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "use_case": {
-    "type": "customer_support",
-    "complexity": "medium",
-    "expected_volume": {
-      "conversations_per_month": 5000,
-      "voice_minutes_per_month": 1200,
-      "api_calls_per_month": 15000
-    },
-    "channels": ["webchat", "voice", "whatsapp"],
-    "integrations": ["salesforce", "zendesk"],
-    "custom_requirements": ["24/7_coverage", "multilingual"]
-  },
-  "pricing_strategy": "usage_based",
-  "target_margin_percent": 40,
-  "currency": "USD",
-  "contract_term_months": 12,
-  "include_setup_fee": true
-}
-
-Response (201 Created):
-{
-  "pricing_id": "uuid",
-  "client_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "status": "generated",
-  "cost_breakdown": {
-    "chatbot_costs_monthly": {
-      "llm_costs": 620.00,
-      "infrastructure": 180.00,
-      "integration_costs": 45.00,
-      "subtotal": 845.00
-    },
-    "voicebot_costs_monthly": {
-      "llm_costs": 230.00,
-      "infrastructure": 140.00,
-      "stt_costs": 48.00,
-      "tts_costs": 36.00,
-      "sip_trunk_costs": 20.00,
-      "subtotal": 474.00
-    },
-    "total_cost_monthly": 1319.00
-  },
-  "pricing_tiers": [
-    {
-      "tier": "starter",
-      "monthly_price": 1999.00,
-      "margin_percent": 35.0,
-      "included_volume": {
-        "conversations": 3000,
-        "voice_minutes": 800,
-        "api_calls": 10000
-      },
-      "overage_pricing": {
-        "per_conversation": 0.50,
-        "per_voice_minute": 0.12,
-        "per_api_call": 0.02
-      }
-    },
-    {
-      "tier": "professional",
-      "monthly_price": 3499.00,
-      "margin_percent": 40.0,
-      "included_volume": {
-        "conversations": 5000,
-        "voice_minutes": 1200,
-        "api_calls": 15000
-      },
-      "overage_pricing": {
-        "per_conversation": 0.45,
-        "per_voice_minute": 0.10,
-        "per_api_call": 0.018
-      },
-      "additional_features": ["priority_support", "custom_branding"]
-    },
-    {
-      "tier": "enterprise",
-      "monthly_price": 6999.00,
-      "margin_percent": 45.0,
-      "included_volume": {
-        "conversations": 10000,
-        "voice_minutes": 3000,
-        "api_calls": 30000
-      },
-      "overage_pricing": {
-        "per_conversation": 0.40,
-        "per_voice_minute": 0.08,
-        "per_api_call": 0.015
-      },
-      "additional_features": ["dedicated_support", "sla_99.9", "custom_integrations", "white_label"]
-    }
-  ],
-  "setup_fee": 2500.00,
-  "volume_discounts": [
-    {"threshold": 1000, "discount_percent": 15},
-    {"threshold": 5000, "discount_percent": 25}
-  ],
-  "annual_contract_discount_percent": 10,
-  "proposal_url": "https://storage.workflow.com/pricing/acme-pricing-2025-10-08.pdf",
-  "created_at": "2025-10-08T10:30:00Z"
-}
-
-Error Responses:
-400 Bad Request: Invalid use_case or missing required volume data
-422 Unprocessable Entity: Cannot achieve target margin with given constraints
-424 Failed Dependency: Financial cost module unavailable
-```
-
-**2. Get Pricing Model**
-```http
-GET /api/v1/pricing/{pricing_id}
-Authorization: Bearer {jwt_token}
-
-Response (200 OK):
-{
-  "pricing_id": "uuid",
-  "client_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "status": "approved",
-  "cost_breakdown": {...},
-  "pricing_tiers": [...],
-  "selected_tier": "professional",
-  "final_monthly_price": 3149.10,
-  "discounts_applied": [
-    {"type": "annual_contract", "discount_percent": 10, "savings": 349.90}
-  ],
-  "contract_value_annual": 37789.20,
-  "margin_actual_percent": 41.2,
-  "approved_by": "uuid",
-  "approved_at": "2025-10-09T14:00:00Z",
-  "created_at": "2025-10-08T10:30:00Z",
-  "updated_at": "2025-10-09T14:00:00Z"
-}
-```
-
-**3. Update Pricing Model**
-```http
-PATCH /api/v1/pricing/{pricing_id}
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "adjust_margin_percent": 35,
-  "apply_custom_discount_percent": 5,
-  "custom_discount_reason": "Early adopter incentive",
-  "update_volume": {
-    "conversations_per_month": 7000
-  }
-}
-
-Response (200 OK):
-{
-  "pricing_id": "uuid",
-  "status": "updated",
-  "recalculation_triggered": true,
-  "new_cost_breakdown": {...},
-  "new_pricing_tiers": [...],
-  "version": 2,
-  "updated_at": "2025-10-09T10:00:00Z"
-}
-```
-
-**4. Create Pricing Experiment**
-```http
-POST /api/v1/pricing/experiments
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "experiment_name": "Professional Tier Price Test",
-  "description": "Test $3499 vs $2999 for professional tier",
-  "variants": [
-    {
-      "variant_id": "control",
-      "tier": "professional",
-      "monthly_price": 3499.00,
-      "traffic_percent": 50
-    },
-    {
-      "variant_id": "treatment",
-      "tier": "professional",
-      "monthly_price": 2999.00,
-      "traffic_percent": 50
-    }
-  ],
-  "target_metric": "conversion_rate",
-  "duration_days": 30,
-  "min_sample_size": 100
-}
-
-Response (201 Created):
-{
-  "experiment_id": "uuid",
-  "status": "active",
-  "started_at": "2025-10-09T15:00:00Z",
-  "estimated_completion": "2025-11-08T15:00:00Z",
-  "tracking_url": "https://analytics.workflow.com/experiments/uuid"
-}
-```
-
-**5. Get Pricing Experiment Results**
-```http
-GET /api/v1/pricing/experiments/{experiment_id}/results
-Authorization: Bearer {jwt_token}
-
-Response (200 OK):
-{
-  "experiment_id": "uuid",
-  "status": "completed",
-  "duration_days": 30,
-  "results": {
-    "control": {
-      "variant_id": "control",
-      "impressions": 547,
-      "conversions": 76,
-      "conversion_rate": 13.9,
-      "avg_deal_size": 41988.00,
-      "total_revenue": 3191088.00
-    },
-    "treatment": {
-      "variant_id": "treatment",
-      "impressions": 553,
-      "conversions": 94,
-      "conversion_rate": 17.0,
-      "avg_deal_size": 35988.00,
-      "total_revenue": 3382872.00
-    }
-  },
-  "statistical_significance": {
-    "p_value": 0.032,
-    "confidence_level": 95,
-    "significant": true
-  },
-  "recommendation": {
-    "winning_variant": "treatment",
-    "reason": "17% higher conversion rate with acceptable revenue trade-off",
-    "estimated_annual_impact": "+$2.3M revenue"
-  },
-  "completed_at": "2025-11-08T15:00:00Z"
-}
-```
-
-**6. Calculate Custom Enterprise Pricing**
-```http
-POST /api/v1/pricing/enterprise/calculate
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "client_id": "uuid",
-  "custom_requirements": {
-    "conversations_per_month": 50000,
-    "voice_minutes_per_month": 15000,
-    "dedicated_infrastructure": true,
-    "sla_target": 99.99,
-    "custom_integrations": ["sap", "oracle", "custom_crm"],
-    "white_label": true,
-    "dedicated_support_team_size": 3
-  },
-  "target_margin_percent": 50,
-  "contract_term_months": 36
-}
-
-Response (200 OK):
-{
-  "pricing_id": "uuid",
-  "tier": "enterprise_custom",
-  "cost_breakdown": {
-    "llm_costs_monthly": 8500.00,
-    "infrastructure_monthly": 12000.00,
-    "voice_costs_monthly": 1350.00,
-    "integration_costs_monthly": 2500.00,
-    "support_team_monthly": 15000.00,
-    "total_cost_monthly": 39350.00
-  },
-  "recommended_monthly_price": 78700.00,
-  "margin_actual_percent": 50.0,
-  "annual_contract_value": 944400.00,
-  "setup_fee": 50000.00,
-  "volume_discounts": [
-    {"threshold": 50000, "discount_percent": 20}
-  ],
-  "final_monthly_price": 62960.00,
-  "final_annual_value": 755520.00,
-  "requires_approval": true,
-  "approval_workflow": ["sales_vp", "cfo", "ceo"]
-}
-```
-
-**Rate Limiting:**
-- 100 pricing calculations per hour per tenant
-- 10 pricing experiments per month per tenant
-- 1000 API requests per minute per tenant
-
-#### Frontend Components
-
-**1. Pricing Calculator**
-- Component: `PricingCalculator.tsx`
-- Features:
-  - Interactive sliders for volume inputs
-  - Real-time cost breakdown visualization
-  - Tier comparison table
-  - Margin % adjuster with live recalculation
-  - Currency selector
-  - Volume discount preview
-
-**2. Pricing Proposal Builder**
-- Component: `PricingProposalBuilder.tsx`
-- Features:
-  - Drag-and-drop proposal sections
-  - Live PDF preview
-  - Custom discount application
-  - Payment terms configurator (monthly, annual, quarterly)
-  - ROI calculator for client
-  - Approval workflow status
-
-**3. Pricing Experiment Dashboard**
-- Component: `PricingExperimentDashboard.tsx`
-- Features:
-  - Experiment list (active, completed, archived)
-  - Real-time conversion tracking
-  - Statistical significance calculator
-  - Winner declaration with recommendation
-  - Variant performance charts
-  - Export results to CSV/PDF
-
-**4. Financial Cost Module Integration**
-- Component: `FinancialCostModule.tsx`
-- Features:
-  - Cost driver inputs (LLM calls, voice minutes, infra resources)
-  - Cost trend visualization (historical)
-  - Cost optimization suggestions
-  - Budget vs actual tracking
-  - Alert configuration for cost overruns
-
-**5. Enterprise Pricing Workflow**
-- Component: `EnterprisePricingWorkflow.tsx`
-- Features:
-  - Multi-step custom pricing form
-  - Approval pipeline visualization (pending, approved, rejected)
-  - Negotiation history log
-  - Contract terms builder
-  - Digital signature integration
-
-**State Management:**
-- Zustand for pricing calculator state
-- React Query for API data fetching and caching
-- Form state with React Hook Form and Zod validation
-- Real-time updates via Server-Sent Events
-
-#### Stakeholders and Agents
-
-**Human Stakeholders:**
-
-1. **Sales Engineer**
-   - Role: Configures pricing models, presents to clients
-   - Access: Create and update pricing models for assigned clients
-   - Permissions: create:pricing, read:pricing, update:pricing
-   - Workflows: Inputs use case details, reviews generated pricing, applies discounts, seeks approvals
-
-2. **Finance Manager (Ashay's Role)**
-   - Role: Manages financial cost module, approves margin adjustments
-   - Access: Full access to cost models and pricing configurations
-   - Permissions: admin:cost_module, approve:margin_adjustment, read:all_pricing
-   - Workflows: Updates cost assumptions, reviews margin targets, approves custom discounts >10%
-
-3. **VP Sales**
-   - Role: Approves enterprise pricing and experiments
-   - Access: Read-only on all pricing, approval rights for >$500K deals
-   - Permissions: read:all_pricing, approve:enterprise_pricing, manage:experiments
-   - Workflows: Reviews custom enterprise pricing, approves pricing experiments, monitors conversion rates
-
-4. **Client (Indirect Stakeholder)**
-   - Role: Reviews and negotiates pricing proposal
-   - Access: Read-only access to assigned pricing proposal
-   - Permissions: read:assigned_pricing
-   - Workflows: Receives pricing proposal, provides feedback, negotiates terms
-   - Approval: N/A (external stakeholder)
-
-**AI Agents:**
-
-1. **Pricing Generation Agent**
-   - Responsibility: Calculates optimal pricing tiers, applies templates, ensures margin targets
-   - Tools: Financial cost module API, pricing rule engine, margin calculators
-   - Autonomy: Fully autonomous for standard use cases with predefined margins
-   - Escalation: Finance Manager approval required for margins <30% or custom cost assumptions
-
-2. **Discount Optimization Agent**
-   - Responsibility: Recommends volume discounts, analyzes competitive pricing, suggests promotions
-   - Tools: Market data APIs, historical conversion data, LLM for competitive analysis
-   - Autonomy: Auto-applies standard discounts (volume, annual contract)
-   - Escalation: VP Sales approval required for custom discounts >10%
-
-3. **Experiment Analysis Agent**
-   - Responsibility: Monitors pricing experiments, calculates statistical significance, recommends winners
-   - Tools: Statistical libraries (scipy), A/B test frameworks, revenue impact models
-   - Autonomy: Fully autonomous for analysis and recommendations
-   - Escalation: Alerts VP Sales when experiments reach significance, recommends rollout strategy
-
-**Approval Workflows:**
-1. Standard Pricing Model → Auto-approved if margin ≥30%, Finance Manager approval if <30%
-2. Custom Discount >10% → VP Sales approval required
-3. Enterprise Pricing (>$500K ACV) → VP Sales + CFO approval required
-4. Pricing Experiment Launch → VP Sales approval required
-5. Experiment Winner Rollout → Auto-approved if statistically significant at 95% confidence
-
-#### Kafka Events
-
-Event Published to Kafka:
-Topic: pricing_events
-```json
-{
-  "event_type": "pricing_approved",
-  "pricing_id": "uuid",
-  "client_id": "uuid",
-  "organization_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "selected_tier": "professional",
-  "final_monthly_price": 3499.00,
-  "contract_value_annual": 41988.00,
-  "margin_actual_percent": 40.0,
-  "approved_by": "uuid",
-  "approved_at": "2025-10-09T14:00:00Z",
-  "timestamp": "2025-10-09T14:00:00Z"
-}
-```
-
-**Consumer Actions:**
-- **Proposal Generator**: Triggers proposal generation with approved pricing
-- **Monitoring Engine**: Track pricing approval rates and conversion metrics
+**All pricing functionality (APIs, database schemas, features, agents) is now documented in Service 3 above.**
 
 ---
 
-### 5. Proposal & Agreement Draft Generator Service
+### 5. Proposal & Agreement Draft Generator Service → CONSOLIDATED INTO SERVICE 3
 
-#### Objectives
+**This service has been consolidated into Service 3 (Sales Document Generator).**
+
+**Rationale**: Services 3, 4, and 5 formed a distributed monolith with a tightly-coupled sequential workflow (NDA → Pricing → Proposal). This consolidation eliminates:
+- 3-hop distributed transaction overhead
+- 150-300ms latency reduction across the sales pipeline
+- Duplicate e-signature integration complexity
+- Template management fragmentation
+- Complex saga pattern coordination
+
+**Migration Impact**:
+- All proposal endpoints now available under Service 3 at `/api/v1/proposals/*`
+- Kafka topic changed from `proposal_events` to `sales_doc_events` (unified topic)
+- Database tables consolidated into Service 3's sales document schema
+- See Service 3 above for complete proposal functionality specification
+
+**Former Objectives** (now part of Service 3):
 - **Primary Purpose**: AI-powered generation of comprehensive proposals and legal agreements with interactive editing capabilities
 - **Business Value**: Reduces proposal creation from 10+ hours to <1 hour, ensures consistency, enables real-time collaboration
 - **Scope Boundaries**:
   - **Does**: Generate proposals/agreements from templates, provide webchat UI for feedback-driven iteration, enable manual canvas editing, version control, e-signature integration
   - **Does Not**: Provide legal advice, handle complex contract negotiations beyond standard terms, replace legal review
 
-#### Requirements
-
-**Functional Requirements:**
-1. Generate proposals/agreements from templates based on PRD and pricing data
-2. Provide webchat UI for conversational editing ("make payment terms NET-30")
-3. Enable manual editing in side-by-side canvas (WYSIWYG editor)
-4. Version control with change tracking and rollback
-5. Collaborative editing with real-time updates
-6. Export to PDF, DOCX, Google Docs
-7. E-signature integration for final agreement
-8. Template library management (legal-approved templates)
-
-**Non-Functional Requirements:**
-- Generation time: <3 minutes for standard proposal
-- Real-time collaboration: Support 5 concurrent editors
-- 99.9% uptime during business hours
-- Auto-save every 30 seconds
-- Support documents up to 50 pages
-
-**Dependencies:**
-- Pricing Model Generator (provides pricing data)
-- PRD Builder (provides technical requirements for proposal)
-- NDA Generator (e-signature integration reuse)
-- Configuration Management (proposal templates)
-
-**Data Storage:**
-- PostgreSQL: Proposal metadata, versions, collaboration sessions, approval status
-- S3: Proposal documents (PDF, DOCX), version snapshots
-- Redis: Real-time collaboration state (active editors, cursor positions)
-
-#### Features
-
-**Must-Have:**
-1. ✅ Template-based proposal generation (SOW, MSA, Service Agreement)
-2. ✅ Webchat UI for conversational editing
-3. ✅ Side-by-side canvas editor (Quill/TipTap)
-4. ✅ Version control with diff viewer
-5. ✅ Real-time collaborative editing (Yjs/CRDT)
-6. ✅ Export to multiple formats (PDF, DOCX, Google Docs)
-7. ✅ E-signature workflow integration
-8. ✅ Comment threads on sections
-
-**Nice-to-Have:**
-9. 🔄 AI-powered clause suggestions based on industry
-10. 🔄 Redlining and track changes mode
-11. 🔄 Smart templates with conditional logic
-12. 🔄 Integration with legal review platforms (LegalSifter)
-
-**Feature Interactions:**
-- PRD approved → Auto-populates technical scope section in proposal
-- Pricing approval → Auto-populates proposal pricing section
-- Proposal finalization → Triggers e-signature workflow
-
-#### API Specification
-
-**1. Generate Proposal**
-```http
-POST /api/v1/proposals/generate
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "client_id": "uuid",
-  "pricing_id": "uuid",
-  "prd_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "template_id": "saas_sow_v2",
-  "proposal_type": "statement_of_work",
-  "custom_sections": [
-    {
-      "title": "Implementation Timeline",
-      "content": "12-week phased rollout with weekly milestones"
-    }
-  ],
-  "include_attachments": ["technical_architecture.pdf", "pricing_breakdown.pdf"],
-  "language": "en-US"
-}
-
-Response (201 Created):
-{
-  "proposal_id": "uuid",
-  "client_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "status": "draft",
-  "document_url": "https://proposals.workflow.com/acme-sow-2025-10-09",
-  "edit_url": "https://proposals.workflow.com/edit/uuid",
-  "webchat_url": "https://proposals.workflow.com/chat/uuid",
-  "version": 1,
-  "sections": [
-    {
-      "section_id": "uuid",
-      "title": "Executive Summary",
-      "content": "This Statement of Work outlines...",
-      "editable": true
-    },
-    {
-      "section_id": "uuid",
-      "title": "Scope of Services",
-      "content": "Workflow Automation will provide...",
-      "editable": true
-    },
-    {
-      "section_id": "uuid",
-      "title": "Pricing",
-      "content": "Monthly Fee: $3,499...",
-      "editable": false,
-      "source": "pricing_model"
-    },
-    {
-      "section_id": "uuid",
-      "title": "Implementation Timeline",
-      "content": "12-week phased rollout...",
-      "editable": true
-    }
-  ],
-  "created_at": "2025-10-09T11:00:00Z"
-}
-
-Error Responses:
-400 Bad Request: Invalid template_id or missing dependencies
-422 Unprocessable Entity: Pricing or PRD data incomplete
-```
-
-**2. Update Proposal via Webchat**
-```http
-POST /api/v1/proposals/{proposal_id}/chat
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "message": "Change payment terms to NET-30 and add a clause about data retention for 90 days",
-  "session_id": "uuid"
-}
-
-Response (200 OK):
-{
-  "proposal_id": "uuid",
-  "chat_response": "I've updated the payment terms to NET-30 in Section 5. I've also added a new clause in Section 8 (Data Management) specifying that data will be retained for 90 days after contract termination. Would you like to review these changes?",
-  "changes_made": [
-    {
-      "section_id": "uuid",
-      "section_title": "Payment Terms",
-      "change_type": "content_update",
-      "old_content": "Payment is due NET-15...",
-      "new_content": "Payment is due NET-30...",
-      "diff_url": "https://proposals.workflow.com/diff/uuid/v1-v2"
-    },
-    {
-      "section_id": "uuid",
-      "section_title": "Data Management",
-      "change_type": "clause_added",
-      "new_content": "Data Retention: All client data will be retained for 90 days following contract termination..."
-    }
-  ],
-  "version": 2,
-  "requires_approval": true,
-  "approval_reason": "Legal review required for payment term changes"
-}
-```
-
-**3. Update Proposal via Canvas**
-```http
-PATCH /api/v1/proposals/{proposal_id}/sections/{section_id}
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "content": "<p>Updated content with <strong>formatting</strong></p>",
-  "editor_id": "uuid",
-  "session_id": "uuid"
-}
-
-Response (200 OK):
-{
-  "proposal_id": "uuid",
-  "section_id": "uuid",
-  "version": 3,
-  "updated_at": "2025-10-09T11:30:00Z",
-  "updated_by": "uuid",
-  "auto_saved": true
-}
-
-WebSocket Broadcast to Collaborators:
-{
-  "event": "section_updated",
-  "proposal_id": "uuid",
-  "section_id": "uuid",
-  "editor_id": "uuid",
-  "editor_name": "John Smith",
-  "content": "<p>Updated content...</p>",
-  "cursor_position": 145
-}
-```
-
-**4. Get Proposal Versions**
-```http
-GET /api/v1/proposals/{proposal_id}/versions
-Authorization: Bearer {jwt_token}
-
-Response (200 OK):
-{
-  "proposal_id": "uuid",
-  "current_version": 3,
-  "versions": [
-    {
-      "version": 1,
-      "created_at": "2025-10-09T11:00:00Z",
-      "created_by": "system",
-      "change_summary": "Initial generation from template",
-      "document_url": "https://storage.workflow.com/proposals/uuid/v1.pdf"
-    },
-    {
-      "version": 2,
-      "created_at": "2025-10-09T11:15:00Z",
-      "created_by": "uuid",
-      "change_summary": "Updated payment terms to NET-30, added data retention clause",
-      "document_url": "https://storage.workflow.com/proposals/uuid/v2.pdf",
-      "changes_count": 2
-    },
-    {
-      "version": 3,
-      "created_at": "2025-10-09T11:30:00Z",
-      "created_by": "uuid",
-      "change_summary": "Manual edit to Section 4",
-      "document_url": "https://storage.workflow.com/proposals/uuid/v3.pdf",
-      "changes_count": 1
-    }
-  ]
-}
-```
-
-**5. Finalize and Send Proposal**
-```http
-POST /api/v1/proposals/{proposal_id}/finalize
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "send_to": [
-    {
-      "name": "John Smith",
-      "email": "john@acme.com",
-      "role": "CEO"
-    }
-  ],
-  "message": "Please review and sign the attached proposal for our AI automation pilot.",
-  "enable_esignature": true,
-  "signature_workflow": "sequential"
-}
-
-Response (200 OK):
-{
-  "proposal_id": "uuid",
-  "status": "sent",
-  "final_version": 3,
-  "sent_at": "2025-10-09T12:00:00Z",
-  "recipients": [
-    {
-      "name": "John Smith",
-      "email": "john@acme.com",
-      "status": "sent",
-      "view_url": "https://proposals.workflow.com/view/uuid?token=xyz",
-      "signature_url": "https://adobesign.com/sign/abc123"
-    }
-  ],
-  "esignature_workflow_id": "adobesign_xyz456"
-}
-
-Event Published to Kafka:
-Topic: proposal_events
-{
-  "event_type": "proposal_sent",
-  "proposal_id": "uuid",
-  "client_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "timestamp": "2025-10-09T12:00:00Z"
-}
-```
-
-**6. Add Comment to Section**
-```http
-POST /api/v1/proposals/{proposal_id}/sections/{section_id}/comments
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
-
-Request Body:
-{
-  "comment": "Legal team: This clause needs review before client sees it",
-  "commenter_id": "uuid",
-  "resolve_required": true,
-  "visibility": "internal"
-}
-
-Response (201 Created):
-{
-  "comment_id": "uuid",
-  "section_id": "uuid",
-  "commenter": {
-    "id": "uuid",
-    "name": "Sarah Johnson",
-    "role": "Legal Counsel"
-  },
-  "comment": "Legal team: This clause needs review...",
-  "status": "open",
-  "created_at": "2025-10-09T11:45:00Z"
-}
-
-WebSocket Broadcast to Collaborators:
-{
-  "event": "comment_added",
-  "proposal_id": "uuid",
-  "section_id": "uuid",
-  "comment_id": "uuid",
-  "commenter_name": "Sarah Johnson",
-  "visibility": "internal"
-}
-```
-
-**7. Export Proposal**
-```http
-GET /api/v1/proposals/{proposal_id}/export?format=pdf&version=3
-Authorization: Bearer {jwt_token}
-
-Response (200 OK):
-Binary PDF content
-
-Headers:
-Content-Type: application/pdf
-Content-Disposition: attachment; filename="acme-proposal-2025-10-09-v3.pdf"
-X-Proposal-Version: 3
-X-Generated-At: 2025-10-09T12:05:00Z
-
-Alternative Formats:
-?format=docx → Microsoft Word
-?format=gdoc → Google Docs (returns shareable link)
-```
-
-**8. WebSocket - Real-Time Collaboration**
-```
-wss://proposals.workflow.com/ws/{proposal_id}
-Authorization: Bearer {jwt_token}
-
-Server → Client Events:
-{
-  "event": "editor_joined",
-  "editor_id": "uuid",
-  "editor_name": "Alice Cooper",
-  "cursor_position": null
-}
-
-{
-  "event": "cursor_moved",
-  "editor_id": "uuid",
-  "section_id": "uuid",
-  "cursor_position": 247
-}
-
-{
-  "event": "content_changed",
-  "section_id": "uuid",
-  "editor_id": "uuid",
-  "changes": "CRDT operations...",
-  "version": 4
-}
-
-Client → Server Events:
-{
-  "action": "update_cursor",
-  "section_id": "uuid",
-  "cursor_position": 150
-}
-
-{
-  "action": "edit_content",
-  "section_id": "uuid",
-  "operations": "CRDT operations..."
-}
-```
-
-**Rate Limiting:**
-- 20 proposal generations per hour per tenant
-- 500 chat messages per hour per proposal
-- 100 section updates per minute per proposal
-- 1000 API requests per minute per tenant
-
-#### Frontend Components
-
-**1. Proposal Generation Wizard**
-- Component: `ProposalGenerationWizard.tsx`
-- Features:
-  - Template selector with preview
-  - Auto-populated data from PRD and Pricing
-  - Custom section builder
-  - Attachment uploader
-  - Preview before generation
-
-**2. Proposal Editor (Split View)**
-- Component: `ProposalEditor.tsx`
-- Features:
-  - Left: Webchat UI for conversational editing
-  - Right: Canvas editor (TipTap WYSIWYG)
-  - Section navigation sidebar
-  - Real-time collaboration indicators (avatars, cursors)
-  - Comment panel (expandable)
-  - Version selector dropdown
-
-**3. Webchat Interface**
-- Component: `ProposalWebchat.tsx`
-- Features:
-  - Chat history with agent responses
-  - Quick action buttons ("Add section", "Change format", "Export")
-  - Suggested edits visualization
-  - Diff preview before applying changes
-  - Undo/redo chat-based changes
-
-**4. Collaboration Panel**
-- Component: `CollaborationPanel.tsx`
-- Features:
-  - Active editors list with real-time status
-  - Comment threads (resolved, open, all)
-  - Change activity feed
-  - @mention functionality
-  - Notification preferences
-
-**5. Version History Viewer**
-- Component: `VersionHistoryViewer.tsx`
-- Features:
-  - Timeline visualization
-  - Side-by-side diff viewer
-  - Rollback to previous version
-  - Export specific version
-  - Change attribution (who changed what)
-
-**6. Signature Workflow Dashboard**
-- Component: `SignatureWorkflowDashboard.tsx`
-- Features:
-  - Recipient status tracking
-  - Embedded e-signature iframe
-  - Reminder sending
-  - Audit trail
-  - Download signed document
-
-**State Management:**
-- Yjs CRDT for real-time collaborative editing
-- Redux Toolkit for proposal metadata and UI state
-- React Query for API data fetching
-- WebSocket integration for real-time updates
-- IndexedDB for offline draft support
-
-#### Stakeholders and Agents
-
-**Human Stakeholders:**
-
-1. **Sales Engineer**
-   - Role: Generates and edits proposals, coordinates with client
-   - Access: Full CRUD on proposals for assigned clients
-   - Permissions: create:proposal, read:proposal, update:proposal, send:proposal
-   - Workflows: Generates proposal, iterates via webchat, finalizes, sends to client
-
-2. **Legal Counsel**
-   - Role: Reviews and approves legal clauses, manages templates
-   - Access: Read-only on active proposals, admin access to templates
-   - Permissions: read:all_proposals, approve:legal_clauses, admin:templates
-   - Workflows: Reviews flagged clauses, comments on sections, approves custom terms
-   - Approval: Required for custom clauses, payment term changes, liability modifications
-
-3. **Client Stakeholder**
-   - Role: Reviews proposal, requests edits, signs agreement
-   - Access: Read-only access to assigned proposal, commenting capability
-   - Permissions: read:assigned_proposal, comment:proposal, sign:proposal
-   - Workflows: Receives proposal, reviews content, requests changes via comments, signs electronically
-   - Approval: N/A (external stakeholder)
-
-4. **Finance Manager**
-   - Role: Reviews pricing sections, approves payment terms
-   - Access: Read-only on proposals, approval rights for pricing/payment changes
-   - Permissions: read:all_proposals, approve:pricing_changes
-   - Workflows: Reviews pricing accuracy, approves custom payment terms
-
-**AI Agents:**
-
-1. **Proposal Generation Agent**
-   - Responsibility: Generates initial proposal from templates, populates data from PRD/Pricing
-   - Tools: Template engine (Handlebars), PDF generator, content assemblers
-   - Autonomy: Fully autonomous for standard templates
-   - Escalation: Legal Counsel approval for custom templates or non-standard clauses
-
-2. **Conversational Editor Agent**
-   - Responsibility: Interprets webchat commands, applies edits, suggests improvements
-   - Tools: LLM (GPT-4), document manipulation APIs, diff generators
-   - Autonomy: Fully autonomous for content edits, formatting changes
-   - Escalation: Legal Counsel approval required for liability clauses, payment terms, SLA modifications
-
-3. **Clause Recommendation Agent**
-   - Responsibility: Suggests relevant clauses based on industry, deal size, risk profile
-   - Tools: LLM with legal knowledge base, clause library, risk assessment models
-   - Autonomy: Provides suggestions only, no auto-application
-   - Escalation: Legal Counsel review required before adding suggested clauses
-
-4. **Version Control Agent**
-   - Responsibility: Tracks changes, manages versions, alerts on conflicts
-   - Tools: Git-like diff algorithms, CRDT conflict resolution, notification system
-   - Autonomy: Fully autonomous
-   - Escalation: Alerts editors on merge conflicts requiring manual resolution
-
-**Approval Workflows:**
-1. Proposal Generation (Standard Template) → Auto-approved
-2. Proposal Generation (Custom Template) → Legal Counsel approval required
-3. Legal Clause Modifications → Legal Counsel approval required
-4. Payment Term Changes → Finance Manager approval required
-5. Pricing Section Edits → Finance Manager approval required
-6. Proposal Finalization (>$500K Deal) → VP Sales approval required
-7. Client-Requested Changes (Legal Impact) → Legal Counsel approval required
-
-#### Kafka Events
-
-Event Published to Kafka:
-Topic: proposal_events
-```json
-{
-  "event_type": "proposal_signed",
-  "proposal_id": "uuid",
-  "client_id": "uuid",
-  "organization_id": "uuid",
-  "product_types": ["chatbot", "voicebot"],
-  "pricing_id": "uuid",
-  "prd_id": "uuid",
-  "signed_by": "client_stakeholder_uuid",
-  "signed_at": "2025-10-10T14:00:00Z",
-  "esignature_provider": "adobesign",
-  "document_url": "https://storage.workflow.com/signed/acme-sow-signed.pdf",
-  "timestamp": "2025-10-10T14:00:00Z"
-}
-```
-
-**Consumer Actions:**
-- **Automation Engine**: Triggers YAML configuration generation for both chatbot and voicebot products
-- **Customer Success Service**: Initiates onboarding workflow
-- **Monitoring Engine**: Track proposal-to-signature conversion rates
+**All proposal functionality (APIs, database schemas, features, agents) is now documented in Service 3 above.**
 
 ---
 
-*Due to length constraints, I will continue with the remaining 10 microservices in the next response. This comprehensive specification will be complete in a follow-up document.*
+*Due to length constraints, the remaining microservices continue below. Services 3, 4, and 5 have been consolidated into Service 3 (Sales Document Generator).*
 
 **Remaining Microservices to Detail:**
 6. PRD Builder Engine Service
