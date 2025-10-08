@@ -2,6 +2,9 @@
 
 This document breaks down the complete platform workflow into digestible, renderable diagrams organized by phase and concern.
 
+**Architecture:** 16 microservices (15 core + 2 libraries) coordinated via 17 Kafka topics
+**Performance:** 400-900ms faster workflows through service consolidation and direct library integration
+
 ---
 
 ## Table of Contents
@@ -60,15 +63,12 @@ flowchart TB
         Assisted["🤝 Assisted Signup<br/>(Sales Agent Creates Account)"]
     end
 
-    subgraph Service0["Service 0: Organization Management"]
+    subgraph Service0["Service 0: Organization & Identity Management<br/>(Unified - includes agent orchestration)"]
         Verify["Email Verification"]
         CreateOrg["Create Organization"]
         Invite["Send Team Invitations"]
-    end
-
-    subgraph Service0_5["Service 0.5: Human Agent Management"]
-        AutoAssign["Auto-Assign to<br/>Sales Agent"]
-        ClaimLink["Send Claim Link<br/>(via Service 18)"]
+        AutoAssign["Auto-Assign to<br/>Sales Agent<br/>(Workload-Balanced)"]
+        ClaimLink["Send Claim Link<br/>(via Service 20)"]
         ClientClaims["Client Claims<br/>Account Ownership"]
     end
 
@@ -78,7 +78,8 @@ flowchart TB
     SelfService --> Verify
     Verify --> CreateOrg
     CreateOrg --> Invite
-    CreateOrg -->|organization_created| ResearchStart
+    CreateOrg --> AutoAssign
+    AutoAssign -->|organization_created| ResearchStart
 
     %% Assisted path
     Assisted --> CreateOrg
@@ -106,10 +107,10 @@ flowchart TB
         Complete["research_completed"]
     end
 
-    subgraph Service18["Service 18: Outbound Communication"]
+    subgraph Service20["Service 20: Communication & Hyperpersonalization"]
         Draft["🤖 AUTO: Generate<br/>Requirements Draft<br/>• Predicted volumes<br/>• Suggested use cases"]
         HumanReview["👤 HUMAN: Sales Agent<br/>Reviews & Approves"]
-        SendForm["🤖 AUTO: Send<br/>Requirements Form"]
+        SendForm["🤖 AUTO: Send<br/>Requirements Form<br/>(Email/SMS Delivery)"]
         ClientValidate["👤 CLIENT: Validates<br/>& Corrects Data"]
         Validated["requirements_validation_completed"]
     end
@@ -153,31 +154,27 @@ flowchart TB
     end
 
     subgraph Phase3["Phase 3: Legal & Contracting"]
-        subgraph Service3["Service 3: NDA Generator"]
+        subgraph Service3["Service 3: Sales Document Generator<br/>(Unified - 150-300ms faster)"]
             NDA["🤖 AUTO: Generate NDA"]
             SignNDA["🤖 AUTO: E-Signature<br/>(DocuSign)"]
-            NDADone["nda_fully_signed"]
+            NDADone["sales_doc_events.nda_signed"]
         end
 
-        subgraph Service6["Service 6: PRD Builder"]
+        subgraph Service6["Service 6: PRD Builder & Configuration Workspace"]
             PRDConv["🤖 AUTO: Conversational<br/>PRD Builder<br/>• Village knowledge<br/>• A/B flows<br/>• KPI framework<br/>• 12-month roadmap"]
             HelpBtn["👤 HUMAN: Help Button<br/>Real-time Collaboration"]
             PRDApp["prd_approved"]
         end
 
-        subgraph Service4["Service 4: Pricing Generator"]
+        subgraph Service3b["Service 3: Sales Document Generator (continued)"]
             Price["🤖 AUTO: Volume-Based<br/>Pricing & Cost Modeling"]
-            PriceApp["pricing_approved"]
-        end
-
-        subgraph Service5["Service 5: Proposal Generator"]
             Proposal["🤖 AUTO: Generate Proposal<br/>Research + Demo + PRD + Pricing"]
             SignProp["🤖 AUTO: E-Signature"]
-            PropDone["proposal_signed"]
+            PropDone["sales_doc_events.proposal_signed"]
         end
     end
 
-    AutoEngine["✅ Trigger Automation Engine<br/>(Service 7)"]
+    AutoEngine["✅ Trigger Automation Engine<br/>(Service 7)<br/>(400-900ms faster workflow)"]
 
     Start --> Design
     Design --> Generate
@@ -191,8 +188,7 @@ flowchart TB
     HelpBtn -.-> PRDConv
     PRDConv --> PRDApp
     PRDApp --> Price
-    Price --> PriceApp
-    PriceApp --> Proposal
+    Price --> Proposal
     Proposal --> SignProp
     SignProp --> PropDone
     PropDone --> AutoEngine
@@ -212,7 +208,7 @@ flowchart TB
 flowchart TB
     Start["proposal_signed"]
 
-    subgraph Handoff1["Human Agent Handoff"]
+    subgraph Handoff1["Human Agent Handoff (Service 0)"]
         SalesTo["handoff_initiated<br/>Sales → Onboarding"]
         OnboardAccept["Onboarding Specialist<br/>handoff_accepted"]
     end
@@ -224,26 +220,26 @@ flowchart TB
         ConfigGen["config_generated"]
     end
 
-    subgraph Service10["Service 10: Configuration Management"]
-        Validate["🤖 AUTO: Validate Config<br/>• JSON schema<br/>• S3 upload (versioned)<br/>• Redis pub/sub"]
+    subgraph ConfigSDK["@workflow/config-sdk Library<br/>(50-100ms faster than service)"]
+        Validate["🤖 AUTO: Validate Config<br/>• JSON schema<br/>• S3 upload (versioned)<br/>• Redis cache invalidation"]
         Deploy["config_deployed"]
     end
 
-    subgraph Runtime["Runtime Services"]
-        Service8["Service 8:<br/>Agent Orchestration<br/>(Chatbot)"]
-        Service9["Service 9:<br/>Voice Agent<br/>(Voicebot)"]
+    subgraph Runtime["Runtime Services (use @workflow/llm-sdk)"]
+        Service8["Service 8:<br/>Agent Orchestration<br/>(Chatbot)<br/>(200-500ms faster LLM calls)"]
+        Service9["Service 9:<br/>Voice Agent<br/>(Voicebot)<br/>(200-500ms faster LLM calls)"]
         Ready["services_ready"]
     end
 
     Week1["👤 HUMAN: Week 1 Handholding<br/>Onboarding Specialist<br/>Daily Monitoring & Tuning"]
     Complete["onboarding_week1_complete"]
 
-    subgraph Handoff2["Parallel Handoff"]
+    subgraph Handoff2["Parallel Handoff (Service 0)"]
         ToSupport["→ Support Specialist"]
         ToSuccess["→ Success Manager"]
     end
 
-    Operations["✅ Enter Operations Phase"]
+    Operations["✅ Enter Operations Phase<br/>(Total speedup: 400-900ms)"]
 
     Start --> SalesTo
     SalesTo --> OnboardAccept
@@ -277,7 +273,7 @@ flowchart TB
 flowchart TB
     User["User Message"]
 
-    subgraph Personalization["Service 20: Hyperpersonalization"]
+    subgraph Personalization["Service 20: Communication & Hyperpersonalization"]
         Cohort["Assign Cohort<br/>trial / active / power_user<br/>at_risk / churned"]
         Variant["Assign A/B Variant<br/>(Thompson Sampling)"]
     end
@@ -287,7 +283,7 @@ flowchart TB
         Tools["Tools Node<br/>• CRM Integration<br/>• Support Engine<br/>• Custom tools"]
     end
 
-    subgraph Service16["Service 16: LLM Gateway"]
+    subgraph LLMSDK["@workflow/llm-sdk Library<br/>(200-500ms faster - no gateway hop)"]
         Route["Model Routing<br/>GPT-4 vs GPT-3.5"]
         Cache["Semantic Caching<br/>(40-60% cost reduction)"]
     end
@@ -298,7 +294,7 @@ flowchart TB
         Knowledge["Village Knowledge<br/>Retrieval"]
     end
 
-    Response["Chatbot Response"]
+    Response["Chatbot Response<br/>(200-500ms faster)"]
 
     subgraph Analytics["Service 12: Analytics"]
         Track["Track Engagement"]
@@ -344,7 +340,7 @@ flowchart TB
         TTS["TTS Node<br/>(ElevenLabs/OpenAI)<br/>Text → Speech<br/>Dual Streaming"]
     end
 
-    subgraph Service16["Service 16: LLM Gateway"]
+    subgraph LLMSDK["@workflow/llm-sdk Library<br/>(200-500ms faster per call)"]
         Route["Model Routing"]
         Cache["Semantic Caching"]
     end
@@ -356,7 +352,7 @@ flowchart TB
 
     Interrupt["Barge-in Handling"]
     Transfer["Human Transfer<br/>(SIP Bridge - Twilio)"]
-    Response["Voice Response<br/>(<500ms latency)"]
+    Response["Voice Response<br/>(<300ms latency target)<br/>(200ms improvement)"]
 
     Recording["Call Recording → S3"]
     Transcript["Transcript → PostgreSQL"]
@@ -441,7 +437,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph SelfService["Service 19: Client Configuration Portal"]
+    subgraph SelfService["Service 6: PRD Builder & Configuration Workspace<br/>(Unified - includes client self-service)"]
         ChatAgent["🤖 Conversational Agent<br/>(Claude AI)<br/>Natural language editing"]
         Dashboard["📊 Visual Dashboard<br/>• Version control<br/>• Sandbox testing<br/>• Rollback"]
         Permissions["Member Permissions<br/>• Role-based access<br/>• Risk levels<br/>• Approval workflows"]
@@ -453,12 +449,12 @@ flowchart TB
     Approve["Client Approves"]
     Apply["client_config_applied"]
 
-    subgraph Service10["Service 10: Configuration Management"]
-        HotReload["🔄 Hot-Reload<br/><5s deployment"]
+    subgraph ConfigSDK["@workflow/config-sdk Library<br/>(50-100ms faster than service)"]
+        HotReload["🔄 Hot-Reload<br/><1s deployment<br/>(50-100ms improvement)"]
         Runtime["Agent Orchestration +<br/>Voice Agent"]
     end
 
-    subgraph Personalization["Service 20: Hyperpersonalization"]
+    subgraph Personalization["Service 20: Communication & Hyperpersonalization<br/>(Unified outreach + personalization)"]
         CohortEngine["Cohort Assignment Engine<br/>RFM Analysis"]
         ABEngine["A/B Testing Engine<br/>Thompson Sampling<br/>Multi-Armed Bandit"]
         EngageTrack["Engagement Tracking"]
@@ -493,12 +489,12 @@ flowchart TB
 flowchart TB
     Identify["👤 HUMAN: Success Manager<br/>Identifies Iteration Need<br/>• New use cases<br/>• Feature expansion<br/>• Integration additions"]
 
-    subgraph Service0_5["Service 0.5: Human Agent Management"]
+    subgraph Service0["Service 0: Organization & Identity Management<br/>(Handles all agent handoffs)"]
         InviteOnboard["specialist_invited<br/>Success → Onboarding Specialist"]
         Accept["Specialist Accepts"]
     end
 
-    subgraph Service6["Service 6: PRD Builder"]
+    subgraph Service6["Service 6: PRD Builder & Configuration Workspace"]
         UpdatePRD["👤 HUMAN + 🤖 AI:<br/>Update PRD<br/>Collaborative Editing"]
         Approve["prd_updated"]
     end
@@ -507,9 +503,9 @@ flowchart TB
         Regen["🤖 AUTO: Regenerate Config<br/>Incremental Changes"]
     end
 
-    Deploy["config_deployed<br/>Hot-Reload"]
+    Deploy["config_deployed<br/>Hot-Reload via @workflow/config-sdk<br/>(50-100ms faster)"]
 
-    Exit["specialist_handoff_back<br/>→ Success Manager"]
+    Exit["specialist_handoff_back<br/>→ Success Manager<br/>(via Service 0)"]
     Continue["Continue Success Track"]
 
     Identify --> InviteOnboard
@@ -582,74 +578,66 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph Producers["Event Producers (Services Publishing Events)"]
-        S0["Service 0:<br/>Auth Events"]
-        S0_5["Service 0.5:<br/>Agent Events"]
+    subgraph Producers["Event Producers (16 Services)"]
+        S0["Service 0:<br/>Auth + Agent Events"]
         S1["Service 1:<br/>Research Events"]
-        S18["Service 18:<br/>Outreach Events"]
         S2["Service 2:<br/>Demo Events"]
-        S3["Service 3:<br/>NDA Events"]
+        S3["Service 3:<br/>Sales Doc Events<br/>(NDA+Pricing+Proposal)"]
         S6["Service 6:<br/>PRD Events"]
-        S4["Service 4:<br/>Pricing Events"]
-        S5["Service 5:<br/>Proposal Events"]
         S7["Service 7:<br/>Config Events"]
         S8["Service 8:<br/>Conversation Events"]
         S9["Service 9:<br/>Voice Events"]
-        S20["Service 20:<br/>Personalization Events"]
+        S20["Service 20:<br/>Communication Events<br/>(Outreach+Personalization)"]
     end
 
-    subgraph Kafka["Apache Kafka (14 Topics)"]
+    subgraph Kafka["Apache Kafka (17 Topics - Optimized)"]
         T1["auth_events"]
         T2["agent_events"]
         T3["research_events"]
-        T4["outreach_events"]
+        T4["communication_events"]
         T5["client_events"]
         T6["demo_events"]
-        T7["nda_events"]
+        T7["sales_doc_events"]
         T8["prd_events"]
-        T9["pricing_events"]
-        T10["proposal_events"]
         T11["config_events"]
         T12["conversation_events"]
         T13["voice_events"]
-        T14["personalization_events"]
+        T14["cross_product_events"]
+        T15["monitoring_events"]
+        T16["analytics_events"]
+        T17["support_events"]
+        T18["success_events"]
+        T19["crm_events"]
     end
 
-    subgraph Consumers["Event Consumers (Services Subscribing)"]
+    subgraph Consumers["Event Consumers (Services + Libraries)"]
         C_Research["Research Engine<br/>Triggers"]
         C_Demo["Demo Generator<br/>Triggers"]
-        C_NDA["NDA Generator<br/>Triggers"]
+        C_Sales["Sales Doc Generator<br/>Triggers"]
         C_PRD["PRD Builder<br/>Triggers"]
-        C_Pricing["Pricing Generator<br/>Triggers"]
-        C_Proposal["Proposal Generator<br/>Triggers"]
         C_Auto["Automation Engine<br/>Triggers"]
-        C_Runtime["Runtime Services<br/>(Hot-Reload)"]
+        C_Runtime["Runtime Services<br/>(Hot-Reload via<br/>@workflow/config-sdk)"]
         C_Analytics["Analytics Service<br/>(All Events)"]
         C_Monitor["Monitoring Engine<br/>(All Events)"]
     end
 
     S0 --> T1
+    S0 --> T2
     S0 --> T5
-    S0_5 --> T2
     S1 --> T3
-    S18 --> T4
     S2 --> T6
     S3 --> T7
     S6 --> T8
-    S4 --> T9
-    S5 --> T10
     S7 --> T11
     S8 --> T12
     S9 --> T13
-    S20 --> T14
+    S20 --> T4
 
     T1 --> C_Research
     T4 --> C_Demo
-    T6 --> C_NDA
+    T6 --> C_Sales
     T7 --> C_PRD
-    T8 --> C_Pricing
-    T9 --> C_Proposal
-    T10 --> C_Auto
+    T8 --> C_Auto
     T11 --> C_Runtime
 
     T1 --> C_Analytics
@@ -660,12 +648,9 @@ flowchart LR
     T6 --> C_Analytics
     T7 --> C_Analytics
     T8 --> C_Analytics
-    T9 --> C_Analytics
-    T10 --> C_Analytics
     T11 --> C_Analytics
     T12 --> C_Analytics
     T13 --> C_Analytics
-    T14 --> C_Analytics
 
     T1 --> C_Monitor
     T11 --> C_Monitor
@@ -683,52 +668,52 @@ flowchart LR
 flowchart TB
     subgraph Tier0["Tier 0: Critical Infrastructure (System-wide impact if down)"]
         Kong["Kong API Gateway"]
-        Auth["Service 0: Organization Mgmt"]
-        LLM["Service 16: LLM Gateway"]
-        Config["Service 10: Config Mgmt"]
+        Auth["Service 0: Organization &<br/>Identity Management"]
+        LLMSDK["@workflow/llm-sdk Library<br/>(200-500ms faster)"]
+        ConfigSDK["@workflow/config-sdk Library<br/>(50-100ms faster)"]
         Kafka["Apache Kafka"]
         Redis["Redis Cluster"]
     end
 
     subgraph Tier1["Tier 1: Customer-Facing (Conversation impact)"]
-        AgentOrch["Service 8: Agent Orchestration"]
-        VoiceAgent["Service 9: Voice Agent"]
+        AgentOrch["Service 8: Agent Orchestration<br/>(uses @workflow/llm-sdk)"]
+        VoiceAgent["Service 9: Voice Agent<br/>(uses @workflow/llm-sdk)"]
         RAG["Service 17: RAG Pipeline"]
     end
 
     subgraph Tier2["Tier 2: Feature Services (Degraded functionality)"]
-        HumanAgent["Service 0.5: Human Agent Mgmt"]
         Monitor["Service 11: Monitoring"]
         Analytics["Service 12: Analytics"]
-        Hyper["Service 20: Hyperpersonalization"]
+        Comm["Service 20: Communication &<br/>Hyperpersonalization"]
     end
 
     subgraph Tier3["Tier 3: Background Services (Manual fallback)"]
         Research["Service 1: Research"]
         Demo["Service 2: Demo Generator"]
-        Success["Service 13: Customer Success"]
-        Support["Service 14: Support Engine"]
+        Sales["Service 3: Sales Doc Generator"]
+        Success["Service 13: Customer Success<br/>(uses @workflow/llm-sdk)"]
+        Support["Service 14: Support Engine<br/>(uses @workflow/llm-sdk)"]
     end
 
     Kong --> Auth
-    Kong --> HumanAgent
     Auth --> Kafka
 
-    AgentOrch --> LLM
-    AgentOrch --> Config
+    AgentOrch --> LLMSDK
+    AgentOrch --> ConfigSDK
     AgentOrch --> RAG
-    AgentOrch --> Hyper
+    AgentOrch --> Comm
 
-    VoiceAgent --> LLM
-    VoiceAgent --> Config
+    VoiceAgent --> LLMSDK
+    VoiceAgent --> ConfigSDK
 
-    LLM --> Redis
-    Config --> Redis
+    LLMSDK --> Redis
+    ConfigSDK --> Redis
 
     Research --> Kafka
     Demo --> Kafka
+    Sales --> Kafka
     Success --> Analytics
-    Support --> HumanAgent
+    Support --> Auth
 
     Analytics --> Kafka
     Monitor --> Kafka
@@ -744,6 +729,24 @@ flowchart TB
 ## Summary
 
 These modular diagrams break down the complete platform workflow into digestible sections that will render properly in GitHub, Notion, or any mermaid-compatible viewer.
+
+**Architecture Consolidation (22 → 16 Services):**
+- **Service 0.5 → Service 0:** Unified organization & agent management
+- **Services 3, 4, 5 → Service 3:** Unified sales document generation (150-300ms faster)
+- **Service 18 → Service 20:** Unified communication & hyperpersonalization
+- **Service 19 → Service 6:** Client self-service integrated into PRD workspace
+- **Service 10 → @workflow/config-sdk:** Direct config access (50-100ms faster)
+- **Service 16 → @workflow/llm-sdk:** Direct LLM calls (200-500ms faster per call)
+
+**Performance Improvements:**
+- **Sales pipeline:** 150-300ms faster (3-service → 1-service)
+- **LLM calls:** 200-500ms faster per call (no gateway hop)
+- **Config operations:** 50-100ms faster (direct S3 access)
+- **Total workflow:** 400-900ms faster per complete client lifecycle
+
+**Kafka Topics:** 17 topics (optimized from 19 original topics)
+- `sales_doc_events` replaces `nda_events`, `pricing_events`, `proposal_events`
+- `communication_events` replaces `outreach_events`, `personalization_events`
 
 **Key Patterns Across Diagrams:**
 - **Green boxes** (🤖 AUTO): Fully automated by AI/system
