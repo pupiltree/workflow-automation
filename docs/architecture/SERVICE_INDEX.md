@@ -1,6 +1,6 @@
 # Microservices Architecture - Master Service Index
 
-**Total Services: 15** (optimized from 22)
+**Total Services: 16** (optimized from 22)
 **Supporting Libraries: 2** (@workflow/llm-sdk, @workflow/config-sdk)
 
 This index provides quick navigation to all microservices across the three architecture documents.
