@@ -953,6 +953,361 @@ Server → Client Events:
 - 50 canvas edits per hour per collaboration session
 - 1000 API requests per minute per tenant
 
+#### Post-Launch Flow Modification
+
+**Purpose**: Enable clients to request modifications to deployed chatbot/voicebot flows after launch without creating a new PRD from scratch, with impact analysis and rollback support.
+
+**Modification Types:**
+
+1. **Flow Logic Changes:**
+   - Add/remove conversation steps
+   - Change step order or branching logic
+   - Update conditional routing rules
+   - Modify error handling paths
+
+2. **Content Updates:**
+   - Update response templates
+   - Modify system prompts
+   - Change greeting messages
+   - Update FAQ answers
+
+3. **Integration Changes:**
+   - Add new external integrations (e.g., add Slack after launching with Zendesk)
+   - Remove deprecated integrations
+   - Update integration parameters (API endpoints, credentials)
+
+4. **Performance Optimizations:**
+   - Adjust timeout values
+   - Modify retry logic
+   - Change escalation thresholds
+   - Update caching strategies
+
+**API Specification:**
+
+**1. Request Flow Modification**
+```http
+POST /api/v1/prd/{prd_id}/flow-modifications
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "prd_id": "uuid",
+  "modification_type": "flow_logic_change",  // flow_logic_change | content_update | integration_change | performance_optimization
+  "modification_request": {
+    "title": "Add SMS notification step after ticket creation",
+    "description": "Currently, users only get email confirmation. We want to add SMS notification as an additional step.",
+    "affected_flows": ["support_ticket_creation_flow"],
+    "priority": "medium",  // low | medium | high | urgent
+    "business_justification": "Customer feedback shows 60% prefer SMS over email for immediate notifications",
+    "requested_by": {
+      "name": "Jane Doe",
+      "email": "jane@acmecorp.com",
+      "role": "Product Manager"
+    }
+  },
+  "proposed_changes": {
+    "add_steps": [
+      {
+        "step_id": "send_sms_notification",
+        "step_description": "Send SMS confirmation with ticket number",
+        "position_after": "create_ticket",
+        "tool_required": "twilio_send_sms",
+        "tool_status": "implemented"
+      }
+    ],
+    "update_steps": [],
+    "remove_steps": []
+  }
+}
+
+Response (201 Created):
+{
+  "modification_id": "mod_uuid",
+  "prd_id": "uuid",
+  "modification_type": "flow_logic_change",
+  "status": "impact_analysis_pending",
+  "impact_analysis": {
+    "status": "queued",
+    "estimated_completion": "2025-10-16T10:00:00Z"
+  },
+  "created_at": "2025-10-15T20:00:00Z",
+  "tracking_number": "MOD-2025-00456"
+}
+
+Event Published to Kafka:
+Topic: prd_events
+{
+  "event_type": "flow_modification_requested",
+  "modification_id": "mod_uuid",
+  "prd_id": "uuid",
+  "client_id": "uuid",
+  "modification_type": "flow_logic_change",
+  "timestamp": "2025-10-15T20:00:00Z"
+}
+```
+
+**2. Submit Impact Analysis**
+```http
+POST /api/v1/prd/flow-modifications/{modification_id}/impact-analysis
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "modification_id": "mod_uuid",
+  "impact_assessment": {
+    "technical_complexity": "low",  // low | medium | high
+    "estimated_implementation_hours": 4,
+    "affected_components": [
+      "YAML config (support_ticket_creation_flow)",
+      "Tool execution layer (Twilio integration)"
+    ],
+    "dependencies": [
+      {
+        "dependency": "twilio_send_sms tool",
+        "status": "already_implemented",
+        "action_required": "none"
+      }
+    ],
+    "testing_requirements": [
+      "Unit test new step",
+      "Integration test with Twilio",
+      "End-to-end flow test",
+      "Load test (100 concurrent SMS sends)"
+    ],
+    "rollback_strategy": "Config version rollback to previous state",
+    "risks": [
+      "SMS delivery failures if Twilio is down (mitigation: fallback to email only)",
+      "Additional cost per SMS sent (estimated $0.01/message)"
+    ]
+  },
+  "cost_estimate": {
+    "implementation_cost_usd": 500,  // Developer time
+    "ongoing_cost_per_month_usd": 150,  // SMS costs (15K messages/month * $0.01)
+    "cost_breakdown": "Assumes 15,000 tickets/month. SMS cost: $0.01/message."
+  },
+  "timeline": {
+    "implementation_days": 2,
+    "testing_days": 1,
+    "deployment_window": "2025-10-20 - 2025-10-22"
+  },
+  "recommendation": "Approve. Low technical complexity, high customer value. Recommend phased rollout (10% traffic for 24h, then 100%).",
+  "analyzed_by": "platform_engineer_uuid",
+  "analyzed_at": "2025-10-16T09:30:00Z"
+}
+
+Response (200 OK):
+{
+  "modification_id": "mod_uuid",
+  "impact_analysis_id": "analysis_uuid",
+  "status": "awaiting_approval",
+  "approval_required_from": ["client_decision_maker", "platform_engineer"],
+  "next_steps": [
+    "Client reviews cost estimate",
+    "Client approves modification",
+    "Platform engineer schedules implementation"
+  ],
+  "submitted_at": "2025-10-16T09:30:00Z"
+}
+```
+
+**3. Approve/Reject Modification**
+```http
+PATCH /api/v1/prd/flow-modifications/{modification_id}/approval
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "decision": "approved",  // approved | rejected
+  "approval_notes": "Approved. Please proceed with phased rollout as recommended.",
+  "approved_by": "client_decision_maker_uuid",
+  "approved_at": "2025-10-16T14:00:00Z"
+}
+
+Response (200 OK):
+{
+  "modification_id": "mod_uuid",
+  "status": "approved",
+  "scheduled_implementation": {
+    "start_date": "2025-10-20T10:00:00Z",
+    "estimated_completion": "2025-10-22T17:00:00Z",
+    "assigned_engineer": "engineer_uuid"
+  },
+  "updated_at": "2025-10-16T14:00:00Z"
+}
+```
+
+**4. Track Modification Implementation**
+```http
+GET /api/v1/prd/flow-modifications/{modification_id}/status
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "modification_id": "mod_uuid",
+  "tracking_number": "MOD-2025-00456",
+  "status": "in_progress",  // pending | impact_analysis | awaiting_approval | approved | in_progress | testing | deployed | rolled_back | rejected
+  "implementation_progress": {
+    "current_phase": "testing",
+    "phases_completed": ["code_implementation", "unit_testing"],
+    "phases_remaining": ["integration_testing", "deployment"],
+    "percent_complete": 70
+  },
+  "deployment_plan": {
+    "rollout_strategy": "phased",
+    "phase_1": {
+      "traffic_percentage": 10,
+      "start_date": "2025-10-21T10:00:00Z",
+      "status": "completed",
+      "success_metrics": {
+        "sms_delivery_rate": 0.98,
+        "error_rate": 0.01,
+        "customer_satisfaction_delta": "+0.3"
+      }
+    },
+    "phase_2": {
+      "traffic_percentage": 100,
+      "start_date": "2025-10-22T10:00:00Z",
+      "status": "scheduled"
+    }
+  },
+  "last_updated": "2025-10-21T16:30:00Z"
+}
+```
+
+**5. Rollback Modification**
+```http
+POST /api/v1/prd/flow-modifications/{modification_id}/rollback
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "rollback_reason": "SMS delivery failures exceeded 10% threshold. Reverting to email-only notifications.",
+  "initiated_by": "platform_engineer_uuid",
+  "initiated_at": "2025-10-21T18:00:00Z"
+}
+
+Response (200 OK):
+{
+  "modification_id": "mod_uuid",
+  "status": "rolled_back",
+  "rollback_completed_at": "2025-10-21T18:05:00Z",
+  "config_version_restored": 3,  // Previous version before modification
+  "impact": {
+    "affected_conversations": 245,  // In-progress conversations using new flow
+    "action_taken": "Completed in-progress conversations with new flow, new conversations use rolled-back flow"
+  }
+}
+```
+
+**6. Get Modification History**
+```http
+GET /api/v1/prd/{prd_id}/flow-modifications/history
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "prd_id": "uuid",
+  "total_modifications": 12,
+  "modifications": [
+    {
+      "modification_id": "mod_uuid_1",
+      "tracking_number": "MOD-2025-00456",
+      "modification_type": "flow_logic_change",
+      "title": "Add SMS notification step after ticket creation",
+      "status": "deployed",
+      "requested_at": "2025-10-15T20:00:00Z",
+      "deployed_at": "2025-10-22T10:00:00Z",
+      "implementation_days": 7
+    },
+    {
+      "modification_id": "mod_uuid_2",
+      "tracking_number": "MOD-2025-00445",
+      "modification_type": "integration_change",
+      "title": "Add Slack integration for agent notifications",
+      "status": "rolled_back",
+      "requested_at": "2025-10-10T15:00:00Z",
+      "deployed_at": "2025-10-12T14:00:00Z",
+      "rolled_back_at": "2025-10-13T09:00:00Z",
+      "rollback_reason": "Slack API rate limiting caused notification delays"
+    }
+  ]
+}
+```
+
+**Modification Workflow:**
+
+1. **Request Submission** → 2. **Impact Analysis** → 3. **Client Approval** → 4. **Implementation** → 5. **Testing** → 6. **Phased Deployment** → 7. **Validation** → 8. **Full Rollout** (or **Rollback** if issues detected)
+
+**Integration with YAML Config Management:**
+
+- Modifications generate new YAML config versions via Service 7 (Automation Engine)
+- Hot-reload mechanism applies changes without service restart
+- Config versioning enables instant rollback to previous state
+- In-progress conversations complete with current config version, new conversations use updated version
+
+**Data Storage:**
+- **PostgreSQL**: Modification requests, impact analyses, approval logs, deployment history
+- **Git**: Version-controlled YAML config snapshots
+
+**Database Schema:**
+```sql
+CREATE TABLE flow_modifications (
+  modification_id UUID PRIMARY KEY,
+  prd_id UUID NOT NULL REFERENCES prds(prd_id),
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  tracking_number VARCHAR(50) UNIQUE NOT NULL,
+  modification_type VARCHAR(100) NOT NULL,
+  modification_request JSONB NOT NULL,
+  proposed_changes JSONB,
+  impact_analysis JSONB,
+  cost_estimate JSONB,
+  status VARCHAR(50) NOT NULL,  -- pending | impact_analysis | awaiting_approval | approved | in_progress | testing | deployed | rolled_back | rejected
+  approved_by UUID,
+  approved_at TIMESTAMP,
+  deployed_at TIMESTAMP,
+  rolled_back_at TIMESTAMP,
+  rollback_reason TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_flow_mods_prd ON flow_modifications(prd_id);
+CREATE INDEX idx_flow_mods_client ON flow_modifications(client_id);
+CREATE INDEX idx_flow_mods_status ON flow_modifications(status);
+CREATE INDEX idx_flow_mods_created ON flow_modifications(created_at);
+
+-- Row-Level Security
+ALTER TABLE flow_modifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY flow_mods_tenant_isolation ON flow_modifications
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+```
+
+**Integration Points:**
+- **Service 7 (Automation Engine)**: Generate updated YAML configs, manage config versions
+- **Service 8 (Agent Orchestration)**: Hot-reload updated configs, handle version transitions
+- **Service 11 (Monitoring)**: Track post-modification performance metrics
+- **Service 12 (Analytics)**: Generate A/B test comparisons (before/after modification)
+
+**Automation:**
+- Auto-generate impact analysis for simple content updates (templates, prompts)
+- Auto-approve low-risk changes (<$100 cost, <4 implementation hours)
+- Auto-rollback if error rate exceeds 5% within first 24 hours of deployment
+
+**Frontend Component:**
+- Component: `FlowModificationManager.tsx`
+- Features:
+  - Visual flow editor showing current vs proposed changes
+  - Side-by-side comparison view
+  - Impact analysis summary dashboard
+  - Approval workflow interface
+  - Deployment progress tracker with real-time metrics
+  - Rollback button with confirmation dialog
+
 ---
 
 ### Configuration Management APIs (from Service 19)
@@ -2456,6 +2811,360 @@ The hot-reload mechanism uses version pinning to ensure in-progress conversation
 5. Production Deployment → Client Technical Contact + Platform Engineer approval required
 6. Hot-Reload → Auto-executed, alerts on failures
 
+#### Credential Vault System
+
+**Purpose**: Secure, multi-tenant credential management system (n8n-style) for storing and managing API keys, webhooks, OAuth tokens, and other sensitive configuration data required by chatbot/voicebot integrations.
+
+**Key Features:**
+
+1. **Credential Types Supported:**
+   - API Keys (REST APIs, third-party services)
+   - OAuth 2.0 tokens (Google, Microsoft, Salesforce)
+   - Basic Auth credentials
+   - Webhook URLs and secrets
+   - Database connection strings
+   - SSL/TLS certificates
+   - Custom credential schemas
+
+2. **Security Architecture:**
+   - **Encryption at rest**: AES-256 encryption for all stored credentials
+   - **Encryption in transit**: TLS 1.3 for all API communication
+   - **Key Management**: AWS KMS or HashiCorp Vault integration for encryption key rotation
+   - **Access Control**: Row-Level Security (RLS) with tenant_id isolation
+   - **Audit Logging**: All credential access logged with timestamp, user_id, action
+   - **Secrets masking**: Credentials never returned in plaintext via API (masked as *****)
+   - **Time-limited access tokens**: Temporary decryption tokens with 5-minute TTL
+
+3. **Credential Lifecycle:**
+   - **Creation**: Client/Platform Engineer creates credential via UI or API
+   - **Validation**: Auto-test credential validity (e.g., test API call for API keys)
+   - **Rotation**: Support manual and automatic credential rotation with version history
+   - **Expiration**: Auto-expire credentials with expiration dates, send alerts 7 days before
+   - **Revocation**: Immediate revocation with cascade updates to affected YAML configs
+   - **Archival**: Soft-delete with 90-day retention for audit compliance
+
+4. **Integration with YAML Configs:**
+   - **Credential References**: YAML configs reference credentials by ID, not plaintext
+   ```yaml
+   integrations:
+     - integration_name: salesforce_crm
+       credentials:
+         credential_id: "cred_uuid_12345"
+         credential_type: "oauth2"
+   ```
+   - **Runtime Resolution**: Agent Orchestration Service (Service 8) fetches decrypted credentials at runtime using temporary access tokens
+   - **Hot-Reload Support**: Credential updates trigger config reload events without restarting agents
+   - **Validation**: Config deployment blocked if referenced credentials are missing or expired
+
+**API Specification:**
+
+**1. Create Credential**
+```http
+POST /api/v1/automation/credentials
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "credential_name": "salesforce_production_oauth",
+  "credential_type": "oauth2",
+  "provider": "salesforce",
+  "credentials": {
+    "client_id": "salesforce_client_id",
+    "client_secret": "salesforce_secret",
+    "access_token": "oauth_access_token",
+    "refresh_token": "oauth_refresh_token",
+    "expires_at": "2025-12-31T23:59:59Z"
+  },
+  "metadata": {
+    "environment": "production",
+    "auto_rotate": true,
+    "rotation_days": 90
+  }
+}
+
+Response (201 Created):
+{
+  "credential_id": "cred_uuid_12345",
+  "client_id": "uuid",
+  "credential_name": "salesforce_production_oauth",
+  "credential_type": "oauth2",
+  "provider": "salesforce",
+  "status": "active",
+  "validation_status": "passed",
+  "created_at": "2025-10-10T15:00:00Z",
+  "expires_at": "2025-12-31T23:59:59Z",
+  "rotation_schedule": {
+    "auto_rotate": true,
+    "next_rotation": "2026-01-08T15:00:00Z"
+  }
+}
+
+Event Published to Kafka:
+Topic: config_events
+{
+  "event_type": "credential_created",
+  "credential_id": "cred_uuid_12345",
+  "client_id": "uuid",
+  "credential_type": "oauth2",
+  "timestamp": "2025-10-10T15:00:00Z"
+}
+```
+
+**2. Get Credential (Masked)**
+```http
+GET /api/v1/automation/credentials/{credential_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "credential_id": "cred_uuid_12345",
+  "client_id": "uuid",
+  "credential_name": "salesforce_production_oauth",
+  "credential_type": "oauth2",
+  "provider": "salesforce",
+  "status": "active",
+  "credentials_masked": {
+    "client_id": "sales*****",
+    "client_secret": "*****",
+    "access_token": "*****",
+    "refresh_token": "*****"
+  },
+  "expires_at": "2025-12-31T23:59:59Z",
+  "created_at": "2025-10-10T15:00:00Z",
+  "last_used": "2025-10-15T10:30:00Z",
+  "usage_count": 1547
+}
+```
+
+**3. Request Credential Decryption Token (Runtime)**
+```http
+POST /api/v1/automation/credentials/{credential_id}/decrypt-token
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "service_name": "agent_orchestration",
+  "conversation_id": "conv_uuid",
+  "reason": "salesforce_api_call"
+}
+
+Response (200 OK):
+{
+  "credential_id": "cred_uuid_12345",
+  "decryption_token": "temp_token_xyz",
+  "expires_at": "2025-10-15T10:35:00Z",
+  "ttl_seconds": 300
+}
+
+// Service then uses decryption_token to fetch plaintext credentials
+GET /api/v1/automation/credentials/{credential_id}/decrypt
+Authorization: Bearer {decryption_token}
+
+Response (200 OK):
+{
+  "credential_id": "cred_uuid_12345",
+  "credentials": {
+    "client_id": "actual_salesforce_client_id",
+    "client_secret": "actual_salesforce_secret",
+    "access_token": "actual_oauth_access_token",
+    "refresh_token": "actual_oauth_refresh_token"
+  },
+  "expires_at": "2025-12-31T23:59:59Z"
+}
+```
+
+**4. List Credentials**
+```http
+GET /api/v1/automation/credentials?client_id={uuid}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "credentials": [
+    {
+      "credential_id": "cred_uuid_12345",
+      "credential_name": "salesforce_production_oauth",
+      "credential_type": "oauth2",
+      "provider": "salesforce",
+      "status": "active",
+      "expires_at": "2025-12-31T23:59:59Z",
+      "last_used": "2025-10-15T10:30:00Z"
+    },
+    {
+      "credential_id": "cred_uuid_67890",
+      "credential_name": "zendesk_api_key",
+      "credential_type": "api_key",
+      "provider": "zendesk",
+      "status": "expiring_soon",
+      "expires_at": "2025-10-20T00:00:00Z",
+      "last_used": "2025-10-14T18:20:00Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+**5. Update/Rotate Credential**
+```http
+PATCH /api/v1/automation/credentials/{credential_id}
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "credentials": {
+    "access_token": "new_oauth_access_token",
+    "refresh_token": "new_oauth_refresh_token",
+    "expires_at": "2026-01-15T23:59:59Z"
+  },
+  "rotation_reason": "scheduled_rotation"
+}
+
+Response (200 OK):
+{
+  "credential_id": "cred_uuid_12345",
+  "version": 2,
+  "status": "active",
+  "rotation_history": [
+    {
+      "version": 1,
+      "rotated_at": "2025-10-10T15:00:00Z",
+      "reason": "initial_creation"
+    },
+    {
+      "version": 2,
+      "rotated_at": "2025-10-15T11:00:00Z",
+      "reason": "scheduled_rotation"
+    }
+  ],
+  "updated_at": "2025-10-15T11:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: config_events
+{
+  "event_type": "credential_rotated",
+  "credential_id": "cred_uuid_12345",
+  "client_id": "uuid",
+  "version": 2,
+  "timestamp": "2025-10-15T11:00:00Z"
+}
+```
+
+**6. Delete Credential**
+```http
+DELETE /api/v1/automation/credentials/{credential_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "credential_id": "cred_uuid_12345",
+  "status": "deleted",
+  "archived_until": "2026-01-13T11:05:00Z",
+  "dependent_configs": [
+    {
+      "config_id": "uuid",
+      "config_name": "acme_support_bot",
+      "affected_integration": "salesforce_crm",
+      "action_required": "update_credential_reference"
+    }
+  ]
+}
+
+Event Published to Kafka:
+Topic: config_events
+{
+  "event_type": "credential_deleted",
+  "credential_id": "cred_uuid_12345",
+  "client_id": "uuid",
+  "affected_configs": ["uuid"],
+  "timestamp": "2025-10-15T11:05:00Z"
+}
+```
+
+**Data Storage:**
+- **PostgreSQL**: Credential metadata, audit logs, rotation history (plaintext values NOT stored)
+- **AWS Secrets Manager / HashiCorp Vault**: Encrypted credential values
+- **Redis**: Decryption token cache (5-minute TTL)
+
+**Database Schema:**
+```sql
+CREATE TABLE credentials (
+  credential_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  credential_name VARCHAR(255) NOT NULL,
+  credential_type VARCHAR(50) NOT NULL,
+  provider VARCHAR(100),
+  secrets_manager_ref VARCHAR(500) NOT NULL, -- Reference to AWS Secrets Manager ARN
+  status VARCHAR(50) NOT NULL,
+  version INTEGER DEFAULT 1,
+  expires_at TIMESTAMP,
+  auto_rotate BOOLEAN DEFAULT FALSE,
+  rotation_days INTEGER,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  last_used TIMESTAMP,
+  usage_count INTEGER DEFAULT 0
+);
+
+CREATE INDEX idx_credentials_client ON credentials(client_id);
+CREATE INDEX idx_credentials_status ON credentials(status);
+
+-- Row-Level Security
+ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
+CREATE POLICY credentials_tenant_isolation ON credentials
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE TABLE credential_audit_logs (
+  audit_id UUID PRIMARY KEY,
+  credential_id UUID REFERENCES credentials(credential_id),
+  action VARCHAR(50) NOT NULL, -- create, read, update, delete, rotate
+  performed_by UUID, -- user_id or service_id
+  ip_address INET,
+  user_agent TEXT,
+  timestamp TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_credential ON credential_audit_logs(credential_id);
+CREATE INDEX idx_audit_timestamp ON credential_audit_logs(timestamp);
+```
+
+**Security Best Practices:**
+1. **Least Privilege Access**: Only services that need credentials can request decryption tokens
+2. **Audit Trail**: Every credential access logged with who, when, why
+3. **Temporary Tokens**: Decryption tokens expire after 5 minutes to limit exposure window
+4. **Validation**: Auto-test credentials on creation/update to catch invalid keys early
+5. **Alerting**: Notify Platform Engineers when:
+   - Credential expires within 7 days
+   - Credential validation fails
+   - Unusual access patterns detected (e.g., 100+ decryptions in 1 minute)
+   - Credential deletion affects active configs
+
+**Integration Points:**
+- **Service 8 (Agent Orchestration)**: Fetches credentials at runtime for chatbot integrations (Salesforce, Zendesk, etc.)
+- **Service 9 (Voice Agent)**: Does NOT use Credential Vault (voicebots have no external integrations, only SIP trunks)
+- **Service 7 (Automation Engine)**: Validates credential references in YAML configs before deployment
+- **Service 11 (Monitoring)**: Monitors credential expiration, rotation schedules, access patterns
+- **Service 14 (Support Engine)**: Creates support tickets when credentials fail validation or expire
+
+**Frontend Component:**
+- Component: `CredentialVaultManager.tsx`
+- Features:
+  - Credential creation wizard (guided OAuth flow)
+  - Credential list with expiration warnings
+  - Test credential button (validates via mock API call)
+  - Rotation scheduler interface
+  - Usage analytics dashboard (which configs use which credentials)
+  - Audit log viewer
+
+**Rate Limiting:**
+- 10 credential creations per hour per tenant
+- 100 credential reads per minute per tenant
+- 1000 decryption token requests per minute per service
+
 ---
 
 ## 16. LLM Gateway Service → CONVERTED TO LIBRARY
@@ -2669,6 +3378,757 @@ Response (200 OK):
    - Tools: NER models, relation extractors, graph writers
    - Autonomy: Fully autonomous
    - Escalation: Manual review for low-confidence entity extractions (<70%)
+
+#### Multi-Source Document Ingestion
+
+**Purpose**: Comprehensive document ingestion pipeline supporting multiple file formats and data sources for chatbot/voicebot knowledge bases.
+
+**Supported Document Sources:**
+
+1. **File Uploads:**
+   - **Word Documents**: .docx, .doc (Microsoft Word)
+   - **PDFs**: .pdf (with text extraction and OCR for scanned PDFs)
+   - **Spreadsheets**: .xlsx, .xls, .csv (Excel, Google Sheets exports)
+   - **Text Files**: .txt, .md (Markdown), .rtf
+   - **Presentations**: .pptx, .ppt (PowerPoint)
+   - **Web Pages**: HTML files, URLs for web scraping
+
+2. **API Integrations:**
+   - **Google Drive**: Automatic sync of selected folders
+   - **Sharepoint/OneDrive**: Microsoft 365 document libraries
+   - **Confluence**: Wiki pages and documentation
+   - **Notion**: Workspace pages and databases
+   - **Zendesk**: Knowledge base articles
+   - **Intercom**: Help center articles
+   - **Custom REST APIs**: Webhook-based document push
+
+3. **Cloud Storage:**
+   - **Google Cloud Storage (GCS)**: Bucket monitoring with auto-ingestion
+   - **AWS S3**: S3 bucket monitoring with event-driven ingestion
+   - **Dropbox**: Folder sync with change detection
+   - **Box**: Enterprise file sync
+
+4. **Database Sources:**
+   - **PostgreSQL**: Direct table queries for structured data
+   - **MySQL**: Database table exports
+   - **MongoDB**: Collection exports
+   - **Airtable**: Base/table sync
+
+**Document Processing Pipeline:**
+
+1. **Upload/Fetch** → 2. **Format Detection** → 3. **Text Extraction** → 4. **Chunking** → 5. **Embedding** → 6. **Vector Storage** → 7. **Metadata Indexing**
+
+**API Specification:**
+
+**1. Ingest from File Upload**
+```http
+POST /api/v1/rag/ingest/file
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: multipart/form-data
+
+Request Body (multipart):
+{
+  "file": <binary_file>,
+  "namespace": "client_knowledge_base",
+  "metadata": {
+    "document_type": "product_manual",
+    "category": "technical_documentation",
+    "language": "en",
+    "version": "2.1"
+  },
+  "processing_options": {
+    "ocr_enabled": true,  // For scanned PDFs
+    "table_extraction": true,  // Extract tables from Excel/Word
+    "image_extraction": false,  // Extract images (for Gemini Vision integration)
+    "chunking_strategy": "semantic"
+  }
+}
+
+Response (202 Accepted):
+{
+  "job_id": "uuid",
+  "document_id": "doc_uuid",
+  "status": "processing",
+  "file_name": "Product_Manual_v2.1.pdf",
+  "file_size_bytes": 2458000,
+  "detected_format": "pdf",
+  "estimated_chunks": 85,
+  "estimated_completion": "2025-10-15T14:35:00Z"
+}
+```
+
+**2. Ingest from URL (Web Scraping)**
+```http
+POST /api/v1/rag/ingest/url
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "url": "https://docs.example.com/api/v2/authentication",
+  "namespace": "client_knowledge_base",
+  "metadata": {
+    "document_type": "api_documentation",
+    "category": "developer_docs"
+  },
+  "processing_options": {
+    "follow_links": false,  // Crawl related pages
+    "max_depth": 1,  // Link depth to follow
+    "include_images": false
+  }
+}
+
+Response (202 Accepted):
+{
+  "job_id": "uuid",
+  "document_id": "doc_uuid",
+  "status": "processing",
+  "url": "https://docs.example.com/api/v2/authentication",
+  "estimated_completion": "2025-10-15T14:25:00Z"
+}
+```
+
+**3. Ingest from Google Drive**
+```http
+POST /api/v1/rag/ingest/google-drive
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "credential_id": "cred_google_drive_oauth",  // Reference to Credential Vault
+  "folder_id": "google_drive_folder_id",
+  "namespace": "client_knowledge_base",
+  "sync_mode": "one_time",  // one_time | continuous
+  "file_filters": {
+    "file_types": ["document", "spreadsheet", "presentation"],
+    "modified_after": "2025-01-01T00:00:00Z"
+  },
+  "processing_options": {
+    "table_extraction": true,
+    "chunking_strategy": "semantic"
+  }
+}
+
+Response (202 Accepted):
+{
+  "sync_job_id": "uuid",
+  "status": "syncing",
+  "files_discovered": 47,
+  "sync_mode": "one_time",
+  "estimated_completion": "2025-10-15T15:00:00Z"
+}
+```
+
+**4. Ingest from API (Custom Integration)**
+```http
+POST /api/v1/rag/ingest/api
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "api_endpoint": "https://api.zendesk.com/v2/help_center/articles",
+  "credential_id": "cred_zendesk_api_key",
+  "namespace": "client_knowledge_base",
+  "metadata": {
+    "document_type": "faq",
+    "category": "customer_support"
+  },
+  "api_config": {
+    "method": "GET",
+    "headers": {
+      "Accept": "application/json"
+    },
+    "pagination": {
+      "type": "cursor",
+      "cursor_field": "next_page"
+    },
+    "data_path": "articles",  // JSON path to extract documents
+    "content_field": "body",  // Field containing document text
+    "title_field": "title"
+  }
+}
+
+Response (202 Accepted):
+{
+  "sync_job_id": "uuid",
+  "status": "syncing",
+  "api_endpoint": "https://api.zendesk.com/v2/help_center/articles",
+  "estimated_documents": 120,
+  "estimated_completion": "2025-10-15T14:45:00Z"
+}
+```
+
+**5. Ingest from Cloud Storage (S3/GCS)**
+```http
+POST /api/v1/rag/ingest/cloud-storage
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "provider": "s3",  // s3 | gcs | dropbox | box
+  "bucket_name": "acme-corp-documents",
+  "credential_id": "cred_aws_s3",
+  "namespace": "client_knowledge_base",
+  "path_prefix": "knowledge-base/",  // Optional: filter by path
+  "sync_mode": "continuous",  // continuous | one_time
+  "file_filters": {
+    "file_extensions": [".pdf", ".docx", ".md"],
+    "modified_after": "2025-01-01T00:00:00Z"
+  },
+  "event_driven": true  // Use S3 event notifications for real-time sync
+}
+
+Response (202 Accepted):
+{
+  "sync_job_id": "uuid",
+  "status": "syncing",
+  "provider": "s3",
+  "bucket_name": "acme-corp-documents",
+  "sync_mode": "continuous",
+  "files_discovered": 203,
+  "estimated_completion": "2025-10-15T16:00:00Z"
+}
+
+Event Published to Kafka (for continuous sync):
+Topic: rag_events
+{
+  "event_type": "continuous_sync_started",
+  "sync_job_id": "uuid",
+  "provider": "s3",
+  "bucket_name": "acme-corp-documents",
+  "namespace": "client_knowledge_base",
+  "timestamp": "2025-10-15T14:00:00Z"
+}
+```
+
+**6. Get Sync/Ingestion Status**
+```http
+GET /api/v1/rag/ingest/status/{job_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "job_id": "uuid",
+  "status": "completed",  // processing | completed | failed | partial_failure
+  "source_type": "google_drive",
+  "total_documents": 47,
+  "processed_documents": 47,
+  "failed_documents": 0,
+  "total_chunks": 2150,
+  "embeddings_generated": 2150,
+  "failed_files": [],
+  "started_at": "2025-10-15T14:00:00Z",
+  "completed_at": "2025-10-15T14:58:00Z",
+  "namespace": "client_knowledge_base"
+}
+```
+
+**7. List Ingestion Jobs**
+```http
+GET /api/v1/rag/ingest/jobs?namespace={namespace}&status={status}
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+
+Response (200 OK):
+{
+  "jobs": [
+    {
+      "job_id": "uuid_1",
+      "source_type": "google_drive",
+      "status": "completed",
+      "total_documents": 47,
+      "started_at": "2025-10-15T14:00:00Z",
+      "completed_at": "2025-10-15T14:58:00Z"
+    },
+    {
+      "job_id": "uuid_2",
+      "source_type": "s3",
+      "status": "in_progress",
+      "total_documents": 203,
+      "processed_documents": 145,
+      "started_at": "2025-10-15T14:00:00Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+**Document Processing Features:**
+
+1. **OCR (Optical Character Recognition)**:
+   - Automatically detect scanned PDFs
+   - Extract text using Tesseract OCR
+   - Support for 100+ languages
+   - Preserve layout and formatting
+
+2. **Table Extraction**:
+   - Extract tables from Excel, Word, PDFs
+   - Convert to structured format (JSON/CSV)
+   - Maintain column headers and relationships
+   - Support for merged cells and complex layouts
+
+3. **Image Extraction** (for Gemini Vision):
+   - Extract images from documents
+   - Store in S3 with document association
+   - Generate image embeddings for visual search
+   - Link to parent document chunks
+
+4. **Metadata Enrichment**:
+   - Auto-detect document language
+   - Extract creation/modification dates
+   - Identify document type (contract, invoice, manual, etc.)
+   - Extract author/creator information
+
+**Data Storage:**
+- **S3**: Original document files (retention: permanent)
+- **PostgreSQL**: Document metadata, ingestion job logs, sync schedules
+- **Qdrant**: Vector embeddings with namespace isolation
+- **Neo4j**: Cross-document entity relationships
+
+**Database Schema Additions:**
+```sql
+CREATE TABLE documents (
+  document_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  namespace VARCHAR(255) NOT NULL,
+  source_type VARCHAR(50) NOT NULL,  -- file_upload | url | google_drive | s3 | api
+  source_reference VARCHAR(500),  -- S3 key, Drive file ID, URL, etc.
+  file_name VARCHAR(500),
+  file_type VARCHAR(50),  -- pdf, docx, xlsx, etc.
+  file_size_bytes BIGINT,
+  status VARCHAR(50) NOT NULL,  -- processed | processing | failed
+  total_chunks INTEGER,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  metadata JSONB
+);
+
+CREATE INDEX idx_documents_client ON documents(client_id);
+CREATE INDEX idx_documents_namespace ON documents(namespace);
+CREATE INDEX idx_documents_status ON documents(status);
+
+-- Row-Level Security
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+CREATE POLICY documents_tenant_isolation ON documents
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE TABLE ingestion_jobs (
+  job_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  namespace VARCHAR(255) NOT NULL,
+  source_type VARCHAR(50) NOT NULL,
+  sync_mode VARCHAR(50),  -- one_time | continuous
+  status VARCHAR(50) NOT NULL,  -- syncing | completed | failed
+  total_documents INTEGER DEFAULT 0,
+  processed_documents INTEGER DEFAULT 0,
+  failed_documents INTEGER DEFAULT 0,
+  total_chunks INTEGER DEFAULT 0,
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  error_message TEXT,
+  configuration JSONB
+);
+
+CREATE INDEX idx_jobs_client ON ingestion_jobs(client_id);
+CREATE INDEX idx_jobs_status ON ingestion_jobs(status);
+
+CREATE TABLE continuous_sync_configs (
+  sync_config_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  namespace VARCHAR(255) NOT NULL,
+  source_type VARCHAR(50) NOT NULL,
+  provider VARCHAR(100),  -- google_drive | s3 | dropbox | etc.
+  credential_id UUID REFERENCES credentials(credential_id),
+  sync_schedule VARCHAR(50),  -- real_time | hourly | daily
+  last_sync_at TIMESTAMP,
+  next_sync_at TIMESTAMP,
+  status VARCHAR(50) NOT NULL,  -- active | paused | failed
+  configuration JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_sync_configs_client ON continuous_sync_configs(client_id);
+CREATE INDEX idx_sync_configs_status ON continuous_sync_configs(status);
+```
+
+**Integration Points:**
+- **Service 7 (Automation Engine)**: Credential Vault integration for API keys and OAuth tokens
+- **Service 8 (Agent Orchestration)**: Consumes ingested documents for chatbot knowledge
+- **Service 9 (Voice Agent)**: Consumes ingested documents for voicebot knowledge
+- **Service 11 (Monitoring)**: Monitors ingestion job health, sync failures, storage usage
+
+**Frontend Component:**
+- Component: `DocumentIngestionManager.tsx`
+- Features:
+  - Multi-source upload interface (drag-and-drop, URL input, cloud integration)
+  - Ingestion job queue with progress tracking
+  - File preview with text extraction preview
+  - Sync schedule configuration for continuous sources
+  - Error log viewer with retry options
+  - Storage usage analytics dashboard
+
+**Rate Limiting:**
+- 100 file uploads per hour per tenant
+- 10 continuous sync configurations per tenant
+- 50 API ingestion jobs per hour per tenant
+
+#### FAQ Management System
+
+**Purpose**: Structured FAQ management system optimized for chatbot/voicebot knowledge retrieval with question-answer pairing, categorization, and confidence-based routing.
+
+**Key Features:**
+
+1. **FAQ CRUD Operations:**
+   - Create, read, update, delete FAQ entries
+   - Support for multiple FAQs per client/product
+   - Version control for FAQ content changes
+   - Bulk import/export (CSV, JSON, Excel)
+
+2. **FAQ Structure:**
+   - **Question**: Natural language question (primary)
+   - **Answer**: Detailed answer text (with markdown support)
+   - **Alternate Questions**: Synonyms, rephrased questions for better matching
+   - **Category**: FAQ category for filtering (e.g., "Billing", "Technical Support")
+   - **Tags**: Searchable tags for classification
+   - **Metadata**: Language, priority, visibility (public/internal)
+
+3. **Search & Matching:**
+   - Semantic search using vector embeddings
+   - Fuzzy matching for typos and variations
+   - Category-based filtering
+   - Confidence scoring for answer quality
+   - Multi-language support
+
+4. **Integration with Chatbot/Voicebot:**
+   - Auto-inject FAQ answers into agent responses
+   - Confidence threshold for auto-response (e.g., >0.85 = auto-reply, <0.85 = human review)
+   - Fallback to general knowledge base if FAQ not found
+   - Track FAQ hit rate and effectiveness
+
+**API Specification:**
+
+**1. Create FAQ**
+```http
+POST /api/v1/rag/faq
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "namespace": "acme_support_faq",
+  "category": "billing",
+  "question": "How do I update my payment method?",
+  "alternate_questions": [
+    "Change payment method",
+    "Update credit card",
+    "Modify billing information"
+  ],
+  "answer": "To update your payment method:\n1. Go to Account Settings\n2. Click Billing & Payments\n3. Select Update Payment Method\n4. Enter new card details\n5. Click Save",
+  "tags": ["billing", "payment", "account_settings"],
+  "metadata": {
+    "language": "en",
+    "priority": "high",
+    "visibility": "public"
+  }
+}
+
+Response (201 Created):
+{
+  "faq_id": "faq_uuid",
+  "namespace": "acme_support_faq",
+  "category": "billing",
+  "question": "How do I update my payment method?",
+  "answer": "To update your payment method:\n1. Go to Account Settings...",
+  "alternate_questions": ["Change payment method", "Update credit card", "Modify billing information"],
+  "tags": ["billing", "payment", "account_settings"],
+  "version": 1,
+  "created_at": "2025-10-15T15:00:00Z",
+  "vector_embedding_status": "generated"
+}
+
+Event Published to Kafka:
+Topic: rag_events
+{
+  "event_type": "faq_created",
+  "faq_id": "faq_uuid",
+  "namespace": "acme_support_faq",
+  "client_id": "uuid",
+  "timestamp": "2025-10-15T15:00:00Z"
+}
+```
+
+**2. Search FAQs**
+```http
+POST /api/v1/rag/faq/search
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: application/json
+
+Request Body:
+{
+  "query": "change my credit card info",
+  "namespace": "acme_support_faq",
+  "top_k": 3,
+  "filters": {
+    "category": "billing",
+    "language": "en",
+    "visibility": "public"
+  },
+  "confidence_threshold": 0.7
+}
+
+Response (200 OK):
+{
+  "results": [
+    {
+      "faq_id": "faq_uuid",
+      "question": "How do I update my payment method?",
+      "answer": "To update your payment method:\n1. Go to Account Settings...",
+      "category": "billing",
+      "tags": ["billing", "payment", "account_settings"],
+      "confidence_score": 0.94,
+      "matched_via": "alternate_question",  // question | alternate_question | semantic_search
+      "metadata": {
+        "language": "en",
+        "priority": "high"
+      }
+    },
+    {
+      "faq_id": "faq_uuid_2",
+      "question": "What payment methods do you accept?",
+      "answer": "We accept Visa, MasterCard, American Express...",
+      "category": "billing",
+      "confidence_score": 0.72,
+      "matched_via": "semantic_search"
+    }
+  ],
+  "total_results": 2,
+  "auto_response_enabled": true,  // true if top result > threshold
+  "recommended_answer": "To update your payment method:\n1. Go to Account Settings..."
+}
+```
+
+**3. Update FAQ**
+```http
+PATCH /api/v1/rag/faq/{faq_id}
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "answer": "To update your payment method:\n1. Log in to your account\n2. Navigate to Settings > Billing\n3. Click 'Update Payment Method'\n4. Enter new card details and save",
+  "tags": ["billing", "payment", "account_settings", "self_service"]
+}
+
+Response (200 OK):
+{
+  "faq_id": "faq_uuid",
+  "version": 2,
+  "updated_fields": ["answer", "tags"],
+  "updated_at": "2025-10-15T16:00:00Z",
+  "vector_embedding_status": "regenerated"
+}
+```
+
+**4. Delete FAQ**
+```http
+DELETE /api/v1/rag/faq/{faq_id}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "faq_id": "faq_uuid",
+  "status": "deleted",
+  "deleted_at": "2025-10-15T16:05:00Z"
+}
+```
+
+**5. Bulk Import FAQs**
+```http
+POST /api/v1/rag/faq/import
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+Content-Type: multipart/form-data
+
+Request Body (multipart):
+{
+  "file": <faq_import.csv>,
+  "namespace": "acme_support_faq",
+  "import_mode": "merge",  // merge | replace
+  "mapping": {
+    "question_column": "Question",
+    "answer_column": "Answer",
+    "category_column": "Category",
+    "tags_column": "Tags"
+  }
+}
+
+Response (202 Accepted):
+{
+  "import_job_id": "uuid",
+  "status": "processing",
+  "total_rows": 350,
+  "estimated_completion": "2025-10-15T16:20:00Z"
+}
+```
+
+**6. Get FAQ Analytics**
+```http
+GET /api/v1/rag/faq/analytics?namespace={namespace}&date_range=30d
+Authorization: Bearer {jwt_token}
+X-Tenant-ID: {tenant_id}
+
+Response (200 OK):
+{
+  "namespace": "acme_support_faq",
+  "date_range": "2025-09-15 to 2025-10-15",
+  "total_faqs": 350,
+  "total_searches": 12500,
+  "avg_confidence_score": 0.83,
+  "top_faqs": [
+    {
+      "faq_id": "faq_uuid",
+      "question": "How do I update my payment method?",
+      "hit_count": 450,
+      "avg_confidence": 0.91
+    },
+    {
+      "faq_id": "faq_uuid_2",
+      "question": "How do I reset my password?",
+      "hit_count": 380,
+      "avg_confidence": 0.89
+    }
+  ],
+  "low_confidence_queries": [
+    {
+      "query": "refund policy for cancelled orders",
+      "search_count": 35,
+      "avg_confidence": 0.58,
+      "suggestion": "Create FAQ for refund policy"
+    }
+  ],
+  "category_breakdown": {
+    "billing": 120,
+    "technical_support": 95,
+    "account_management": 80,
+    "product_features": 55
+  }
+}
+```
+
+**Data Storage:**
+- **PostgreSQL**: FAQ metadata, categories, tags, version history
+- **Qdrant**: FAQ vector embeddings (question + alternate questions)
+- **Redis**: FAQ search result cache (1-hour TTL)
+
+**Database Schema:**
+```sql
+CREATE TABLE faqs (
+  faq_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  namespace VARCHAR(255) NOT NULL,
+  category VARCHAR(255),
+  question TEXT NOT NULL,
+  alternate_questions TEXT[],
+  answer TEXT NOT NULL,
+  tags TEXT[],
+  version INTEGER DEFAULT 1,
+  status VARCHAR(50) DEFAULT 'active',  -- active | archived
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  created_by UUID,
+  updated_by UUID
+);
+
+CREATE INDEX idx_faqs_client ON faqs(client_id);
+CREATE INDEX idx_faqs_namespace ON faqs(namespace);
+CREATE INDEX idx_faqs_category ON faqs(category);
+CREATE INDEX idx_faqs_status ON faqs(status);
+CREATE INDEX idx_faqs_tags ON faqs USING GIN(tags);
+
+-- Row-Level Security
+ALTER TABLE faqs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY faqs_tenant_isolation ON faqs
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE TABLE faq_search_logs (
+  search_log_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  namespace VARCHAR(255) NOT NULL,
+  query TEXT NOT NULL,
+  faq_id UUID REFERENCES faqs(faq_id),
+  confidence_score DECIMAL(3,2),
+  matched_via VARCHAR(50),  -- question | alternate_question | semantic_search
+  conversation_id UUID,  -- Link to chatbot conversation
+  timestamp TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_logs_client ON faq_search_logs(client_id);
+CREATE INDEX idx_search_logs_namespace ON faq_search_logs(namespace);
+CREATE INDEX idx_search_logs_timestamp ON faq_search_logs(timestamp);
+
+CREATE TABLE faq_versions (
+  version_id UUID PRIMARY KEY,
+  faq_id UUID REFERENCES faqs(faq_id),
+  version INTEGER NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  alternate_questions TEXT[],
+  changed_by UUID,
+  changed_at TIMESTAMP DEFAULT NOW(),
+  change_reason TEXT
+);
+
+CREATE INDEX idx_faq_versions_faq ON faq_versions(faq_id);
+```
+
+**Integration Points:**
+- **Service 8 (Agent Orchestration)**: FAQ search integration for chatbot auto-responses
+- **Service 9 (Voice Agent)**: FAQ search for voicebot responses
+- **Service 11 (Monitoring)**: Track FAQ hit rates, low-confidence queries, search failures
+- **Service 14 (Support Engine)**: Suggest FAQ creation from repeated support queries
+
+**Frontend Component:**
+- Component: `FAQManager.tsx`
+- Features:
+  - FAQ CRUD interface with rich text editor
+  - Category/tag management
+  - Bulk import wizard (CSV/Excel upload)
+  - FAQ analytics dashboard (hit rates, confidence scores)
+  - Low-confidence query report (suggests new FAQs)
+  - FAQ version history viewer
+  - A/B testing for FAQ answers
+
+**AI-Powered Features:**
+
+1. **FAQ Suggestion from Support Tickets:**
+   - Analyze support tickets to identify common questions
+   - Auto-generate FAQ draft from ticket patterns
+   - Platform Engineer approval before publishing
+
+2. **Answer Quality Scoring:**
+   - Evaluate answer completeness using LLM
+   - Suggest improvements for low-scoring answers
+   - Track user satisfaction per FAQ
+
+3. **Automatic Categorization:**
+   - Auto-assign categories based on question content
+   - Suggest tags using entity extraction
+
+**Rate Limiting:**
+- 100 FAQ creations per hour per tenant
+- 1000 FAQ searches per minute per tenant
+- 10 bulk imports per day per tenant
 
 ---
 

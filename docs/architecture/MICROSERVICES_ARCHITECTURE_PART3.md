@@ -723,6 +723,601 @@ Auto-rollback triggered within 60 seconds
 4. Cross-Sell Recommendation → User acceptance required
 5. Survey Sending → Auto-sent at conversation end (if config enabled)
 
+#### Tool Error Handling & Escalation
+
+**Purpose**: Robust error handling for tool execution failures (internal APIs, external integrations) with graceful fallback and user communication.
+
+**Error Types Handled:**
+
+1. **Internal API/Tool Errors:**
+   - Tool execution timeouts (>30s)
+   - Tool function exceptions (invalid parameters, logic errors)
+   - Missing tool implementations (referenced in YAML but not deployed)
+   - Tool rate limit exceeded
+
+2. **External Integration API Errors:**
+   - Salesforce/Zendesk/etc API failures (500 errors, timeouts)
+   - Authentication failures (expired OAuth tokens)
+   - Rate limiting (429 errors)
+   - Invalid API responses (malformed JSON, unexpected schema)
+
+**Error Handling Strategies:**
+
+1. **Retry Logic:**
+   - Transient errors: Exponential backoff retry (3 attempts)
+   - Rate limits: Wait for retry-after header duration
+   - Authentication failures: Attempt token refresh once
+   - Timeouts: Retry with longer timeout (up to 60s)
+
+2. **Graceful Degradation:**
+   - If tool fails after retries, continue conversation without tool result
+   - Inform user: "I'm having trouble accessing [system]. Let me try a different approach."
+   - Attempt alternative tools if available in YAML config
+   - Log error for monitoring and support follow-up
+
+3. **Human Escalation:**
+   - Critical tool failures (e.g., payment processing) → Auto-escalate to human
+   - Multiple consecutive tool failures → Suggest human agent
+   - User expresses frustration after tool error → Immediate escalation
+
+**API Specification:**
+
+**1. Tool Execution with Error Handling**
+```http
+POST /api/v1/agent-orchestration/tools/execute
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "conversation_id": "conv_uuid",
+  "tool_name": "salesforce_create_lead",
+  "tool_parameters": {
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john@example.com",
+    "company": "Acme Corp"
+  },
+  "retry_policy": {
+    "max_retries": 3,
+    "backoff_strategy": "exponential",
+    "timeout_seconds": 30
+  },
+  "fallback_behavior": "continue_without_result"  // continue_without_result | escalate_to_human | use_alternative_tool
+}
+
+Response (200 OK - Success):
+{
+  "execution_id": "exec_uuid",
+  "tool_name": "salesforce_create_lead",
+  "status": "success",
+  "result": {
+    "lead_id": "sf_lead_123",
+    "created_at": "2025-10-15T18:00:00Z"
+  },
+  "execution_time_ms": 1250,
+  "retries_attempted": 0
+}
+
+Response (200 OK - Failed with Fallback):
+{
+  "execution_id": "exec_uuid",
+  "tool_name": "salesforce_create_lead",
+  "status": "failed",
+  "error": {
+    "error_type": "api_timeout",
+    "error_message": "Salesforce API did not respond within 30 seconds",
+    "retries_attempted": 3,
+    "last_attempt_at": "2025-10-15T18:01:30Z"
+  },
+  "fallback_action_taken": "continue_without_result",
+  "user_message": "I'm having trouble creating the lead in Salesforce right now. I've noted your information and will follow up once the system is available."
+}
+
+Response (200 OK - Escalated):
+{
+  "execution_id": "exec_uuid",
+  "tool_name": "process_payment",
+  "status": "failed",
+  "error": {
+    "error_type": "api_error",
+    "error_message": "Payment gateway returned error: card declined",
+    "retries_attempted": 1,
+    "is_retriable": false
+  },
+  "fallback_action_taken": "escalate_to_human",
+  "escalation": {
+    "escalation_id": "esc_uuid",
+    "reason": "Critical payment processing failure",
+    "agent_assigned": "support_agent_uuid"
+  }
+}
+```
+
+**2. Get Tool Error Analytics**
+```http
+GET /api/v1/agent-orchestration/tools/errors?client_id={uuid}&date_range=7d
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "client_id": "uuid",
+  "date_range": "2025-10-08 to 2025-10-15",
+  "total_tool_executions": 15000,
+  "total_errors": 345,
+  "error_rate": 0.023,  // 2.3%
+  "error_breakdown_by_type": {
+    "api_timeout": 125,
+    "authentication_failure": 78,
+    "rate_limit_exceeded": 65,
+    "invalid_parameters": 42,
+    "api_error": 35
+  },
+  "error_breakdown_by_tool": [
+    {
+      "tool_name": "salesforce_create_lead",
+      "total_executions": 3500,
+      "errors": 89,
+      "error_rate": 0.025,
+      "common_errors": ["api_timeout", "authentication_failure"]
+    },
+    {
+      "tool_name": "zendesk_create_ticket",
+      "total_executions": 2800,
+      "errors": 65,
+      "error_rate": 0.023,
+      "common_errors": ["rate_limit_exceeded"]
+    }
+  ],
+  "escalations_triggered": 42,
+  "successful_retries": 198,
+  "failed_after_retries": 147
+}
+```
+
+**Error Logging & Monitoring:**
+
+All tool errors are logged to Service 11 (Monitoring Engine) via:
+- Integration Error Logs API for external integration failures
+- Internal metrics for tool execution success/failure rates
+- Alert triggers for error rate thresholds (>5%)
+
+**Data Storage:**
+- **PostgreSQL**: Tool execution logs with error details
+- **Kafka**: Real-time error event stream to Monitoring Service
+
+**Database Schema:**
+```sql
+CREATE TABLE tool_execution_logs (
+  execution_id UUID PRIMARY KEY,
+  conversation_id UUID NOT NULL,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  tool_name VARCHAR(255) NOT NULL,
+  tool_parameters JSONB,
+  status VARCHAR(50) NOT NULL,  -- success | failed | escalated
+  result JSONB,
+  error_type VARCHAR(100),
+  error_message TEXT,
+  retries_attempted INTEGER DEFAULT 0,
+  execution_time_ms INTEGER,
+  fallback_action_taken VARCHAR(50),
+  executed_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_tool_executions_conversation ON tool_execution_logs(conversation_id);
+CREATE INDEX idx_tool_executions_client ON tool_execution_logs(client_id);
+CREATE INDEX idx_tool_executions_tool ON tool_execution_logs(tool_name);
+CREATE INDEX idx_tool_executions_status ON tool_execution_logs(status);
+CREATE INDEX idx_tool_executions_timestamp ON tool_execution_logs(executed_at);
+
+-- Row-Level Security
+ALTER TABLE tool_execution_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tool_executions_tenant_isolation ON tool_execution_logs
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+```
+
+**Integration Points:**
+- **Service 11 (Monitoring)**: Send error logs for tracking and alerting
+- **Service 14 (Support Engine)**: Create support tickets for critical failures
+- **Service 21 (Agent Copilot)**: Provide error context to human agents during escalation
+
+#### Gemini Vision Document Handling
+
+**Purpose**: Enable chatbots to process images and documents using Google Gemini Vision API for visual question answering, document analysis, and image understanding.
+
+**Capabilities:**
+
+1. **Image Upload & Processing:**
+   - Users upload images via chat (PNG, JPG, WebP)
+   - Support for screenshots, product photos, diagrams, receipts
+   - Image compression and optimization before API calls
+   - Temporary storage in S3 with 24-hour retention
+
+2. **Document Processing:**
+   - Extract text from images (OCR alternative to Tesseract)
+   - Analyze document structure (invoices, contracts, forms)
+   - Extract tables and structured data from images
+   - Support scanned documents and handwritten text
+
+3. **Visual Question Answering:**
+   - User asks questions about uploaded images
+   - Example: "What color is this product?" with product photo
+   - Example: "What's the total on this receipt?" with receipt image
+   - Context-aware responses using image + conversation history
+
+4. **Public URL Support:**
+   - Users can share public image URLs instead of uploading
+   - System fetches and processes images from URLs
+   - Validate URL accessibility and image format
+
+**API Specification:**
+
+**1. Upload Image for Processing**
+```http
+POST /api/v1/agent-orchestration/vision/upload
+Authorization: Bearer {jwt_token}
+Content-Type: multipart/form-data
+
+Request Body (multipart):
+{
+  "conversation_id": "conv_uuid",
+  "image": <binary_image_file>,
+  "question": "What's the total amount on this invoice?",
+  "processing_options": {
+    "extract_text": true,
+    "analyze_structure": true,
+    "compress_image": true
+  }
+}
+
+Response (200 OK):
+{
+  "image_id": "img_uuid",
+  "conversation_id": "conv_uuid",
+  "s3_url": "https://s3.amazonaws.com/workflow-temp/img_uuid.jpg",
+  "processing_status": "completed",
+  "gemini_response": {
+    "answer": "The total amount on this invoice is $1,247.50. This includes a subtotal of $1,150.00 plus $97.50 in taxes.",
+    "confidence": 0.92,
+    "extracted_data": {
+      "total_amount": 1247.50,
+      "subtotal": 1150.00,
+      "tax": 97.50,
+      "invoice_number": "INV-2025-00123",
+      "invoice_date": "2025-10-15"
+    }
+  },
+  "processing_time_ms": 2350,
+  "uploaded_at": "2025-10-15T18:10:00Z",
+  "expires_at": "2025-10-16T18:10:00Z"
+}
+```
+
+**2. Process Image from Public URL**
+```http
+POST /api/v1/agent-orchestration/vision/process-url
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "conversation_id": "conv_uuid",
+  "image_url": "https://example.com/products/laptop-image.jpg",
+  "question": "What are the key features visible in this product image?",
+  "processing_options": {
+    "extract_text": true,
+    "analyze_structure": false
+  }
+}
+
+Response (200 OK):
+{
+  "image_id": "img_uuid",
+  "conversation_id": "conv_uuid",
+  "source_url": "https://example.com/products/laptop-image.jpg",
+  "processing_status": "completed",
+  "gemini_response": {
+    "answer": "The laptop in the image features: 15.6-inch display, backlit keyboard, USB-C ports on the left side, slim aluminum chassis in space gray color, and visible brand logo on the lid.",
+    "confidence": 0.88,
+    "detected_objects": ["laptop", "keyboard", "screen", "usb_ports"],
+    "dominant_colors": ["gray", "black", "silver"]
+  },
+  "processing_time_ms": 1850,
+  "processed_at": "2025-10-15T18:15:00Z"
+}
+```
+
+**3. Get Vision Processing History**
+```http
+GET /api/v1/agent-orchestration/vision/history?conversation_id={conv_uuid}
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "conversation_id": "conv_uuid",
+  "total_images_processed": 3,
+  "images": [
+    {
+      "image_id": "img_uuid_1",
+      "s3_url": "https://s3.amazonaws.com/workflow-temp/img_uuid_1.jpg",
+      "question": "What's the total amount on this invoice?",
+      "answer": "The total amount on this invoice is $1,247.50...",
+      "processed_at": "2025-10-15T18:10:00Z",
+      "expires_at": "2025-10-16T18:10:00Z"
+    },
+    {
+      "image_id": "img_uuid_2",
+      "source_url": "https://example.com/products/laptop-image.jpg",
+      "question": "What are the key features visible in this product image?",
+      "answer": "The laptop in the image features: 15.6-inch display...",
+      "processed_at": "2025-10-15T18:15:00Z"
+    }
+  ]
+}
+```
+
+**Integration with RAG Pipeline:**
+
+Images extracted from documents during ingestion (Service 17 Multi-Source Document Ingestion) are automatically processed through Gemini Vision:
+- Generate image embeddings for visual search
+- Extract text and structured data
+- Link images to parent document chunks in Qdrant
+- Enable cross-modal search (text query → image results)
+
+**Data Storage:**
+- **S3**: Temporary image storage (24-hour retention)
+- **PostgreSQL**: Image metadata, processing logs, extracted data
+- **Qdrant**: Image embeddings for visual search (if enabled)
+
+**Database Schema:**
+```sql
+CREATE TABLE vision_processing_logs (
+  image_id UUID PRIMARY KEY,
+  conversation_id UUID NOT NULL,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  image_source VARCHAR(50) NOT NULL,  -- upload | public_url
+  s3_url VARCHAR(500),
+  source_url VARCHAR(500),
+  question TEXT,
+  gemini_response JSONB,
+  extracted_data JSONB,
+  processing_time_ms INTEGER,
+  processed_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP
+);
+
+CREATE INDEX idx_vision_logs_conversation ON vision_processing_logs(conversation_id);
+CREATE INDEX idx_vision_logs_client ON vision_processing_logs(client_id);
+CREATE INDEX idx_vision_logs_processed ON vision_processing_logs(processed_at);
+
+-- Row-Level Security
+ALTER TABLE vision_processing_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY vision_logs_tenant_isolation ON vision_processing_logs
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+```
+
+**Cost Optimization:**
+- Image compression before API calls to reduce costs
+- Cache common image processing results (e.g., product images)
+- Rate limiting: 100 vision API calls per hour per tenant
+
+**Integration Points:**
+- **Service 17 (RAG Pipeline)**: Image extraction from documents, visual embeddings
+- **Service 11 (Monitoring)**: Track vision API usage, costs, errors
+- **Frontend**: Image upload widget in chat interface
+
+#### Human Agent Escalation Logic
+
+**Purpose**: Intelligent routing and escalation to human agents when chatbot cannot resolve user queries, with context handoff and assignment rules.
+
+**Escalation Triggers:**
+
+1. **User-Requested:**
+   - User explicitly asks for human agent ("speak to a person", "transfer me")
+   - User expresses frustration keywords ("this is ridiculous", "not helpful")
+   - User requests supervisor or manager
+
+2. **AI-Detected:**
+   - Low confidence responses (LLM confidence <0.6)
+   - Repeated failed attempts to resolve query (>3 turns without progress)
+   - Sentiment analysis detects negative sentiment (<0.3 score)
+   - Complex query outside chatbot capabilities
+
+3. **Rule-Based:**
+   - YAML config defines specific triggers (e.g., "refund request" → escalate)
+   - High-value customer (VIP tier) → priority escalation
+   - Legal/compliance topics → mandatory human review
+   - Payment failures → financial specialist escalation
+
+**Escalation Flow:**
+
+1. **Trigger Detection** → 2. **Agent Availability Check** → 3. **Context Handoff** → 4. **Queue Management** → 5. **Agent Assignment**
+
+**API Specification:**
+
+**1. Trigger Escalation**
+```http
+POST /api/v1/agent-orchestration/escalation/trigger
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "conversation_id": "conv_uuid",
+  "client_id": "uuid",
+  "escalation_reason": "user_requested",  // user_requested | low_confidence | negative_sentiment | rule_based
+  "escalation_details": {
+    "trigger_message": "I want to speak to a human",
+    "sentiment_score": 0.25,
+    "confidence_score": 0.45,
+    "failed_resolution_attempts": 4
+  },
+  "required_agent_skills": ["billing", "refunds"],  // Optional: skill-based routing
+  "priority": "normal"  // low | normal | high | urgent
+}
+
+Response (200 OK - Agent Available):
+{
+  "escalation_id": "esc_uuid",
+  "conversation_id": "conv_uuid",
+  "status": "assigned",
+  "assigned_agent": {
+    "agent_id": "agent_uuid",
+    "agent_name": "Sarah Johnson",
+    "agent_skills": ["billing", "refunds", "tier2_support"],
+    "avg_response_time_seconds": 45
+  },
+  "context_handoff": {
+    "conversation_summary": "User inquired about refund policy for cancelled subscription. Chatbot provided general policy but user wants specific case review.",
+    "user_info": {
+      "name": "John Doe",
+      "email": "john@example.com",
+      "customer_tier": "premium",
+      "account_value": 5000
+    },
+    "conversation_transcript_url": "https://workflow.com/transcripts/conv_uuid"
+  },
+  "estimated_wait_time_seconds": 30,
+  "escalated_at": "2025-10-15T18:20:00Z"
+}
+
+Response (200 OK - Agent Unavailable):
+{
+  "escalation_id": "esc_uuid",
+  "conversation_id": "conv_uuid",
+  "status": "queued",
+  "queue_position": 3,
+  "estimated_wait_time_seconds": 420,
+  "fallback_options": [
+    {
+      "option": "callback",
+      "description": "Request callback when agent available",
+      "estimated_callback_time": "2025-10-15T19:00:00Z"
+    },
+    {
+      "option": "email_support",
+      "description": "Send email to support team for follow-up",
+      "response_sla": "4 hours"
+    }
+  ],
+  "escalated_at": "2025-10-15T18:20:00Z"
+}
+```
+
+**2. Update Escalation Status**
+```http
+PATCH /api/v1/agent-orchestration/escalation/{escalation_id}/status
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "status": "resolved",  // assigned | in_progress | resolved | cancelled
+  "resolution_notes": "Processed refund manually. Customer satisfied.",
+  "agent_id": "agent_uuid",
+  "resolved_at": "2025-10-15T18:45:00Z"
+}
+
+Response (200 OK):
+{
+  "escalation_id": "esc_uuid",
+  "conversation_id": "conv_uuid",
+  "status": "resolved",
+  "resolution_time_minutes": 25,
+  "updated_at": "2025-10-15T18:45:00Z"
+}
+```
+
+**3. Get Escalation Analytics**
+```http
+GET /api/v1/agent-orchestration/escalation/analytics?client_id={uuid}&date_range=30d
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "client_id": "uuid",
+  "date_range": "2025-09-15 to 2025-10-15",
+  "total_conversations": 12500,
+  "total_escalations": 875,
+  "escalation_rate": 0.07,  // 7%
+  "escalation_breakdown": {
+    "user_requested": 420,
+    "low_confidence": 245,
+    "negative_sentiment": 125,
+    "rule_based": 85
+  },
+  "avg_wait_time_seconds": 180,
+  "avg_resolution_time_minutes": 18,
+  "agent_availability_rate": 0.82,  // 82% of time agents available
+  "fallback_usage": {
+    "callback_requested": 95,
+    "email_support": 58
+  },
+  "top_escalation_topics": [
+    {"topic": "refunds", "count": 245},
+    {"topic": "billing_issues", "count": 180},
+    {"topic": "technical_support", "count": 125}
+  ]
+}
+```
+
+**Assignment Logic:**
+
+1. **Skill-Based Routing:**
+   - Match required skills with available agents
+   - Prioritize agents with highest skill proficiency
+   - Round-robin within skill pool for load balancing
+
+2. **Availability Detection:**
+   - Check agent online status via CRM integration
+   - Monitor active conversation count per agent
+   - Respect agent capacity limits (max 3 concurrent chats)
+
+3. **Priority Queue:**
+   - VIP customers → front of queue
+   - Urgent escalations (payment failures, security issues) → priority
+   - FIFO for same priority level
+
+**Data Storage:**
+- **PostgreSQL**: Escalation logs, agent assignments, resolution tracking
+- **Redis**: Real-time agent availability status
+
+**Database Schema:**
+```sql
+CREATE TABLE escalations (
+  escalation_id UUID PRIMARY KEY,
+  conversation_id UUID NOT NULL,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  escalation_reason VARCHAR(100) NOT NULL,
+  escalation_details JSONB,
+  required_agent_skills TEXT[],
+  priority VARCHAR(50),
+  status VARCHAR(50) NOT NULL,  -- queued | assigned | in_progress | resolved | cancelled
+  assigned_agent_id UUID,
+  queue_position INTEGER,
+  estimated_wait_time_seconds INTEGER,
+  resolution_notes TEXT,
+  escalated_at TIMESTAMP DEFAULT NOW(),
+  assigned_at TIMESTAMP,
+  resolved_at TIMESTAMP
+);
+
+CREATE INDEX idx_escalations_conversation ON escalations(conversation_id);
+CREATE INDEX idx_escalations_client ON escalations(client_id);
+CREATE INDEX idx_escalations_status ON escalations(status);
+CREATE INDEX idx_escalations_timestamp ON escalations(escalated_at);
+
+-- Row-Level Security
+ALTER TABLE escalations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY escalations_tenant_isolation ON escalations
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+```
+
+**Integration Points:**
+- **Service 21 (Agent Copilot)**: Provide AI-powered context and suggested actions to human agents
+- **Service 14 (Support Engine)**: Create support tickets for escalations that can't be resolved immediately
+- **Service 11 (Monitoring)**: Track escalation rates, wait times, resolution metrics
+
 ---
 
 ## 9. Voice Agent Service
@@ -2151,6 +2746,839 @@ Response (200 OK):
 3. Incident severity escalation (P3 → P1) → On-call engineer escalates → Engineering Manager approves
 4. RCA report publication → AI generates → Platform Engineer reviews (if confidence <0.7) → Publishes to incident
 5. Trace retention policy change → SRE proposes → CFO approves (cost impact) → Platform Engineer implements
+
+#### LLM Hallucination Detection
+
+**Purpose**: Real-time detection and prevention of LLM hallucinations in chatbot/voicebot responses to maintain answer accuracy and prevent misinformation.
+
+**Detection Methods:**
+
+1. **Fact-Checking Against Knowledge Base:**
+   - Cross-reference LLM responses with RAG-retrieved documents
+   - Flag responses that contradict known facts from vector DB
+   - Calculate confidence score based on source document alignment
+
+2. **Citation Verification:**
+   - Verify all factual claims have supporting sources
+   - Detect uncited statistics, dates, or specific claims
+   - Flag responses with "According to [source]" when source doesn't exist
+
+3. **Consistency Checking:**
+   - Compare current response with previous responses on same topic
+   - Flag contradictory statements within same conversation
+   - Detect logical inconsistencies in multi-turn dialogues
+
+4. **Uncertainty Detection:**
+   - Identify hedging language (e.g., "I think", "probably", "maybe")
+   - Flag overly confident responses on low-certainty topics
+   - Measure LLM confidence scores from model outputs
+
+5. **External Validation:**
+   - For critical facts (pricing, dates, policies), validate against structured data sources
+   - Query external APIs for verification (e.g., product catalog, pricing DB)
+   - Flag discrepancies between LLM output and authoritative sources
+
+**API Specification:**
+
+**1. Analyze Response for Hallucinations**
+```http
+POST /api/v1/monitoring/hallucination/analyze
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "conversation_id": "conv_uuid",
+  "message_id": "msg_uuid",
+  "llm_response": "Our premium plan costs $299/month and includes 24/7 support with a 30-minute SLA.",
+  "context": {
+    "retrieved_documents": [
+      {
+        "content": "Premium plan pricing: $249/month. Support SLA: 1-hour response time.",
+        "source": "pricing_doc_2025_q1",
+        "confidence": 0.95
+      }
+    ],
+    "conversation_history": [...],
+    "structured_data": {
+      "pricing_api_response": {
+        "premium_plan_price": 249.00,
+        "support_sla_hours": 1
+      }
+    }
+  },
+  "validation_mode": "strict"  // strict | moderate | lenient
+}
+
+Response (200 OK):
+{
+  "hallucination_detected": true,
+  "overall_confidence": 0.35,  // Low confidence = likely hallucination
+  "hallucination_score": 0.78,  // 0=no hallucination, 1=severe hallucination
+  "issues_detected": [
+    {
+      "issue_type": "fact_contradiction",
+      "severity": "high",
+      "claim": "costs $299/month",
+      "contradiction": "Pricing document states $249/month",
+      "source_document": "pricing_doc_2025_q1",
+      "confidence": 0.95,
+      "correction_suggestion": "Our premium plan costs $249/month"
+    },
+    {
+      "issue_type": "fact_contradiction",
+      "severity": "high",
+      "claim": "30-minute SLA",
+      "contradiction": "Support SLA is 1-hour response time",
+      "source_document": "pricing_doc_2025_q1",
+      "confidence": 0.95,
+      "correction_suggestion": "with a 1-hour response SLA"
+    }
+  ],
+  "recommended_action": "reject_and_regenerate",  // approve | flag_for_review | reject_and_regenerate
+  "corrected_response": "Our premium plan costs $249/month and includes 24/7 support with a 1-hour response SLA.",
+  "analysis_timestamp": "2025-10-15T16:30:00Z"
+}
+```
+
+**2. Get Hallucination Analytics**
+```http
+GET /api/v1/monitoring/hallucination/analytics?client_id={uuid}&date_range=7d
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "client_id": "uuid",
+  "date_range": "2025-10-08 to 2025-10-15",
+  "total_responses_analyzed": 8500,
+  "hallucinations_detected": 127,
+  "hallucination_rate": 0.015,  // 1.5%
+  "severity_breakdown": {
+    "high": 23,
+    "medium": 58,
+    "low": 46
+  },
+  "issue_types": {
+    "fact_contradiction": 65,
+    "uncited_claim": 32,
+    "consistency_violation": 18,
+    "overconfidence": 12
+  },
+  "top_hallucination_topics": [
+    {
+      "topic": "pricing",
+      "hallucination_count": 42,
+      "common_mistakes": [
+        "Incorrect plan pricing",
+        "Wrong discount amounts",
+        "Outdated promotional pricing"
+      ]
+    },
+    {
+      "topic": "product_features",
+      "hallucination_count": 28,
+      "common_mistakes": [
+        "Claiming unreleased features",
+        "Incorrect integration compatibility"
+      ]
+    }
+  ],
+  "actions_taken": {
+    "approved": 8373,
+    "flagged_for_review": 58,
+    "rejected_and_regenerated": 69
+  }
+}
+```
+
+**3. Configure Hallucination Detection Rules**
+```http
+POST /api/v1/monitoring/hallucination/rules
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "validation_mode": "strict",  // strict | moderate | lenient
+  "auto_reject_threshold": 0.75,  // Hallucination score threshold for auto-rejection
+  "critical_topics": [
+    {
+      "topic": "pricing",
+      "validation_source": "pricing_api",
+      "require_citation": true,
+      "auto_correct": true
+    },
+    {
+      "topic": "legal_terms",
+      "validation_source": "legal_docs_kb",
+      "require_citation": true,
+      "auto_correct": false  // Reject instead of auto-correct
+    }
+  ],
+  "alerts": {
+    "hallucination_rate_threshold": 0.05,  // Alert if >5% hallucination rate
+    "notify_channels": ["email", "slack"],
+    "notify_users": ["platform_engineer_email@example.com"]
+  }
+}
+
+Response (201 Created):
+{
+  "rule_id": "rule_uuid",
+  "client_id": "uuid",
+  "validation_mode": "strict",
+  "status": "active",
+  "created_at": "2025-10-15T16:35:00Z"
+}
+```
+
+**Hallucination Prevention Strategies:**
+
+1. **Response Filtering (Pre-Response):**
+   - Analyze LLM response before sending to user
+   - If hallucination detected (score >0.7), regenerate with different prompt
+   - Use corrected response with verified facts
+
+2. **Citation Enforcement:**
+   - Require LLM to cite sources for factual claims
+   - Format: "According to [source], our pricing is $249/month"
+   - Validate cited sources exist in knowledge base
+
+3. **Structured Data Override:**
+   - For critical fields (pricing, dates, SLAs), override LLM with API data
+   - Example: `response.replace("$299", pricing_api.premium_price)`
+   - Maintain natural language flow while ensuring accuracy
+
+4. **Confidence-Based Routing:**
+   - If hallucination confidence <0.6, route to human agent
+   - Display warning to agent: "AI response flagged for potential inaccuracy"
+   - Human verifies before sending to customer
+
+**Data Storage:**
+- **PostgreSQL**: Hallucination detection logs, rules configuration, analytics
+- **ClickHouse**: Time-series hallucination metrics for trend analysis
+- **Redis**: Cached validation results (5-minute TTL)
+
+**Database Schema:**
+```sql
+CREATE TABLE hallucination_logs (
+  log_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  conversation_id UUID NOT NULL,
+  message_id UUID NOT NULL,
+  llm_response TEXT NOT NULL,
+  hallucination_detected BOOLEAN NOT NULL,
+  hallucination_score DECIMAL(3,2),
+  overall_confidence DECIMAL(3,2),
+  issues_detected JSONB,
+  recommended_action VARCHAR(50),
+  corrected_response TEXT,
+  action_taken VARCHAR(50),  -- approved | flagged | rejected | regenerated
+  analyzed_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_hallucination_client ON hallucination_logs(client_id);
+CREATE INDEX idx_hallucination_conversation ON hallucination_logs(conversation_id);
+CREATE INDEX idx_hallucination_detected ON hallucination_logs(hallucination_detected);
+CREATE INDEX idx_hallucination_timestamp ON hallucination_logs(analyzed_at);
+
+-- Row-Level Security
+ALTER TABLE hallucination_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hallucination_logs_tenant_isolation ON hallucination_logs
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE TABLE hallucination_rules (
+  rule_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  validation_mode VARCHAR(50) NOT NULL,
+  auto_reject_threshold DECIMAL(3,2),
+  critical_topics JSONB,
+  alerts JSONB,
+  status VARCHAR(50) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_rules_client ON hallucination_rules(client_id);
+```
+
+**Integration Points:**
+- **Service 8 (Agent Orchestration)**: Real-time response validation before sending to user
+- **Service 17 (RAG Pipeline)**: Fact-checking against retrieved documents
+- **Service 14 (Support Engine)**: Route to human agent when hallucination detected
+- **Service 12 (Analytics)**: Track hallucination trends and accuracy improvements
+
+**Rate Limiting:**
+- 10,000 hallucination analyses per hour per tenant
+- Real-time validation required for all customer-facing responses
+
+#### Flow Validation Monitoring
+
+**Purpose**: Monitor random chatbot/voicebot conversations to validate workflow execution, detect flow deviations, and ensure agents follow intended conversation paths.
+
+**Monitoring Capabilities:**
+
+1. **Flow Adherence Tracking:**
+   - Compare actual conversation flow vs designed flow (from PRD)
+   - Detect skipped steps, out-of-order execution, premature terminations
+   - Track completion rates for each flow step
+
+2. **Intent Classification Accuracy:**
+   - Validate intent detection matches expected user queries
+   - Flag misclassifications that lead to wrong flow paths
+   - Track confidence scores for intent detection
+
+3. **Random Conversation Sampling:**
+   - Sample 1-5% of conversations for manual review
+   - Weighted sampling (higher rate for new flows, low-performing agents)
+   - Flag conversations with anomalies for deeper inspection
+
+4. **Flow Deviation Detection:**
+   - Identify conversations that exit flow prematurely
+   - Detect loops or infinite retry cycles
+   - Flag missing error handling or fallback paths
+
+**API Specification:**
+
+**1. Analyze Conversation Flow**
+```http
+POST /api/v1/monitoring/flow-validation/analyze
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "conversation_id": "conv_uuid",
+  "client_id": "uuid",
+  "expected_flow": {
+    "flow_id": "support_ticket_creation_flow",
+    "steps": [
+      {"step_id": "greet_user", "required": true},
+      {"step_id": "collect_issue_description", "required": true},
+      {"step_id": "classify_issue_category", "required": true},
+      {"step_id": "collect_contact_info", "required": true},
+      {"step_id": "create_ticket", "required": true},
+      {"step_id": "provide_ticket_number", "required": true}
+    ]
+  },
+  "actual_conversation": {
+    "steps_executed": [
+      {"step_id": "greet_user", "timestamp": "2025-10-15T10:00:00Z"},
+      {"step_id": "collect_issue_description", "timestamp": "2025-10-15T10:00:30Z"},
+      {"step_id": "classify_issue_category", "timestamp": "2025-10-15T10:01:00Z"},
+      {"step_id": "create_ticket", "timestamp": "2025-10-15T10:02:00Z"},
+      {"step_id": "provide_ticket_number", "timestamp": "2025-10-15T10:02:15Z"}
+    ],
+    "intents_detected": [
+      {"intent": "report_issue", "confidence": 0.92},
+      {"intent": "provide_details", "confidence": 0.88}
+    ]
+  }
+}
+
+Response (200 OK):
+{
+  "conversation_id": "conv_uuid",
+  "flow_validation_result": "partial_success",  // success | partial_success | failure
+  "adherence_score": 0.83,  // 0-1 score for flow adherence
+  "issues_detected": [
+    {
+      "issue_type": "skipped_step",
+      "severity": "medium",
+      "missing_step": "collect_contact_info",
+      "impact": "Ticket created without user contact information",
+      "recommendation": "Add retry logic to ensure contact info collection"
+    }
+  ],
+  "flow_metrics": {
+    "total_steps_expected": 6,
+    "steps_completed": 5,
+    "steps_skipped": 1,
+    "completion_rate": 0.83,
+    "avg_step_duration_seconds": 30
+  },
+  "intent_accuracy": {
+    "total_intents": 2,
+    "correct_classifications": 2,
+    "misclassifications": 0,
+    "avg_confidence": 0.90
+  },
+  "analyzed_at": "2025-10-15T10:02:30Z"
+}
+```
+
+**2. Get Flow Analytics**
+```http
+GET /api/v1/monitoring/flow-validation/analytics?client_id={uuid}&flow_id={flow_id}&date_range=30d
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "client_id": "uuid",
+  "flow_id": "support_ticket_creation_flow",
+  "date_range": "2025-09-15 to 2025-10-15",
+  "total_conversations": 2450,
+  "flow_validation_results": {
+    "success": 2105,  // 86%
+    "partial_success": 280,  // 11.4%
+    "failure": 65  // 2.6%
+  },
+  "avg_adherence_score": 0.91,
+  "common_deviations": [
+    {
+      "deviation_type": "skipped_step",
+      "step_id": "collect_contact_info",
+      "occurrences": 180,
+      "impact": "Incomplete ticket data"
+    },
+    {
+      "deviation_type": "premature_exit",
+      "step_id": "create_ticket",
+      "occurrences": 65,
+      "impact": "User left before ticket creation"
+    }
+  ],
+  "intent_classification_accuracy": {
+    "avg_confidence": 0.88,
+    "misclassification_rate": 0.04,
+    "top_misclassified_intents": [
+      {
+        "intent": "cancel_subscription",
+        "confused_with": "pause_subscription",
+        "occurrences": 45
+      }
+    ]
+  },
+  "step_performance": [
+    {
+      "step_id": "greet_user",
+      "completion_rate": 1.0,
+      "avg_duration_seconds": 5
+    },
+    {
+      "step_id": "collect_contact_info",
+      "completion_rate": 0.78,  // Low completion rate flagged
+      "avg_duration_seconds": 45
+    }
+  ]
+}
+```
+
+**3. Configure Flow Monitoring**
+```http
+POST /api/v1/monitoring/flow-validation/config
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "flow_id": "support_ticket_creation_flow",
+  "sampling_rate": 0.05,  // Monitor 5% of conversations
+  "critical_steps": [
+    {
+      "step_id": "create_ticket",
+      "alert_on_skip": true,
+      "min_completion_rate": 0.95
+    }
+  ],
+  "alerts": {
+    "adherence_score_threshold": 0.80,  // Alert if adherence <80%
+    "intent_misclassification_threshold": 0.10,  // Alert if misclassification >10%
+    "notify_channels": ["slack", "email"]
+  }
+}
+
+Response (201 Created):
+{
+  "config_id": "config_uuid",
+  "client_id": "uuid",
+  "flow_id": "support_ticket_creation_flow",
+  "status": "active",
+  "created_at": "2025-10-15T16:40:00Z"
+}
+```
+
+**Data Storage:**
+- **PostgreSQL**: Flow validation results, config, deviation logs
+- **ClickHouse**: Time-series flow metrics for trend analysis
+
+**Database Schema:**
+```sql
+CREATE TABLE flow_validation_logs (
+  validation_id UUID PRIMARY KEY,
+  conversation_id UUID NOT NULL,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  flow_id VARCHAR(255) NOT NULL,
+  validation_result VARCHAR(50) NOT NULL,  -- success | partial_success | failure
+  adherence_score DECIMAL(3,2),
+  issues_detected JSONB,
+  flow_metrics JSONB,
+  intent_accuracy JSONB,
+  analyzed_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_flow_validation_client ON flow_validation_logs(client_id);
+CREATE INDEX idx_flow_validation_flow ON flow_validation_logs(flow_id);
+CREATE INDEX idx_flow_validation_result ON flow_validation_logs(validation_result);
+CREATE INDEX idx_flow_validation_timestamp ON flow_validation_logs(analyzed_at);
+
+-- Row-Level Security
+ALTER TABLE flow_validation_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY flow_validation_tenant_isolation ON flow_validation_logs
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+```
+
+**Integration Points:**
+- **Service 8 (Agent Orchestration)**: Flow execution tracking and validation
+- **Service 6 (PRD Builder)**: Expected flow definitions
+- **Service 12 (Analytics)**: Flow performance dashboards
+
+#### External API Deprecation Handling
+
+**Purpose**: Proactively detect and manage external API deprecations for chatbot integrations (Salesforce, Zendesk, etc.) to prevent integration failures.
+
+**Capabilities:**
+
+1. **Deprecation Detection:**
+   - Monitor API response headers for deprecation warnings
+   - Parse version sunset dates from API responses
+   - Track API changelog endpoints for deprecation announcements
+   - Subscribe to vendor deprecation notification services
+
+2. **Impact Analysis:**
+   - Identify which clients use deprecated API endpoints
+   - Calculate affected conversation volume
+   - Estimate migration effort and timeline
+
+3. **Migration Orchestration:**
+   - Auto-generate GitHub issues for API migration
+   - Track migration status across affected clients
+   - Coordinate deployment of updated integrations
+
+**API Specification:**
+
+**1. Report API Deprecation Warning**
+```http
+POST /api/v1/monitoring/api-deprecation/report
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "integration_name": "salesforce_crm",
+  "api_endpoint": "https://api.salesforce.com/v2/contacts",
+  "deprecation_warning": "API version v2 will be sunset on 2026-01-15. Migrate to v3.",
+  "sunset_date": "2026-01-15T00:00:00Z",
+  "detected_from": "response_header",  // response_header | changelog | vendor_notification
+  "affected_clients": ["client_uuid_1", "client_uuid_2"]
+}
+
+Response (201 Created):
+{
+  "deprecation_id": "dep_uuid",
+  "integration_name": "salesforce_crm",
+  "api_endpoint": "https://api.salesforce.com/v2/contacts",
+  "sunset_date": "2026-01-15T00:00:00Z",
+  "days_until_sunset": 92,
+  "affected_clients_count": 2,
+  "severity": "medium",  // critical (<30 days) | high (<60 days) | medium (<90 days) | low (>90 days)
+  "github_issue_created": {
+    "issue_number": 234,
+    "url": "https://github.com/workflow/integrations/issues/234",
+    "title": "Migrate Salesforce API from v2 to v3 before 2026-01-15"
+  },
+  "created_at": "2025-10-15T16:45:00Z"
+}
+
+Event Published to Kafka:
+Topic: monitoring_events
+{
+  "event_type": "api_deprecation_detected",
+  "deprecation_id": "dep_uuid",
+  "integration_name": "salesforce_crm",
+  "sunset_date": "2026-01-15T00:00:00Z",
+  "affected_clients": ["client_uuid_1", "client_uuid_2"],
+  "timestamp": "2025-10-15T16:45:00Z"
+}
+```
+
+**2. Get Deprecation Status**
+```http
+GET /api/v1/monitoring/api-deprecation?status=active&severity=high
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "deprecations": [
+    {
+      "deprecation_id": "dep_uuid",
+      "integration_name": "salesforce_crm",
+      "api_endpoint": "https://api.salesforce.com/v2/contacts",
+      "sunset_date": "2026-01-15T00:00:00Z",
+      "days_until_sunset": 92,
+      "affected_clients_count": 2,
+      "severity": "medium",
+      "migration_status": "in_progress",
+      "github_issue": {
+        "issue_number": 234,
+        "status": "open",
+        "assigned_to": "developer_uuid"
+      },
+      "migrated_clients": 0,
+      "remaining_clients": 2
+    }
+  ],
+  "total": 1
+}
+```
+
+**Database Schema:**
+```sql
+CREATE TABLE api_deprecations (
+  deprecation_id UUID PRIMARY KEY,
+  integration_name VARCHAR(255) NOT NULL,
+  api_endpoint VARCHAR(500) NOT NULL,
+  deprecation_warning TEXT,
+  sunset_date TIMESTAMP,
+  detected_from VARCHAR(50),
+  severity VARCHAR(50),
+  affected_clients UUID[],
+  github_issue_number INTEGER,
+  migration_status VARCHAR(50) DEFAULT 'pending',
+  detected_at TIMESTAMP DEFAULT NOW(),
+  resolved_at TIMESTAMP
+);
+
+CREATE INDEX idx_deprecations_integration ON api_deprecations(integration_name);
+CREATE INDEX idx_deprecations_sunset ON api_deprecations(sunset_date);
+CREATE INDEX idx_deprecations_status ON api_deprecations(migration_status);
+```
+
+**Integration Points:**
+- **Service 8 (Agent Orchestration)**: Monitor integration API calls for deprecation warnings
+- **Service 7 (Automation Engine)**: Track which YAML configs use deprecated endpoints
+- **Service 14 (Support Engine)**: Create support tickets for client impact notifications
+
+#### Chatbot Downtime Management
+
+**Purpose**: Detect, alert, and manage chatbot/voicebot downtime events to minimize service disruption.
+
+**Capabilities:**
+
+1. **Uptime Monitoring:**
+   - Health check endpoints (chatbot, voicebot, integrations)
+   - Synthetic transaction monitoring (end-to-end conversation tests)
+   - Real-time availability tracking per client
+
+2. **Downtime Detection:**
+   - Multi-region health probes
+   - Consecutive failure threshold alerting
+   - Degraded performance detection (high latency, error rates)
+
+3. **Incident Management:**
+   - Auto-create P1 incidents for downtime
+   - Route to on-call engineer
+   - Status page updates
+   - Client notification automation
+
+**API Specification:**
+
+**1. Report Downtime Event**
+```http
+POST /api/v1/monitoring/downtime/report
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "service_type": "chatbot",  // chatbot | voicebot
+  "downtime_type": "complete_outage",  // complete_outage | degraded_performance | integration_failure
+  "affected_regions": ["us-east-1", "us-west-2"],
+  "detected_at": "2025-10-15T17:00:00Z",
+  "health_check_failures": 5,
+  "error_message": "LangGraph agent not responding - connection timeout after 30s"
+}
+
+Response (201 Created):
+{
+  "downtime_id": "down_uuid",
+  "client_id": "uuid",
+  "service_type": "chatbot",
+  "downtime_type": "complete_outage",
+  "severity": "P1",
+  "incident_created": {
+    "incident_id": "inc_uuid",
+    "severity": "P1",
+    "on_call_engineer": "engineer_uuid",
+    "status_page_url": "https://status.workflow.com/incidents/inc_uuid"
+  },
+  "estimated_affected_users": 1200,
+  "detected_at": "2025-10-15T17:00:00Z"
+}
+```
+
+**2. Resolve Downtime Event**
+```http
+PATCH /api/v1/monitoring/downtime/{downtime_id}/resolve
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "resolution_notes": "LangGraph service restarted. Root cause: OOM error due to memory leak in tool execution.",
+  "resolved_at": "2025-10-15T17:15:00Z",
+  "preventive_actions": "Added memory limits to container, deployed memory leak fix"
+}
+
+Response (200 OK):
+{
+  "downtime_id": "down_uuid",
+  "status": "resolved",
+  "downtime_duration_minutes": 15,
+  "resolved_at": "2025-10-15T17:15:00Z",
+  "incident_updated": true
+}
+```
+
+**Database Schema:**
+```sql
+CREATE TABLE downtime_events (
+  downtime_id UUID PRIMARY KEY,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  service_type VARCHAR(50) NOT NULL,
+  downtime_type VARCHAR(50) NOT NULL,
+  severity VARCHAR(50),
+  affected_regions TEXT[],
+  incident_id UUID,
+  detected_at TIMESTAMP NOT NULL,
+  resolved_at TIMESTAMP,
+  downtime_duration_minutes INTEGER,
+  resolution_notes TEXT,
+  preventive_actions TEXT
+);
+
+CREATE INDEX idx_downtime_client ON downtime_events(client_id);
+CREATE INDEX idx_downtime_detected ON downtime_events(detected_at);
+CREATE INDEX idx_downtime_resolved ON downtime_events(resolved_at);
+```
+
+#### External Integration API Error Handling
+
+**Purpose**: Monitor and manage errors from external integration APIs (Salesforce, Zendesk, etc.) to prevent chatbot failures.
+
+**Capabilities:**
+
+1. **Error Classification:**
+   - Transient errors (rate limits, timeouts) vs permanent errors (auth failures, invalid endpoints)
+   - Client-side errors (400s) vs server-side errors (500s)
+   - Integration-specific error codes
+
+2. **Retry Logic Monitoring:**
+   - Track retry attempts and success rates
+   - Identify integrations with high retry rates
+   - Alert on excessive retries (circuit breaker trigger)
+
+3. **Error Rate Tracking:**
+   - Monitor error rates per integration per client
+   - Track error trends over time
+   - Alert on sudden error rate spikes
+
+**API Specification:**
+
+**1. Log Integration Error**
+```http
+POST /api/v1/monitoring/integration-errors/log
+Authorization: Bearer {service_jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "conversation_id": "conv_uuid",
+  "client_id": "uuid",
+  "integration_name": "salesforce_crm",
+  "api_endpoint": "https://api.salesforce.com/v3/contacts",
+  "error_type": "rate_limit_exceeded",
+  "http_status_code": 429,
+  "error_message": "Rate limit exceeded. Retry after 60 seconds.",
+  "retry_count": 3,
+  "final_outcome": "failed",  // success_after_retry | failed | escalated_to_human
+  "occurred_at": "2025-10-15T17:20:00Z"
+}
+
+Response (201 Created):
+{
+  "error_log_id": "err_uuid",
+  "integration_name": "salesforce_crm",
+  "error_type": "rate_limit_exceeded",
+  "severity": "medium",
+  "action_taken": "alert_sent",
+  "logged_at": "2025-10-15T17:20:00Z"
+}
+```
+
+**2. Get Integration Error Analytics**
+```http
+GET /api/v1/monitoring/integration-errors/analytics?client_id={uuid}&integration={integration_name}&date_range=7d
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "client_id": "uuid",
+  "integration_name": "salesforce_crm",
+  "date_range": "2025-10-08 to 2025-10-15",
+  "total_api_calls": 12500,
+  "total_errors": 156,
+  "error_rate": 0.0125,  // 1.25%
+  "error_breakdown": {
+    "rate_limit_exceeded": 89,
+    "timeout": 32,
+    "authentication_failure": 18,
+    "invalid_request": 17
+  },
+  "avg_retry_count": 2.3,
+  "success_after_retry_rate": 0.67,
+  "circuit_breaker_triggered": false,
+  "recommendations": [
+    "Consider implementing request throttling to avoid rate limits",
+    "Refresh OAuth token more frequently to prevent auth failures"
+  ]
+}
+```
+
+**Database Schema:**
+```sql
+CREATE TABLE integration_error_logs (
+  error_log_id UUID PRIMARY KEY,
+  conversation_id UUID,
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  integration_name VARCHAR(255) NOT NULL,
+  api_endpoint VARCHAR(500),
+  error_type VARCHAR(100),
+  http_status_code INTEGER,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  final_outcome VARCHAR(50),
+  occurred_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_integration_errors_client ON integration_error_logs(client_id);
+CREATE INDEX idx_integration_errors_integration ON integration_error_logs(integration_name);
+CREATE INDEX idx_integration_errors_type ON integration_error_logs(error_type);
+CREATE INDEX idx_integration_errors_timestamp ON integration_error_logs(occurred_at);
+
+-- Row-Level Security
+ALTER TABLE integration_error_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY integration_errors_tenant_isolation ON integration_error_logs
+  USING (client_id = current_setting('app.current_tenant_id')::UUID);
+```
+
+**Integration Points:**
+- **Service 8 (Agent Orchestration)**: Log integration errors during chatbot conversations
+- **Service 9 (Voice Agent)**: Does NOT use external integrations (voice-only)
+- **Service 14 (Support Engine)**: Create support tickets for persistent integration errors
 
 ---
 
@@ -4439,6 +5867,251 @@ Response (200 OK):
 3. Escalation to human agent → Support engineer accepts → Auto-approved (audit log maintained)
 4. Knowledge base article generated → AI drafts → Support manager reviews → Approves → Published
 5. SLA definition change → Support manager proposes → VP of Customer Success approves
+
+#### Migration Issues Support
+
+**Purpose**: Dedicated support workflow for handling client migration issues, SLA policy changes, and post-migration troubleshooting during platform transitions.
+
+**Migration Issue Types:**
+
+1. **SLA Policy Increases:**
+   - Client requests faster response times (e.g., 4-hour → 1-hour SLA)
+   - Requires infrastructure capacity planning and cost impact analysis
+   - May involve upgrading support tier or adding dedicated agents
+
+2. **Data Migration Problems:**
+   - Historical conversation data import failures
+   - Customer record deduplication issues
+   - Integration mapping errors during migration
+
+3. **Feature Parity Concerns:**
+   - Missing features from previous platform
+   - Workflow differences requiring training
+   - Custom integration re-implementation needs
+
+4. **Performance Degradation:**
+   - Slower response times post-migration
+   - Increased error rates
+   - Integration connectivity issues
+
+**API Specification:**
+
+**1. Create Migration Support Ticket**
+```http
+POST /api/v1/support/tickets/migration
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "client_id": "uuid",
+  "migration_id": "migration_uuid",  // Reference to migration project
+  "issue_type": "sla_policy_increase",  // sla_policy_increase | data_migration | feature_parity | performance_degradation
+  "issue_details": {
+    "current_sla": "4_hours",
+    "requested_sla": "1_hour",
+    "justification": "Enterprise client requires faster support for production incidents",
+    "urgency": "high",
+    "affected_users": 500
+  },
+  "requested_by": {
+    "name": "Jane Doe",
+    "email": "jane@acmecorp.com",
+    "role": "CTO"
+  }
+}
+
+Response (201 Created):
+{
+  "ticket_id": "ticket_uuid",
+  "client_id": "uuid",
+  "ticket_number": "MIG-2025-00123",
+  "issue_type": "sla_policy_increase",
+  "priority": "P2",  // Auto-assigned based on issue type
+  "status": "analysis_pending",
+  "assigned_team": "migration_support",
+  "assigned_engineer": null,
+  "impact_analysis": {
+    "status": "queued",
+    "estimated_completion": "2025-10-16T10:00:00Z"
+  },
+  "sla": {
+    "first_response_time": "2 hours",
+    "resolution_time": "24 hours"
+  },
+  "created_at": "2025-10-15T19:00:00Z"
+}
+
+Event Published to Kafka:
+Topic: support_events
+{
+  "event_type": "migration_ticket_created",
+  "ticket_id": "ticket_uuid",
+  "client_id": "uuid",
+  "issue_type": "sla_policy_increase",
+  "priority": "P2",
+  "timestamp": "2025-10-15T19:00:00Z"
+}
+```
+
+**2. Submit SLA Impact Analysis**
+```http
+POST /api/v1/support/tickets/{ticket_id}/sla-impact-analysis
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+Request Body:
+{
+  "current_configuration": {
+    "sla": "4_hours",
+    "support_tier": "standard",
+    "dedicated_agents": 0,
+    "monthly_cost": 2000
+  },
+  "requested_configuration": {
+    "sla": "1_hour",
+    "support_tier": "premium",
+    "dedicated_agents": 2,
+    "monthly_cost": 5500
+  },
+  "impact_analysis": {
+    "infrastructure_changes": [
+      "Add 2 dedicated support agents (24/7 rotation)",
+      "Upgrade monitoring tier for faster incident detection",
+      "Enable priority alert routing"
+    ],
+    "cost_increase": 3500,
+    "cost_increase_percentage": 1.75,
+    "implementation_timeline": "7 business days",
+    "risks": [
+      "May require additional on-call engineers during transition",
+      "Client budget approval needed for cost increase"
+    ]
+  },
+  "recommendation": "Approve with phased rollout: Week 1 - Add agents, Week 2 - Enable SLA monitoring",
+  "analyzed_by": "support_engineer_uuid",
+  "analyzed_at": "2025-10-15T20:30:00Z"
+}
+
+Response (200 OK):
+{
+  "ticket_id": "ticket_uuid",
+  "analysis_id": "analysis_uuid",
+  "status": "awaiting_client_approval",
+  "next_steps": [
+    "Client reviews cost increase",
+    "Client approves budget adjustment",
+    "Migration team schedules implementation"
+  ],
+  "approval_required_from": ["client_decision_maker", "vp_customer_success"],
+  "submitted_at": "2025-10-15T20:30:00Z"
+}
+```
+
+**3. Get Migration Support Analytics**
+```http
+GET /api/v1/support/tickets/migration/analytics?date_range=30d&issue_type=sla_policy_increase
+Authorization: Bearer {jwt_token}
+
+Response (200 OK):
+{
+  "date_range": "2025-09-15 to 2025-10-15",
+  "total_migration_tickets": 45,
+  "issue_breakdown": {
+    "sla_policy_increase": 12,
+    "data_migration": 18,
+    "feature_parity": 9,
+    "performance_degradation": 6
+  },
+  "avg_resolution_time_hours": 18,
+  "sla_policy_requests": {
+    "total_requests": 12,
+    "approved": 8,
+    "rejected": 2,
+    "pending": 2,
+    "common_transitions": [
+      {"from": "4_hours", "to": "1_hour", "count": 5},
+      {"from": "24_hours", "to": "4_hours", "count": 3}
+    ],
+    "avg_cost_increase_usd": 3200,
+    "avg_implementation_days": 6
+  },
+  "client_satisfaction": {
+    "avg_csat_score": 4.3,
+    "top_pain_points": [
+      "Long approval timeline",
+      "Unclear cost breakdown",
+      "Communication delays"
+    ]
+  }
+}
+```
+
+**Migration Support Workflow:**
+
+**For SLA Policy Increases:**
+1. **Ticket Creation** → 2. **Impact Analysis** (cost, infrastructure) → 3. **Client Approval** → 4. **Implementation Planning** → 5. **Execution** → 6. **Validation** → 7. **Ticket Closure**
+
+**For Data Migration Issues:**
+1. **Ticket Creation** → 2. **Data Audit** (identify discrepancies) → 3. **Remediation Plan** → 4. **Data Re-import/Fix** → 5. **Validation** → 6. **Ticket Closure**
+
+**For Feature Parity:**
+1. **Ticket Creation** → 2. **Gap Analysis** → 3. **Feature Roadmap Review** → 4. **Workaround Documentation** or **Custom Development** → 5. **Training** → 6. **Ticket Closure**
+
+**Data Storage:**
+- **PostgreSQL**: Migration tickets, impact analyses, approval logs
+
+**Database Schema:**
+```sql
+CREATE TABLE migration_support_tickets (
+  ticket_id UUID PRIMARY KEY REFERENCES support_tickets(ticket_id),
+  migration_id UUID,  -- Reference to migration project
+  issue_type VARCHAR(100) NOT NULL,
+  issue_details JSONB NOT NULL,
+  impact_analysis JSONB,
+  implementation_plan JSONB,
+  approval_status VARCHAR(50),  -- pending | approved | rejected
+  approved_by UUID,
+  approved_at TIMESTAMP,
+  resolved_at TIMESTAMP
+);
+
+CREATE INDEX idx_migration_tickets_client ON migration_support_tickets(migration_id);
+CREATE INDEX idx_migration_tickets_issue ON migration_support_tickets(issue_type);
+CREATE INDEX idx_migration_tickets_status ON migration_support_tickets(approval_status);
+
+CREATE TABLE sla_policy_changes (
+  change_id UUID PRIMARY KEY,
+  ticket_id UUID REFERENCES migration_support_tickets(ticket_id),
+  client_id UUID NOT NULL REFERENCES clients(client_id),
+  previous_sla VARCHAR(50) NOT NULL,
+  new_sla VARCHAR(50) NOT NULL,
+  cost_increase_usd DECIMAL(10,2),
+  infrastructure_changes JSONB,
+  implementation_timeline_days INTEGER,
+  status VARCHAR(50) NOT NULL,  -- planned | in_progress | completed | failed
+  implemented_at TIMESTAMP,
+  validated_at TIMESTAMP
+);
+
+CREATE INDEX idx_sla_changes_client ON sla_policy_changes(client_id);
+CREATE INDEX idx_sla_changes_status ON sla_policy_changes(status);
+```
+
+**Integration Points:**
+- **Service 11 (Monitoring)**: Track post-migration performance metrics, validate SLA compliance
+- **Service 0 (Organization Management)**: Update client SLA configurations in database
+- **Service 12 (Analytics)**: Generate migration success reports, track CSAT
+
+**Escalation Rules:**
+- SLA policy increase >$10K/month → Requires VP of Customer Success approval
+- Data migration affecting >1000 customer records → Escalate to CTO review
+- Performance degradation >20% → Immediate P1 incident, escalate to platform engineering
+
+**Automation:**
+- Auto-generate impact analysis for standard SLA tier upgrades (pre-calculated templates)
+- Auto-approve cost increases <$1K with client confirmation
+- Auto-validate data migration success with reconciliation scripts
 
 ---
 
