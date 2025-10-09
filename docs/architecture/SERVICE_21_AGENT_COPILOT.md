@@ -1563,7 +1563,7 @@ results = client.search(
 
 ## Event-Driven Integration
 
-Service 21 consumes events from **17 Kafka topics** across all services to build real-time agent context.
+Service 21 consumes events from **18 Kafka topics** across all services to build real-time agent context.
 
 ### Kafka Topics Consumed
 
@@ -1580,6 +1580,7 @@ Service 21 consumes events from **17 Kafka topics** across all services to build
 | `config_events` | Service 7 | config_deployed, config_failed | Add to context: implementation status |
 | `conversation_events` | Services 8, 9 | conversation_completed, escalation_requested | Add to context: customer interactions, escalations |
 | `voice_events` | Service 9 | call_completed, voicemail_left | Add to context: voice interaction summaries |
+| `escalation_events` | Service 15 | escalation_created, escalation_resolved | Add to context: human escalation tracking |
 | `monitoring_incidents` | Service 11 | incident_created, incident_resolved | Add to context: production issues affecting client |
 | `analytics_experiments` | Service 12 | experiment_started, experiment_completed | Add to context: A/B test results |
 | `customer_success_events` | Service 13 | health_score_changed, playbook_triggered, qbr_completed | Add to context: health changes, CS actions |

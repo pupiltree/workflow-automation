@@ -1,4 +1,4 @@
-# Migration Guide: 22 Services → 15 Services Architecture
+# Migration Guide: 22 Services → 17 Services Architecture
 
 **Version**: 2.0
 **Date**: 2025-10-08
@@ -8,19 +8,19 @@
 
 ## Overview
 
-This guide provides comprehensive instructions for migrating from the original 22-service architecture to the optimized 15-service architecture with supporting libraries.
+This guide provides comprehensive instructions for migrating from the original 22-service architecture to the optimized 17-service architecture with supporting libraries.
 
 **Architecture Consolidation Summary**:
 - **Before**: 22 microservices
-- **After**: 15 microservices + 2 supporting libraries
-- **Reduction**: 30% fewer services
+- **After**: 17 microservices + 2 supporting libraries
+- **Reduction**: 23% fewer services
 - **Performance Improvement**: 200-500ms latency reduction
 
 ---
 
 ## Service Consolidation Mapping
 
-### Active Services (15)
+### Active Services (17)
 
 | # | Service Name | Status |
 |---|--------------|--------|
@@ -40,6 +40,7 @@ This guide provides comprehensive instructions for migrating from the original 2
 | 17 | RAG Pipeline | ✅ Active |
 | **20** | Communication & Hyperpersonalization Engine | ✅ Active (merged with 18) |
 | 21 | Agent Copilot | ✅ Active |
+| 22 | Billing & Revenue Management | ✅ Active |
 
 **Bold** = Consolidated service
 
@@ -235,7 +236,7 @@ CREATE TABLE e_signatures (
 | nda_events, pricing_events, proposal_events | sales_doc_events | Unified event schema |
 | outreach_events, personalization_events | communication_events | Merged communication topics |
 
-**Total Topics**: 19 → 17
+**Total Topics**: 22 → 18
 
 ### Event Schema Changes
 

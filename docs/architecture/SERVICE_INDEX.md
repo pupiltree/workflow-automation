@@ -371,9 +371,9 @@ To validate all cross-references are correct, run:
 ```
 
 This script checks:
-- All service references point to correct documents (15 active services)
+- All service references point to correct documents (17 active services)
 - References to eliminated services redirect to new owners
-- All Kafka topics have defined producers/consumers (17 topics)
+- All Kafka topics have defined producers/consumers (18 topics)
 - Event schemas are consistent across services
 
 ---

@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **15 specialized microservices** (Services 0, 1, 2, 3, 6, 7, 8, 9, 11-15, 17, 20, 21) plus 2 supporting libraries (@workflow/llm-sdk, @workflow/config-sdk).
+This document defines the comprehensive microservices architecture for an AI-powered workflow automation platform that automates client onboarding, demo generation, PRD creation, implementation, monitoring, and customer success. The architecture decomposes a complex workflow into **17 specialized microservices** (Services 0, 1, 2, 3, 6, 7, 8, 9, 11-15, 17, 20, 21, 22) plus 2 supporting libraries (@workflow/llm-sdk, @workflow/config-sdk).
 
 **Architecture Optimization**: This architecture has been optimized from an initial 22-service design through strategic consolidation. The optimization eliminated distributed monolith anti-patterns, shared database issues, and unnecessary network hops, improving architecture health from 6.5/10 to 9+/10. Services 0.5, 4, 5, 10, 16, 18, 19 have been consolidated or converted to libraries.
 
@@ -158,13 +158,13 @@ All users (both client organization users AND platform human agents) authenticat
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Event Bus (Apache Kafka)                    │
-│   Topics (17): auth_events, org_events, agent_events,           │
+│   Topics (18): auth_events, billing_events, agent_events,       │
 │   client_events, prd_events, demo_events, sales_doc_events,     │
 │   research_events, config_events, conversation_events,          │
 │   voice_events, escalation_events, monitoring_incidents,        │
 │   analytics_experiments, customer_success_events,               │
 │   support_events, communication_events, cross_product_events    │
-│   (Consolidated from 19 topics)                                 │
+│   (Consolidated from 22 topics)                                 │
 └────────────────────────────┬────────────────────────────────────┘
                              │
          ┌───────────────────┴──────────────────────┐
@@ -200,7 +200,7 @@ Data Layer:
 - Redis: Caching, session state, rate limiting, auth tokens
 - TimescaleDB: Time-series metrics and analytics
 
-Architecture Optimization: 22 services → 15 services (30% reduction)
+Architecture Optimization: 22 services → 17 services (23% reduction)
 ```
 
 ### Database Architecture Model
