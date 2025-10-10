@@ -1,0 +1,496 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sprint_planning_prompt>
+  <metadata>
+    <title>AI-Powered Workflow Automation Platform: Sprint-by-Sprint Implementation Plan Generator</title>
+    <version>1.0</version>
+    <created_date>2025-10-10</created_date>
+    <methodology>Agile/Scrum with microservices best practices</methodology>
+  </metadata>
+
+  <objective>
+    Generate a comprehensive, detailed sprint-by-sprint implementation plan for building an AI-powered B2B SaaS workflow automation platform following agile methodology and microservices architecture best practices. The plan must account for realistic developer productivity metrics when using Claude Code and prioritize MVP delivery with core team before expanding to full feature set.
+  </objective>
+
+  <architecture_analysis>
+    <required_actions>
+      <action id="arch_001">
+        Analyze all architecture documentation files located at:
+        - docs/architecture/MICROSERVICES_ARCHITECTURE.md
+        - docs/architecture/MICROSERVICES_ARCHITECTURE_PART2.md
+        - docs/architecture/MICROSERVICES_ARCHITECTURE_PART3.md
+        - docs/architecture/SERVICE_21_AGENT_COPILOT.md
+        - docs/architecture/SERVICE_INDEX.md
+      </action>
+      <action id="arch_002">
+        Extract complete service inventory: 17 active microservices (Services 0, 1, 2, 3, 6, 7, 8, 9, 11, 12, 13, 14, 15, 17, 20, 21, 22) plus 2 supporting libraries (@workflow/llm-sdk, @workflow/config-sdk)
+      </action>
+      <action id="arch_003">
+        Map all inter-service dependencies, data flows, and Kafka event topics (18+ topics documented)
+      </action>
+      <action id="arch_004">
+        Identify technology stack per service: LangGraph, LiveKit, PostgreSQL with RLS, Qdrant, Neo4j, Redis, TimescaleDB, Apache Kafka, Kong API Gateway, Kubernetes
+      </action>
+      <action id="arch_005">
+        Determine implementation complexity for each service: simple (1-2 sprints), medium (3-5 sprints), complex (6-10 sprints), very complex (10+ sprints)
+      </action>
+      <action id="arch_006">
+        Extract existing sprint timeline estimates from documentation (referenced: Phases 1-6 spanning 21-24 months, Sprints 1-104)
+      </action>
+      <action id="arch_007">
+        Identify critical path dependencies that block parallel development
+      </action>
+      <action id="arch_008">
+        Define database schemas, RLS policies, multi-tenancy patterns per service
+      </action>
+      <action id="arch_009">
+        Document event-driven patterns: Kafka topics, event flows, saga patterns, idempotency requirements
+      </action>
+    </required_actions>
+  </architecture_analysis>
+
+  <developer_productivity_research>
+    <required_actions>
+      <action id="prod_001">
+        Research Claude Code productivity metrics from official Anthropic sources, blog posts, and case studies published in 2024-2025
+      </action>
+      <action id="prod_002">
+        Cross-reference user observation: "3-4x productivity increase for code where requirements are clear and developer knows what to build"
+      </action>
+      <action id="prod_003">
+        Cross-reference user observation: "Lower productivity gains (possibly 1.2-2x) for exploratory work requiring hit-and-trial approach"
+      </action>
+      <action id="prod_004">
+        Find peer-reviewed studies, developer surveys, and real-world deployment metrics measuring AI coding assistant productivity
+      </action>
+      <action id="prod_005">
+        Identify productivity variance by task type: well-defined tasks vs. exploratory tasks, refactoring vs. new feature development, familiar codebases vs. unfamiliar codebases
+      </action>
+      <action id="prod_006">
+        Research productivity differences for junior vs. senior developers using AI coding assistants
+      </action>
+      <action id="prod_007">
+        Investigate GitHub Copilot studies, METR research, GitClear code quality analysis, Stack Overflow developer surveys from 2024-2025
+      </action>
+      <action id="prod_008">
+        Document context-aware coding assistant capabilities and their impact on multi-file editing, codebase understanding, and task completion speed
+      </action>
+      <action id="prod_009">
+        Verify or refute user's productivity observations with empirical data
+      </action>
+      <action id="prod_010">
+        Calculate adjusted sprint timelines based on validated productivity multipliers for different task categories
+      </action>
+    </required_actions>
+  </developer_productivity_research>
+
+  <microservices_best_practices_research>
+    <required_actions>
+      <action id="best_001">
+        Research microservices implementation best practices from 2024-2025 industry sources: Martin Fowler, ThoughtWorks Technology Radar, CNCF patterns
+      </action>
+      <action id="best_002">
+        Identify service decomposition strategies: start small and extract gradually vs. big bang approach
+      </action>
+      <action id="best_003">
+        Document data ownership patterns: each service owns its data, avoid shared databases
+      </action>
+      <action id="best_004">
+        Research CI/CD automation requirements for microservices: deployment pipelines per service, automated testing, rollback strategies
+      </action>
+      <action id="best_005">
+        Identify observability requirements: distributed tracing (OpenTelemetry), centralized logging, metrics collection, alerting
+      </action>
+      <action id="best_006">
+        Research resilience patterns: circuit breakers, timeouts, retries, bulkheads, saga patterns for distributed transactions
+      </action>
+      <action id="best_007">
+        Document API gateway patterns: Kong configuration, rate limiting, authentication, routing strategies
+      </action>
+      <action id="best_008">
+        Research event-driven architecture best practices: Kafka topic design, event schema versioning, idempotent event handlers
+      </action>
+      <action id="best_009">
+        Identify team structure recommendations: service ownership, on-call responsibilities, cross-functional teams
+      </action>
+      <action id="best_010">
+        Research integration planning: multi-sprint lookahead for external integrations, signed-off specs before sprint start
+      </action>
+    </required_actions>
+  </microservices_best_practices_research>
+
+  <agile_methodology_research>
+    <required_actions>
+      <action id="agile_001">
+        Research agile sprint planning best practices from 2024-2025: Atlassian, Scrum.org, Scaled Agile Framework (SAFe)
+      </action>
+      <action id="agile_002">
+        Define sprint duration: recommend 2-week sprints for microservices development
+      </action>
+      <action id="agile_003">
+        Document sprint planning ceremony structure: duration (2 hours per week of sprint), participants, outputs
+      </action>
+      <action id="agile_004">
+        Identify sprint goal characteristics: specific, measurable, achievable, relevant, time-bound (SMART)
+      </action>
+      <action id="agile_005">
+        Research team capacity planning: velocity calculation, story point estimation, task breakdown
+      </action>
+      <action id="agile_006">
+        Document backlog refinement practices: user story definition, acceptance criteria, definition of done
+      </action>
+      <action id="agile_007">
+        Identify dependency management strategies: cross-team coordination, integration points, shared components
+      </action>
+      <action id="agile_008">
+        Research definition of "Done" for microservices: unit tests, integration tests, documentation, deployment automation, observability
+      </action>
+      <action id="agile_009">
+        Document retrospective practices: continuous improvement, velocity adjustment, process optimization
+      </action>
+      <action id="agile_010">
+        Identify scaling strategies: multiple teams working on different services, shared sprint cadence, integration sprints
+      </action>
+    </required_actions>
+  </agile_methodology_research>
+
+  <mvp_core_development_strategy>
+    <team_structure>
+      <core_team>
+        <size>2 developers (user + 1 additional developer)</size>
+        <focus>Core platform logic for MVP delivery</focus>
+        <leverage>Claude Code for 3-4x productivity on well-defined tasks</leverage>
+      </core_team>
+      <extended_team>
+        <timing>After MVP sandbox deployment</timing>
+        <focus>Parallel development on remaining services and features</focus>
+        <coordination>Iterate using agile methodology while core team continues improvements</coordination>
+      </extended_team>
+    </team_structure>
+
+    <mvp_definition>
+      <primary_capabilities>
+        <capability id="mvp_001">
+          PRD Builder generates comprehensive Product Requirements Documents from client input
+        </capability>
+        <capability id="mvp_002">
+          Automation Engine generates JSON configurations from PRD Builder output
+        </capability>
+        <capability id="mvp_003">
+          Agent Orchestration (Service 8) runs chatbot workflows based on JSON configs
+        </capability>
+        <capability id="mvp_004">
+          Voice Agent (Service 9) runs voicebot workflows based on JSON configs
+        </capability>
+        <capability id="mvp_005">
+          Intelligent tool discovery: system identifies required tools from PRD/config requirements
+        </capability>
+        <capability id="mvp_006">
+          Intelligent tool attachment: system automatically attaches discovered tools to agent configs
+        </capability>
+        <capability id="mvp_007">
+          Gap identification: system detects missing tools and missing integrations
+        </capability>
+        <capability id="mvp_008">
+          GitHub issue automation: system creates GitHub issues for missing tools/integrations with config_id reference
+        </capability>
+        <capability id="mvp_009">
+          Config update workflow: when GitHub issue resolved, system automatically adds tool/integration to config via config_id
+        </capability>
+        <capability id="mvp_010">
+          Sandbox environment: isolated testing environment with full workflow execution
+        </capability>
+        <capability id="mvp_011">
+          Deployment workflow: one-click deployment from sandbox to production environment
+        </capability>
+        <capability id="mvp_012">
+          Multi-tenancy: complete tenant isolation using PostgreSQL RLS and namespace patterns
+        </capability>
+      </primary_capabilities>
+
+      <supporting_services_for_mvp>
+        <service id="svc_0">Organization &amp; Identity Management (auth, tenant setup)</service>
+        <service id="svc_6">PRD Builder &amp; Configuration Workspace</service>
+        <service id="svc_7">Automation Engine</service>
+        <service id="svc_8">Agent Orchestration (Chatbot)</service>
+        <service id="svc_9">Voice Agent (Voicebot)</service>
+        <service id="svc_11">Monitoring Engine (basic health checks)</service>
+        <service id="svc_17">RAG Pipeline (for knowledge injection)</service>
+        <lib id="lib_1">@workflow/llm-sdk</lib>
+        <lib id="lib_2">@workflow/config-sdk</lib>
+      </supporting_services_for_mvp>
+
+      <infrastructure_for_mvp>
+        <component id="infra_001">PostgreSQL with Row-Level Security</component>
+        <component id="infra_002">Qdrant vector database with namespace isolation</component>
+        <component id="infra_003">Redis for caching and hot-reload</component>
+        <component id="infra_004">Apache Kafka (subset of topics for MVP)</component>
+        <component id="infra_005">Kong API Gateway (basic routing and auth)</component>
+        <component id="infra_006">Kubernetes cluster (development + sandbox + production)</component>
+        <component id="infra_007">GitHub integration for issue automation</component>
+        <component id="infra_008">S3 for configuration storage</component>
+      </infrastructure_for_mvp>
+    </mvp_definition>
+
+    <post_mvp_expansion>
+      <parallel_workstreams>
+        <workstream id="ws_001">
+          Sales pipeline services (Services 1, 2, 3): research, demo generation, document generation
+        </workstream>
+        <workstream id="ws_002">
+          Customer operations (Services 13, 14, 15, 21): customer success, support, CRM integration, agent copilot
+        </workstream>
+        <workstream id="ws_003">
+          Analytics and monitoring enhancements (Services 11, 12): advanced monitoring, business intelligence
+        </workstream>
+        <workstream id="ws_004">
+          Communication engine (Service 20): email/SMS, hyperpersonalization, A/B testing
+        </workstream>
+        <workstream id="ws_005">
+          Billing system (Service 22): subscription management, invoicing, payment processing
+        </workstream>
+      </parallel_workstreams>
+    </post_mvp_expansion>
+  </mvp_core_development_strategy>
+
+  <sprint_planning_requirements>
+    <sprint_structure>
+      <duration>2 weeks per sprint</duration>
+      <ceremonies>
+        <ceremony>Sprint Planning (4 hours at sprint start)</ceremony>
+        <ceremony>Daily Standups (15 minutes)</ceremony>
+        <ceremony>Sprint Review (2 hours at sprint end)</ceremony>
+        <ceremony>Sprint Retrospective (1.5 hours at sprint end)</ceremony>
+        <ceremony>Backlog Refinement (ongoing throughout sprint)</ceremony>
+      </ceremonies>
+    </sprint_structure>
+
+    <sprint_content_per_sprint>
+      <field id="sprint_number">Sequential sprint number starting from Sprint 1</field>
+      <field id="sprint_goal">Clear, specific goal for the sprint (SMART criteria)</field>
+      <field id="sprint_duration">Start date and end date (2-week duration)</field>
+      <field id="services_in_scope">List of services/components being developed or enhanced</field>
+      <field id="user_stories">Detailed user stories with acceptance criteria</field>
+      <field id="technical_tasks">Infrastructure, tooling, CI/CD, testing tasks</field>
+      <field id="story_points">Estimated story points per user story</field>
+      <field id="team_capacity">Available developer hours (adjusted for Claude Code productivity)</field>
+      <field id="dependencies">Explicit dependencies on previous sprints or external factors</field>
+      <field id="risks">Identified risks and mitigation strategies</field>
+      <field id="definition_of_done">Specific completion criteria for sprint deliverables</field>
+      <field id="testing_requirements">Unit tests, integration tests, e2e tests required</field>
+      <field id="documentation_requirements">Technical docs, API docs, runbooks required</field>
+      <field id="deployment_strategy">How deliverables will be deployed (dev, sandbox, production)</field>
+    </sprint_content_per_sprint>
+
+    <productivity_adjustments>
+      <well_defined_tasks>
+        <description>Tasks where requirements are clear, design is known, implementation is straightforward</description>
+        <examples>Implementing CRUD APIs with known schema, writing unit tests for existing code, refactoring with clear target architecture, implementing features similar to existing patterns</examples>
+        <productivity_multiplier>Use validated productivity multiplier from research (expected range: 2.5x - 4x)</productivity_multiplier>
+      </well_defined_tasks>
+      <exploratory_tasks>
+        <description>Tasks requiring research, experimentation, architecture decisions, unfamiliar technologies</description>
+        <examples>Designing new service architecture, evaluating technology options, debugging complex distributed issues, integrating unfamiliar third-party services</examples>
+        <productivity_multiplier>Use validated productivity multiplier from research (expected range: 1.2x - 2x)</productivity_multiplier>
+      </exploratory_tasks>
+      <sprint_timeline_calculation>
+        Calculate realistic sprint timelines by:
+        1. Categorizing each task as well-defined or exploratory
+        2. Estimating baseline development time without AI assistance
+        3. Applying appropriate productivity multiplier based on task category
+        4. Adding buffer for integration, testing, code review (20-30% of development time)
+        5. Accounting for ceremonies, context switching, operational overhead (15-20% of sprint time)
+      </sprint_timeline_calculation>
+    </productivity_adjustments>
+
+    <critical_path_analysis>
+      <required_actions>
+        <action id="crit_001">Identify services that block other services (foundation layer must complete first)</action>
+        <action id="crit_002">Map dependencies between services using event topics and API calls</action>
+        <action id="crit_003">Determine parallel work opportunities where teams can work independently</action>
+        <action id="crit_004">Calculate earliest possible start date for each service based on dependencies</action>
+        <action id="crit_005">Identify integration points requiring multi-sprint coordination</action>
+        <action id="crit_006">Plan integration sprints where multiple services come together</action>
+      </required_actions>
+    </critical_path_analysis>
+
+    <testing_strategy>
+      <test_levels>
+        <level id="unit">Unit tests for each service (80%+ code coverage)</level>
+        <level id="integration">Integration tests for inter-service communication</level>
+        <level id="e2e">End-to-end tests for complete workflows</level>
+        <level id="performance">Performance tests for latency-sensitive services (voice: &lt;500ms)</level>
+        <level id="security">Security tests for auth, RLS, tenant isolation</level>
+        <level id="chaos">Chaos engineering tests for resilience</level>
+      </test_levels>
+      <test_environment>
+        Real infrastructure (no mocks): real PostgreSQL, real Kafka, real Qdrant instances
+      </test_environment>
+    </testing_strategy>
+
+    <documentation_requirements>
+      <per_service>
+        <doc>README with service overview, architecture, dependencies</doc>
+        <doc>API documentation (OpenAPI/Swagger specs)</doc>
+        <doc>Database schema documentation</doc>
+        <doc>Event schema documentation (Kafka topics)</doc>
+        <doc>Deployment runbook</doc>
+        <doc>Monitoring and alerting guide</doc>
+        <doc>Troubleshooting guide</doc>
+      </per_service>
+      <platform_wide>
+        <doc>Architecture decision records (ADRs)</doc>
+        <doc>Developer onboarding guide</doc>
+        <doc>Multi-tenancy implementation guide</doc>
+        <doc>Event-driven architecture guide</doc>
+        <doc>CI/CD pipeline documentation</doc>
+        <doc>Security and compliance documentation</doc>
+      </platform_wide>
+    </documentation_requirements>
+  </sprint_planning_requirements>
+
+  <output_format>
+    <structure>
+      <section id="executive_summary">
+        High-level overview of total sprint count, MVP timeline, full platform timeline
+      </section>
+      <section id="productivity_analysis">
+        Validated productivity metrics from research with citations
+        Explanation of how metrics were applied to sprint calculations
+        Comparison of user observations vs. research findings
+      </section>
+      <section id="architecture_summary">
+        Service inventory with complexity ratings
+        Critical path dependencies visualization
+        Technology stack per service
+      </section>
+      <section id="mvp_roadmap">
+        Detailed sprint-by-sprint plan for MVP (core team focus)
+        Each sprint includes: goal, services, user stories, tasks, story points, capacity, dependencies, risks, DoD
+      </section>
+      <section id="post_mvp_roadmap">
+        Detailed sprint-by-sprint plan for remaining services (extended team)
+        Parallel workstream coordination
+      </section>
+      <section id="team_scaling_plan">
+        When to add developers
+        How to organize teams around services
+        Cross-team coordination mechanisms
+      </section>
+      <section id="risk_register">
+        Identified risks across all sprints
+        Mitigation strategies
+        Contingency plans
+      </section>
+      <section id="success_metrics">
+        KPIs to track per sprint
+        Velocity tracking
+        Quality metrics (test coverage, bug rates, incident rates)
+      </section>
+    </structure>
+    <format>
+      Detailed narrative with embedded tables, charts, and diagrams (described in text)
+      Each sprint documented comprehensively
+      Clear dependencies and sequencing
+      Realistic timelines based on validated productivity data
+    </format>
+  </output_format>
+
+  <constraints_and_considerations>
+    <constraint id="const_001">
+      Platform currently in planning phase - no implementation has begun
+    </constraint>
+    <constraint id="const_002">
+      Must follow existing architecture documentation exactly - do not redesign services
+    </constraint>
+    <constraint id="const_003">
+      Must account for learning curve on unfamiliar technologies (LangGraph, LiveKit, Neo4j, etc.)
+    </constraint>
+    <constraint id="const_004">
+      Must include time for infrastructure setup, CI/CD pipelines, monitoring dashboards
+    </constraint>
+    <constraint id="const_005">
+      Must account for integration complexity with external services (Salesforce, HubSpot, Zendesk, payment processors)
+    </constraint>
+    <constraint id="const_006">
+      Voice agent has strict latency requirements (&lt;500ms) requiring careful optimization
+    </constraint>
+    <constraint id="const_007">
+      Multi-tenancy must be tested thoroughly to prevent data leaks between tenants
+    </constraint>
+    <constraint id="const_008">
+      Event-driven architecture requires idempotent event handlers and saga pattern implementation
+    </constraint>
+    <constraint id="const_009">
+      LangGraph checkpointing and state management adds complexity to chatbot implementation
+    </constraint>
+    <constraint id="const_010">
+      Service 21 (Agent Copilot) aggregates 21+ event topics requiring significant integration work
+    </constraint>
+  </constraints_and_considerations>
+
+  <quality_standards>
+    <standard id="qual_001">
+      No partial implementations - every feature must be fully functional
+    </standard>
+    <standard id="qual_002">
+      No code simplifications or placeholders - production-ready code only
+    </standard>
+    <standard id="qual_003">
+      No code duplication - reuse existing functions and patterns
+    </standard>
+    <standard id="qual_004">
+      No dead code - remove or use all code
+    </standard>
+    <standard id="qual_005">
+      Every function must have comprehensive tests (no trivial or "cheater" tests)
+    </standard>
+    <standard id="qual_006">
+      Consistent naming following existing codebase patterns
+    </standard>
+    <standard id="qual_007">
+      No over-engineering - simple solutions over complex abstractions
+    </standard>
+    <standard id="qual_008">
+      Clear separation of concerns - no mixed responsibilities
+    </standard>
+    <standard id="qual_009">
+      No resource leaks - proper cleanup of connections, timeouts, listeners
+    </standard>
+    <standard id="qual_010">
+      Observability built-in from day one - logging, metrics, tracing for every service
+    </standard>
+  </quality_standards>
+
+  <final_instructions>
+    <instruction id="final_001">
+      Generate a comprehensive sprint-by-sprint implementation plan that a development team can follow to build the entire platform end-to-end
+    </instruction>
+    <instruction id="final_002">
+      Use ONLY information extracted from architecture documents and research - do not make assumptions or add information not present in sources
+    </instruction>
+    <instruction id="final_003">
+      Clearly cite research sources when referencing productivity metrics or best practices
+    </instruction>
+    <instruction id="final_004">
+      Provide realistic timelines that account for complexity, dependencies, learning curves, and validated productivity multipliers
+    </instruction>
+    <instruction id="final_005">
+      Prioritize MVP delivery with clear definition of what constitutes deployable minimum viable product
+    </instruction>
+    <instruction id="final_006">
+      Show how core team (2 developers) builds MVP first, then extended team joins for parallel workstreams
+    </instruction>
+    <instruction id="final_007">
+      Include specific user stories, acceptance criteria, and technical tasks for each sprint
+    </instruction>
+    <instruction id="final_008">
+      Identify all risks, dependencies, and blockers explicitly
+    </instruction>
+    <instruction id="final_009">
+      Provide clear definition of "Done" for each sprint aligned with quality standards
+    </instruction>
+    <instruction id="final_010">
+      Format output as detailed document suitable for project management tool import (Jira, Linear, etc.)
+    </instruction>
+  </final_instructions>
+</sprint_planning_prompt>
