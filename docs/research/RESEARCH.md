@@ -44,7 +44,7 @@ Voice agents use specialized LangGraph workflows with **interrupt patterns** for
 
 ### Configuration service (Go)
 
-High-performance service managing dynamic YAML-based configurations with hot-reloading. Watches configuration files (5-60 second polling intervals) and propagates updates via Kafka events. **Multi-tenant design**: Each tenant has dedicated configuration namespace defining agent behavior, tool access, LLM parameters, and workflow rules.
+High-performance service managing dynamic JSON-based configurations with hot-reloading. Watches configuration files (5-60 second polling intervals) and propagates updates via Kafka events. **Multi-tenant design**: Each tenant has dedicated configuration namespace defining agent behavior, tool access, LLM parameters, and workflow rules.
 
 Implements **JSON Schema validation** before applying changes, with automatic rollback on validation failures. Configuration versioning tracks all changes in Git with blue-green deployment support—test new configurations on green environment before activating. **Feature flag integration** with LaunchDarkly enables gradual rollout (5% → 25% → 100%) and emergency kill switches.
 
@@ -160,7 +160,7 @@ Maintains **idempotency keys** for all CRM operations, preventing duplicate reco
 
 ### Configuration management per tenant
 
-**YAML-based multi-tenant configuration** stored in S3/object storage with prefix per tenant: `s3://configs/tenant_{id}/agent_config.yaml`. Configuration service watches for changes (30-60 second polling) and propagates updates via Kafka events. Each microservice subscribes to config_updated topic and hot-reloads relevant sections.
+**JSON-based multi-tenant configuration** stored in S3/object storage with prefix per tenant: `s3://configs/tenant_{id}/agent_config.json`. Configuration service watches for changes (30-60 second polling) and propagates updates via Kafka events. Each microservice subscribes to config_updated topic and hot-reloads relevant sections.
 
 **Configuration structure per tenant**: Agent identity (name, description, model preferences), capabilities (tools enabled, approval workflows), behavioral rules (tone, constraints, escalation triggers), prompt templates with variable substitution, LLM parameters (temperature, max_tokens, top_p), quota limits (requests/minute, monthly budget), feature flags (streaming, function calling, custom models).
 
@@ -200,7 +200,7 @@ Maintains **idempotency keys** for all CRM operations, preventing duplicate reco
 
 **Goal**: Support 10+ tenants with dynamic configuration
 
-**Services**: Configuration service (Go), YAML hot-reloading, tenant authentication
+**Services**: Configuration service (Go), JSON hot-reloading, tenant authentication
 
 **Features**: Row-Level Security for tenant isolation, tenant-specific agent configurations, quota management and rate limiting, Kong API gateway with workspaces, feature flags via LaunchDarkly
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This platform automates the complete B2B SaaS client lifecycle from research to customer success, achieving 95% automation within 12 months through 17 microservices (16 core services + 2 supporting libraries: @workflow/config-sdk and @workflow/llm-sdk) orchestrated via Kafka event-driven architecture. The system supports both **Chatbot** (LangGraph) and **Voicebot** (LiveKit) products with YAML-driven configuration and hot-reload capabilities.
+This platform automates the complete B2B SaaS client lifecycle from research to customer success, achieving 95% automation within 12 months through 17 microservices (16 core services + 2 supporting libraries: @workflow/config-sdk and @workflow/llm-sdk) orchestrated via Kafka event-driven architecture. The system supports both **Chatbot** (LangGraph) and **Voicebot** (LiveKit) products with JSON-driven configuration and hot-reload capabilities.
 
 **Performance Benefits:** Service consolidation delivers 400-900ms faster workflows (3-service sales pipeline → 1-service, LLM gateway elimination saves 200-500ms per call, direct S3 config access saves 50-100ms).
 
@@ -18,7 +18,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 - **Service 0: Organization & Identity Management** - Multi-tenant auth, user management, JWT tokens, agent orchestration, lifecycle handoffs, specialist routing
 
 **Pre-Sales Services (1-3, 22)** - Research, Demo, Sales Document Generation, Billing & Revenue Management
-**Implementation Services (6-7)** - PRD Builder & Configuration Workspace, Automation Engine (YAML generation)
+**Implementation Services (6-7)** - PRD Builder & Configuration Workspace, Automation Engine (JSON generation)
 **Runtime Services (8-9)** - Agent Orchestration (chatbot), Voice Agent (voicebot)
 **Monitoring Services (11-12)** - Monitoring Engine, Analytics
 **Customer Lifecycle (13-15)** - Customer Success, Support, CRM Integration
@@ -49,7 +49,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 | **Aspect** | **Chatbot** | **Voicebot** |
 |------------|-------------|--------------|
 | Framework | LangGraph (two-node: agent + tools) | LiveKit (VoicePipelineAgent, STT-LLM-TTS) |
-| YAML Config | Includes `external_integrations` | NO `external_integrations`, includes voice params |
+| JSON Config | Includes `external_integrations` | NO `external_integrations`, includes voice params |
 | Channels | Webchat, WhatsApp, SMS, Slack | Inbound/outbound calls via Twilio/Telnyx SIP |
 | Latency Target | <2s P95 | <500ms P95 |
 | Service | Agent Orchestration (Service 8) | Voice Agent (Service 9) |
@@ -131,7 +131,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 
 ## Phase 1: Onboarding (40% Human Touch)
 
-**Automation:** PRD AI cross-questioning, YAML config generation, GitHub ticket creation
+**Automation:** PRD AI cross-questioning, JSON config generation, GitHub ticket creation
 **Human:** PRD supervision, architecture review, config validation, launch oversight
 
 ### Step 5: PRD Builder & Configuration Workspace with Village Knowledge
@@ -178,13 +178,13 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 
 **Note:** Service 6 now includes client configuration portal functionality, enabling clients to manage configs post-deployment through the same conversational interface used during PRD creation.
 
-### Step 6: YAML Config Generation & Tool Orchestration
+### Step 6: JSON Config Generation & Tool Orchestration
 
 **Automation Engine (Service 7)** - Webchat UI interface:
 
-**YAML Config Generation:**
+**JSON Config Generation:**
 - Takes approved PRD as input
-- Generates YAML config with:
+- Generates JSON config with:
   - `product_type`: `chatbot` or `voicebot`
   - `system_prompt`: Use case-specific instructions
   - `tools`: List of required tools (available + missing)
@@ -196,11 +196,11 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 **GitHub Ticket Creation:**
 - For missing tools: Auto-creates GitHub issue with `tool_name`, `input`, `output`, metadata
 - For missing integrations: Auto-creates GitHub issue with integration details
-- Developer manually implements → Merges → Auto-attaches to YAML config via `config_id`
+- Developer manually implements → Merges → Auto-attaches to JSON config via `config_id`
 - Services use @workflow/config-sdk library for direct S3 config access (50-100ms faster than service-based approach)
 
 **Canvas Editing:**
-- Right-side canvas shows generated YAML
+- Right-side canvas shows generated JSON
 - Editable via chat feedback or manual editing
 - Version control with Git-style commits
 
@@ -212,7 +212,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 ### Step 7: Deployment & Handoff
 
 **Configuration Deployment (@workflow/config-sdk library):**
-- Services access YAML configs directly from S3 (versioned) using @workflow/config-sdk
+- Services access JSON configs directly from S3 (versioned) using @workflow/config-sdk
 - Configs cached in Redis for fast retrieval (50-100ms faster than service-based routing)
 - Config updates propagated via Kafka `config_events` (<2s latency)
 - Agent Orchestration (chatbot) or Voice Agent (voicebot) loads config directly
@@ -483,7 +483,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 - **Tools Node:** Tool execution, integration calls, database operations
 - Reference: https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
 
-**YAML-Driven Configuration:**
+**JSON-Driven Configuration:**
 - `system_prompt`: Dynamic per use case
 - `tools`: List of available tools (e.g., `fetch_user_flight_information`, `search_flights`, `book_car_rental`)
 - `external_integrations`: Salesforce, Zendesk, Stripe, HubSpot (chatbot-specific)
@@ -514,9 +514,9 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 - Telnyx (failover) for redundancy
 - Call routing, recording, transfer to human
 
-**YAML-Driven Configuration:**
+**JSON-Driven Configuration:**
 - `system_prompt`: Voice-optimized instructions
-- `tools`: Voice-specific tools (NO external integrations in YAML)
+- `tools`: Voice-specific tools (NO external integrations in JSON)
 - `voice_parameters`: Speed, clarity, style exaggeration, background sound
 - `stop_speaking_plan`: Interruption detection configuration
 
@@ -584,8 +584,8 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 - Redis: Tenant-aware caching with key prefixes
 
 **Configuration Isolation:**
-- YAML configs stored with `organization_id`
-- S3 bucket structure: `/configs/{organization_id}/{config_id}.yaml`
+- JSON configs stored with `organization_id`
+- S3 bucket structure: `/configs/{organization_id}/{config_id}.json`
 - @workflow/config-sdk library enforces tenant isolation at SDK level
 - Hot-reload only affects target tenant
 
@@ -650,7 +650,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 | **Phase** | **Automation %** | **Automated Tasks** | **Human Tasks** |
 |-----------|------------------|---------------------|-----------------|
 | Phase 0: Sales | 60% | Research, demo generation, NDA/proposal creation | Relationship building, negotiation, strategic decisions |
-| Phase 1: Onboarding | 60% | PRD AI cross-questioning, YAML config generation, GitHub tickets | PRD supervision, architecture review, config validation |
+| Phase 1: Onboarding | 60% | PRD AI cross-questioning, JSON config generation, GitHub tickets | PRD supervision, architecture review, config validation |
 | Phase 2: Support | 90% | Ticket resolution, config application, SLA tracking | Complex escalations, edge cases, quality supervision |
 | Phase 3: Success | 90% | Daily KPI monitoring, health scores, lifecycle messaging | QBRs, strategic opportunities, renewal negotiation |
 | Phase 4: Client Self-Service | 80% | Config classification, preview generation, low-risk changes | Complex configs, high-risk approvals, tool development |
@@ -898,7 +898,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 This platform achieves 95% automation within 12 months through:
 
 1. **Optimized Event-Driven Architecture:** 17 microservices (16 core + 2 libraries) coordinated via 18 Kafka topics, delivering 400-900ms faster workflows through service consolidation
-2. **YAML-Driven Configuration:** Chatbot (LangGraph) and Voicebot (LiveKit) powered by dynamic configs with hot-reload via @workflow/config-sdk (50-100ms faster)
+2. **JSON-Driven Configuration:** Chatbot (LangGraph) and Voicebot (LiveKit) powered by dynamic configs with hot-reload via @workflow/config-sdk (50-100ms faster)
 3. **Human-in-the-Loop Orchestration:** Structured lifecycle handoffs (Sales → Onboarding → Support → Success) managed by Service 0, with automation percentages increasing from 60% → 90% → 80%
 4. **Agent Copilot (Service 21):** AI-powered unified dashboard for human agents aggregating 17 event streams, enabling 3x agent capacity through intelligent action planning, communication drafting, and village knowledge integration
 5. **Client Self-Service:** Unified PRD Builder & Configuration Workspace (Service 6) enables 80% autonomy for config changes

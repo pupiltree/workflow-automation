@@ -34,7 +34,7 @@ This index provides quick navigation to all microservices across the three archi
 | Service # | Service Name | Purpose |
 |-----------|--------------|---------|
 | 6 | PRD Builder & Configuration Workspace | AI-powered PRD generation, village knowledge, client config portal |
-| 7 | Automation Engine | YAML config generation, GitHub issue creation, hot-reload management |
+| 7 | Automation Engine | JSON config generation, GitHub issue creation, hot-reload management |
 | 17 | RAG Pipeline | Retrieval-Augmented Generation for knowledge injection |
 
 **Consolidated**:
@@ -141,7 +141,7 @@ This index provides quick navigation to all microservices across the three archi
 ### @workflow/config-sdk
 **Purpose**: S3-based configuration storage with JSON Schema validation
 **Replaces**: Service 10 (Configuration Management microservice)
-**Used By**: All services requiring YAML configs
+**Used By**: All services requiring JSON configs
 **Benefits**:
 - Eliminates 50-100ms latency per config fetch
 - Direct S3 access with client-side caching
@@ -189,13 +189,13 @@ This index provides quick navigation to all microservices across the three archi
 Primary Services:
 - Service 8: Agent Orchestration
 - Service 6: PRD Builder (chatbot workflows)
-- Service 7: Automation Engine (chatbot YAML configs)
+- Service 7: Automation Engine (chatbot JSON configs)
 
 ### **Voicebot Products (LiveKit-based)**
 Primary Services:
 - Service 9: Voice Agent
 - Service 6: PRD Builder (voicebot workflows)
-- Service 7: Automation Engine (voicebot YAML configs)
+- Service 7: Automation Engine (voicebot JSON configs)
 
 ### **Shared Services (Both Products)**
 - Service 11: Monitoring Engine

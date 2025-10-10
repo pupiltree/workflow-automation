@@ -6,21 +6,21 @@
 ## 8. Agent Orchestration Service
 
 #### Objectives
-- **Primary Purpose**: Core LangGraph-based orchestration engine that powers **chatbot workflows** using dynamic YAML configurations
+- **Primary Purpose**: Core LangGraph-based orchestration engine that powers **chatbot workflows** using dynamic JSON configurations
 - **Business Value**: Enables multi-tenant chatbot deployment with configuration-driven behavior, supports 10,000+ concurrent conversations, 99.9% uptime
 - **Product Scope**: This service is **chatbot-specific** (product_type: chatbot). Voicebots use LiveKit framework instead (see Voice Agent Service).
 - **Architecture Reference**: Implements the two-node pattern from [LangGraph Customer Support Tutorial](https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/)
 - **Scope Boundaries**:
-  - **Does**: Load YAML configs (with external integrations), orchestrate LangGraph chatbot workflows, manage conversation state, execute tools, handle escalations
+  - **Does**: Load JSON configs (with external integrations), orchestrate LangGraph chatbot workflows, manage conversation state, execute tools, handle escalations
   - **Does Not**: Generate configs (Automation Engine does), implement tools (developers do), manage voice infrastructure (Voice Service does), power voicebots (separate LiveKit implementation)
 
 #### Requirements
 
 **Functional Requirements:**
-1. Load and hot-reload YAML configs per tenant
+1. Load and hot-reload JSON configs per tenant
 2. Implement LangGraph two-node workflow (agent node + tools node)
 3. Manage conversation state with PostgreSQL checkpointing
-4. Execute tools based on YAML config
+4. Execute tools based on JSON config
 5. Handle human escalation triggers
 6. Support multi-turn conversations with memory management
 7. Implement PII collection and storage
@@ -35,7 +35,7 @@
 - Horizontal scalability: 1000+ conversations per pod
 
 **Dependencies:**
-- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (YAML config source)
+- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (JSON config source)
 - **Configuration Management** *[See Service 10 below]* (config distribution)
 - **LLM Gateway Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 16]* (model inference)
 - **RAG Pipeline Service** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 17]* (knowledge retrieval)
@@ -50,7 +50,7 @@
 #### Features
 
 **Must-Have:**
-1. ✅ YAML-driven agent configuration
+1. ✅ JSON-driven agent configuration
 2. ✅ LangGraph two-node orchestration (agent + tools)
 3. ✅ State checkpointing with fault tolerance
 4. ✅ Tool execution framework (dynamic tool loading)
@@ -79,7 +79,7 @@
 
 1. **StateGraph Implementation**
    - **Agent Node**: LLM-powered decision making, tool selection, response generation
-   - **Tools Node**: Dynamic tool execution based on YAML config
+   - **Tools Node**: Dynamic tool execution based on JSON config
    - **Conditional Edges**: Routes between agent ↔ tools based on tool calls
    - **Checkpointing**: PostgreSQL-backed state persistence for fault tolerance
 
@@ -96,27 +96,44 @@
        checkpoint_id: str
    ```
 
-3. **YAML Configuration Structure (Chatbot)**
-   ```yaml
-   product_type: chatbot  # Required: differentiates from voicebot
-   system_prompt: "You are a helpful customer support agent..."
-   tools:
-     - name: fetch_order_status
-       description: "Retrieves order status by order ID"
-       parameters: {...}
-     - name: initiate_refund
-       description: "Initiates refund process"
-       parameters: {...}
-   external_integrations:  # ONLY in chatbot configs (NOT voicebot)
-     - type: salesforce
-       credentials_ref: "salesforce_prod"
-       enabled: true
-     - type: stripe
-       credentials_ref: "stripe_live"
-       enabled: true
-   escalation_rules:
-     - trigger: "user_frustrated"
-       action: "human_handoff"
+3. **JSON Configuration Structure (Chatbot)**
+   ```json
+   {
+     "product_type": "chatbot",
+     "_comment": "Required: differentiates from voicebot",
+     "system_prompt": "You are a helpful customer support agent...",
+     "tools": [
+       {
+         "name": "fetch_order_status",
+         "description": "Retrieves order status by order ID",
+         "parameters": {}
+       },
+       {
+         "name": "initiate_refund",
+         "description": "Initiates refund process",
+         "parameters": {}
+       }
+     ],
+     "external_integrations": [
+       {
+         "_comment": "ONLY in chatbot configs (NOT voicebot)",
+         "type": "salesforce",
+         "credentials_ref": "salesforce_prod",
+         "enabled": true
+       },
+       {
+         "type": "stripe",
+         "credentials_ref": "stripe_live",
+         "enabled": true
+       }
+     ],
+     "escalation_rules": [
+       {
+         "trigger": "user_frustrated",
+         "action": "human_handoff"
+       }
+     ]
+   }
    ```
 
 4. **Cross-Product Communication**
@@ -559,7 +576,7 @@ else:
 
 2. **Background Config Fetch:**
    - Call Configuration Management Service: `GET /api/v1/configs/{config_id}`
-   - Download new YAML config (v4)
+   - Download new JSON config (v4)
    - Parse and validate config schema
    - Load new tools into tool registry
 
@@ -601,8 +618,8 @@ config_versions = {
 - Conversation flow restructured (state incompatible)
 
 **Breaking Change Detection:**
-```yaml
-# In config YAML metadata
+```json
+/* In config JSON metadata */
 metadata:
   version: "v4"
   breaking_change: true  # Platform Engineer sets this manually
@@ -687,7 +704,7 @@ Auto-rollback triggered within 60 seconds
 
 1. **LangGraph Agent (Primary)**
    - Responsibility: Conducts conversations, invokes tools, manages state, applies personalization
-   - Tools: Dynamic (loaded from YAML config)
+   - Tools: Dynamic (loaded from JSON config)
    - Autonomy: Fully autonomous within config constraints
    - Escalation: Human handoff triggered by config rules (sentiment, complexity, user request)
    - Personalization Integration: Fetches cohort-based overrides from Hyperpersonalization Engine before generating responses
@@ -732,7 +749,7 @@ Auto-rollback triggered within 60 seconds
 1. **Internal API/Tool Errors:**
    - Tool execution timeouts (>30s)
    - Tool function exceptions (invalid parameters, logic errors)
-   - Missing tool implementations (referenced in YAML but not deployed)
+   - Missing tool implementations (referenced in JSON but not deployed)
    - Tool rate limit exceeded
 
 2. **External Integration API Errors:**
@@ -752,7 +769,7 @@ Auto-rollback triggered within 60 seconds
 2. **Graceful Degradation:**
    - If tool fails after retries, continue conversation without tool result
    - Inform user: "I'm having trouble accessing [system]. Let me try a different approach."
-   - Attempt alternative tools if available in YAML config
+   - Attempt alternative tools if available in JSON config
    - Log error for monitoring and support follow-up
 
 3. **Human Escalation:**
@@ -1124,7 +1141,7 @@ CREATE POLICY vision_logs_tenant_isolation ON vision_processing_logs
    - Complex query outside chatbot capabilities
 
 3. **Rule-Based:**
-   - YAML config defines specific triggers (e.g., "refund request" → escalate)
+   - JSON config defines specific triggers (e.g., "refund request" → escalate)
    - High-value customer (VIP tier) → priority escalation
    - Legal/compliance topics → mandatory human review
    - Payment failures → financial specialist escalation
@@ -1328,8 +1345,8 @@ CREATE POLICY escalations_tenant_isolation ON escalations
 - **Product Scope**: This service is **voicebot-specific** (product_type: voicebot). Chatbots use LangGraph framework instead (see Agent Orchestration Service).
 - **Architecture**: Uses LiveKit VoicePipelineAgent (STT-LLM-TTS pipeline), NOT LangGraph. Shares conceptual agent+tools pattern but different implementation.
 - **Scope Boundaries**:
-  - **Does**: Handle voice calls, STT/TTS processing, LiveKit session management, SIP integration (Twilio/Telnyx), voicebot workflows with YAML-configured tools
-  - **Does Not**: Generate configs (Automation Engine), use LangGraph (chatbot-only), include external integrations in YAML (SIP endpoint provided separately)
+  - **Does**: Handle voice calls, STT/TTS processing, LiveKit session management, SIP integration (Twilio/Telnyx), voicebot workflows with JSON-configured tools
+  - **Does Not**: Generate configs (Automation Engine), use LangGraph (chatbot-only), include external integrations in JSON (SIP endpoint provided separately)
 
 #### Requirements
 
@@ -1337,7 +1354,7 @@ CREATE POLICY escalations_tenant_isolation ON escalations
 1. LiveKit-based voice session management
 2. STT integration (Deepgram Nova-3) with streaming
 3. TTS integration (ElevenLabs Flash v2.5) with low latency
-4. VoicePipelineAgent workflow (LiveKit framework, YAML-driven tools only)
+4. VoicePipelineAgent workflow (LiveKit framework, JSON-driven tools only)
 5. SIP integration for phone calls (Twilio/Telnyx)
 6. DTMF support for IVR navigation
 7. Hot transfer to human agents
@@ -1352,7 +1369,7 @@ CREATE POLICY escalations_tenant_isolation ON escalations
 - Uptime: 99.9%
 
 **Dependencies:**
-- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (YAML configs)
+- **Automation Engine** *[See MICROSERVICES_ARCHITECTURE_PART2.md Service 7]* (JSON configs)
 - **Agent Orchestration Service** *[See Service 8 above]* (business logic for cross-product coordination)
 - **Configuration Management** *[See Service 10 below]* (voice-specific configs)
 - **External**: LiveKit Cloud/Self-hosted, Deepgram, ElevenLabs, Twilio/Telnyx
@@ -1368,7 +1385,7 @@ CREATE POLICY escalations_tenant_isolation ON escalations
 1. ✅ LiveKit distributed mesh architecture
 2. ✅ Deepgram STT streaming
 3. ✅ ElevenLabs TTS with dual streaming
-4. ✅ YAML-driven voice workflows
+4. ✅ JSON-driven voice workflows
 5. ✅ SIP integration for PSTN calls
 6. ✅ Human agent hot transfer
 7. ✅ Call recording and storage
@@ -1399,46 +1416,61 @@ CREATE POLICY escalations_tenant_isolation ON escalations
    - **Inbound Flow**: PSTN → Twilio SIP → LiveKit SIP Bridge → VoicePipelineAgent
    - **Outbound Flow**: VoicePipelineAgent → LiveKit SIP Bridge → Twilio SIP → PSTN
 
-3. **YAML Configuration Structure (Voicebot)**
-   ```yaml
-   product_type: voicebot  # Required: differentiates from chatbot
-   system_prompt: "You are a helpful voice assistant..."
-   tools:
-     - name: fetch_account_info
-       description: "Retrieves account information"
-       parameters: {...}
-     - name: schedule_appointment
-       description: "Schedules an appointment"
-       parameters: {...}
-   # NO external_integrations field (unlike chatbot)
-   # SIP endpoint configured separately via SIP trunk provisioning
-   escalation_rules:
-     - trigger: "user_frustrated"
-       action: "human_transfer"
-   voice_config:
-     stt_provider: deepgram
-     tts_provider: elevenlabs
-     voice_id: "sarah_professional"
-     turn_detection_threshold_ms: 300
-     # Client-configurable voice parameters (matching visual UI)
-     background_sound:
-       type: "office"  # office | cafe | silence | custom
-       custom_url: null
-     input_min_characters: 10
-     punctuation_boundaries: [".", "!", "?", "..."]
-     model_settings:
-       model: "gpt-4"
-       clarity_similarity: 0.75
-       speed: 1.0
-       style_exaggeration: 0
-       optimize_streaming_latency: 4
-       use_speaker_boost: true
-       auto_mode: false
-     max_tokens: 150
-     stop_speaking_plan:
-       number_of_words: 3
-       voice_seconds: 0.5
-       back_off_seconds: 2
+3. **JSON Configuration Structure (Voicebot)**
+   ```json
+   {
+     "product_type": "voicebot",
+     "_comment": "Required: differentiates from chatbot",
+     "system_prompt": "You are a helpful voice assistant...",
+     "tools": [
+       {
+         "name": "fetch_account_info",
+         "description": "Retrieves account information",
+         "parameters": {}
+       },
+       {
+         "name": "schedule_appointment",
+         "description": "Schedules an appointment",
+         "parameters": {}
+       }
+     ],
+     "_comment_integrations": "NO external_integrations field (unlike chatbot). SIP endpoint configured separately via SIP trunk provisioning",
+     "escalation_rules": [
+       {
+         "trigger": "user_frustrated",
+         "action": "human_transfer"
+       }
+     ],
+     "voice_config": {
+       "stt_provider": "deepgram",
+       "tts_provider": "elevenlabs",
+       "voice_id": "sarah_professional",
+       "turn_detection_threshold_ms": 300,
+       "_comment_voice_params": "Client-configurable voice parameters (matching visual UI)",
+       "background_sound": {
+         "type": "office",
+         "_comment_type": "office | cafe | silence | custom",
+         "custom_url": null
+       },
+       "input_min_characters": 10,
+       "punctuation_boundaries": [".", "!", "?", "..."],
+       "model_settings": {
+         "model": "gpt-4",
+         "clarity_similarity": 0.75,
+         "speed": 1.0,
+         "style_exaggeration": 0,
+         "optimize_streaming_latency": 4,
+         "use_speaker_boost": true,
+         "auto_mode": false
+       },
+       "max_tokens": 150,
+       "stop_speaking_plan": {
+         "number_of_words": 3,
+         "voice_seconds": 0.5,
+         "back_off_seconds": 2
+       }
+     }
+   }
    ```
 
 4. **Cross-Product Communication**
@@ -1452,7 +1484,7 @@ CREATE POLICY escalations_tenant_isolation ON escalations
    |--------|---------------------|-------------------|
    | Framework | LangGraph | LiveKit Agents |
    | State Management | StateGraph + Checkpointing | LiveKit room state |
-   | YAML Config | Includes `external_integrations` | NO `external_integrations` |
+   | JSON Config | Includes `external_integrations` | NO `external_integrations` |
    | SIP Integration | N/A | Twilio/Telnyx SIP trunks |
    | Latency Target | <2s P95 | <500ms P95 |
    | Tool Execution | Via LangGraph tools node | Via LiveKit agent callbacks |
@@ -1786,7 +1818,7 @@ Response (200 OK):
 
 1. **Voice Agent (LiveKit-based)**
    - Responsibility: Conducts voice conversations using VoicePipelineAgent
-   - Tools: YAML-configured tools (similar pattern to chatbot but LiveKit implementation)
+   - Tools: JSON-configured tools (similar pattern to chatbot but LiveKit implementation)
    - Framework: LiveKit Agents (NOT LangGraph)
    - Autonomy: Fully autonomous within config constraints
    - Escalation: Hot transfer triggered by config rules
@@ -1993,7 +2025,7 @@ Response (201 Created):
 - S3 credentials managed per-service (already required for infrastructure)
 
 **Former Functionality** (now in library):
-- YAML config storage in S3
+- JSON config storage in S3
 - JSON Schema validation
 - Hot-reload via Redis pub/sub
 - Version control and rollback
@@ -3358,7 +3390,7 @@ CREATE INDEX idx_deprecations_status ON api_deprecations(migration_status);
 
 **Integration Points:**
 - **Service 8 (Agent Orchestration)**: Monitor integration API calls for deprecation warnings
-- **Service 7 (Automation Engine)**: Track which YAML configs use deprecated endpoints
+- **Service 7 (Automation Engine)**: Track which JSON configs use deprecated endpoints
 - **Service 14 (Support Engine)**: Create support tickets for client impact notifications
 
 #### Chatbot Downtime Management
@@ -8165,7 +8197,7 @@ Complete mapping of Kafka topics to event types, schemas, producers, and consume
 ### Caching Strategy
 
 **L1 (In-Memory per Pod):**
-- Config: YAML configs, feature flags
+- Config: JSON configs, feature flags
 - Static: Prompt templates, tool schemas
 
 **L2 (Redis Cluster):**
@@ -8363,7 +8395,7 @@ Collaboration Ended → collaboration_ended event (AI resumes)
   ↓
 PRD Approved → prd_approved event
   ↓
-Automation Engine (AI-generated YAML) → config_generated event
+Automation Engine (AI-generated JSON) → config_generated event
   ↓
 Onboarding Specialist Reviews Config → config_reviewed event
   ↓
@@ -8582,7 +8614,7 @@ This microservices architecture provides a **production-ready foundation** for a
 ✅ **Modular Development:** Independent service deployment, sprint-based roadmap
 ✅ **Multi-Tenant Isolation:** Support 10,000+ clients with namespace/RLS segregation
 ✅ **Event-Driven Scalability:** Kafka-based loose coupling, horizontal scaling
-✅ **Configuration-Driven Agents:** YAML-based dynamic behavior without code changes
+✅ **Configuration-Driven Agents:** JSON-based dynamic behavior without code changes
 ✅ **Cost Optimization:** 80% reduction in customer service costs
 ✅ **Security & Compliance:** SOC 2, HIPAA, GDPR, PCI-DSS ready
 
@@ -8777,7 +8809,7 @@ pip install workflow-config-sdk
 npm install @workflow/config-sdk
 ```
 
-**Used By**: All services requiring YAML configuration (Services 7, 8, 9, etc.)
+**Used By**: All services requiring JSON configuration (Services 7, 8, 9, etc.)
 
 **Key Features**:
 1. **Direct S3 Access**: Read/write configs directly to S3 buckets (no intermediate service)
@@ -8847,8 +8879,8 @@ config.onChange('agent/chatbot_sales', (newConfig) => {
 ```
 
 **Configuration Schema**:
-```yaml
-# Example: Agent Config (chatbot_sales.yaml)
+```json
+// Example: Agent Config (chatbot_sales.json)
 name: "Sales Assistant Chatbot"
 tenant_id: "org_123"
 model:
@@ -8871,10 +8903,10 @@ knowledge_bases:
 workflow-configs/
 ├── org_123/                    # Tenant namespace
 │   ├── agents/
-│   │   ├── chatbot_sales.yaml
-│   │   └── voicebot_support.yaml
+│   │   ├── chatbot_sales.json
+│   │   └── voicebot_support.json
 │   ├── workflows/
-│   │   └── prd_generation.yaml
+│   │   └── prd_generation.json
 │   └── metadata.json
 └── schemas/                    # JSON Schemas
     ├── agent.schema.json

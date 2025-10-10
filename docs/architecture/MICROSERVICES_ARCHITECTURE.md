@@ -12,7 +12,7 @@ This document defines the comprehensive microservices architecture for an AI-pow
 **Key Architecture Principles:**
 - Event-driven communication via Apache Kafka for loose coupling and scalability
 - Multi-tenant isolation using Row-Level Security (RLS) and namespace-based segregation
-- YAML-driven dynamic configuration for agent behavior and workflow customization
+- JSON-driven dynamic configuration for agent behavior and workflow customization
 - LangGraph-based agent orchestration for stateful, fault-tolerant AI workflows
 - Microservices autonomy with database-per-service pattern
 - Horizontal scalability through containerized deployment on Kubernetes
@@ -4253,7 +4253,7 @@ CREATE POLICY approvals_isolation ON approval_workflows
   "timestamp": "2025-10-10T14:00:00Z"
 }
 ```
-**Consumers**: Automation Engine (triggers YAML config generation), Customer Success Service (initiates onboarding), Monitoring Engine (track conversion)
+**Consumers**: Automation Engine (triggers JSON config generation), Customer Success Service (initiates onboarding), Monitoring Engine (track conversion)
 
 **Consumed Events:**
 - `demo_approved` (from Demo Generator) → Triggers NDA generation

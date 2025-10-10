@@ -136,7 +136,7 @@
 35. 🔄 AI-powered configuration optimization suggestions
 36. 🔄 Configuration templates marketplace (share configs across organizations)
 37. 🔄 Automated regression testing for config changes
-38. 🔄 Configuration import/export (JSON/YAML)
+38. 🔄 Configuration import/export (JSON)
 39. 🔄 Multi-environment support (dev/staging/production branches)
 
 *Dependency Tracking:*
@@ -579,7 +579,7 @@ Response (200 OK):
     "role": "CEO"
   },
   "next_steps": [
-    "automation_engine_yaml_generation",
+    "automation_engine_json_generation",
     "github_issues_creation",
     "sprint_planning"
   ]
@@ -1061,7 +1061,7 @@ Request Body:
     "technical_complexity": "low",  // low | medium | high
     "estimated_implementation_hours": 4,
     "affected_components": [
-      "YAML config (support_ticket_creation_flow)",
+      "JSON config (support_ticket_creation_flow)",
       "Tool execution layer (Twilio integration)"
     ],
     "dependencies": [
@@ -1243,16 +1243,16 @@ Response (200 OK):
 
 1. **Request Submission** → 2. **Impact Analysis** → 3. **Client Approval** → 4. **Implementation** → 5. **Testing** → 6. **Phased Deployment** → 7. **Validation** → 8. **Full Rollout** (or **Rollback** if issues detected)
 
-**Integration with YAML Config Management:**
+**Integration with JSON Config Management:**
 
-- Modifications generate new YAML config versions via Service 7 (Automation Engine)
+- Modifications generate new JSON config versions via Service 7 (Automation Engine)
 - Hot-reload mechanism applies changes without service restart
 - Config versioning enables instant rollback to previous state
 - In-progress conversations complete with current config version, new conversations use updated version
 
 **Data Storage:**
 - **PostgreSQL**: Modification requests, impact analyses, approval logs, deployment history
-- **Git**: Version-controlled YAML config snapshots
+- **Git**: Version-controlled JSON config snapshots
 
 **Database Schema:**
 ```sql
@@ -1288,7 +1288,7 @@ CREATE POLICY flow_mods_tenant_isolation ON flow_modifications
 ```
 
 **Integration Points:**
-- **Service 7 (Automation Engine)**: Generate updated YAML configs, manage config versions
+- **Service 7 (Automation Engine)**: Generate updated JSON configs, manage config versions
 - **Service 8 (Agent Orchestration)**: Hot-reload updated configs, handle version transitions
 - **Service 11 (Monitoring)**: Track post-modification performance metrics
 - **Service 12 (Analytics)**: Generate A/B test comparisons (before/after modification)
@@ -2012,36 +2012,36 @@ CREATE POLICY follow_up_isolation ON dependency_follow_ups
 ## 7. Automation Engine Service
 
 #### Objectives
-- **Primary Purpose**: Converts approved PRDs into executable YAML configurations, manages dynamic agent behavior, orchestrates tool and integration lifecycle
-- **Business Value**: Enables configuration-driven agent deployment, automates GitHub issue creation for missing tools/integrations, supports 1000+ concurrent YAML configs
+- **Primary Purpose**: Converts approved PRDs into executable JSON configurations, manages dynamic agent behavior, orchestrates tool and integration lifecycle
+- **Business Value**: Enables configuration-driven agent deployment, automates GitHub issue creation for missing tools/integrations, supports 1000+ concurrent JSON configs
 - **Scope Boundaries**:
-  - **Does**: Generate YAML configs, manage tool/integration GitHub issues, hot-reload configurations, validate and version configs
+  - **Does**: Generate JSON configs, manage tool/integration GitHub issues, hot-reload configurations, validate and version configs
   - **Does Not**: Implement tools/integrations (developers do), train models, deploy infrastructure
 
 #### Requirements
 
 **Functional Requirements:**
-1. Generate YAML configuration from approved PRD with webchat UI interface
+1. Generate JSON configuration from approved PRD with webchat UI interface
 2. Define system prompts, tools, integrations, and metadata per config
 3. Auto-create GitHub issues for missing tools/integrations with detailed specs
 4. Track tool/integration implementation status and auto-update configs
-5. Validate YAML against JSON Schema before deployment
+5. Validate JSON against JSON Schema before deployment
 6. Support config versioning with blue-green deployment
 7. Hot-reload configs without service restart
 8. Multi-tenant config isolation with namespace-based segregation
 
 **Non-Functional Requirements:**
-- YAML generation: <5 minutes from PRD approval
+- JSON generation: <5 minutes from PRD approval
 - Config validation: <2 seconds
 - Hot-reload propagation: <60 seconds across all services
-- Support 10,000+ YAML configs with tenant isolation
+- Support 10,000+ JSON configs with tenant isolation
 - 99.9% config availability
 
 **Dependencies:**
-- **Proposal Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 5]* (consumes proposal_signed event to trigger YAML config generation)
+- **Proposal Generator** *[See MICROSERVICES_ARCHITECTURE.md Service 5]* (consumes proposal_signed event to trigger JSON config generation)
 - **PRD Builder** *[See Service 6 above]* (provides PRD data for config population)
-- **Agent Orchestration Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 8]* (loads YAML configs for chatbot runtime)
-- **Voice Agent Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 9]* (loads YAML configs for voicebot runtime)
+- **Agent Orchestration Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 8]* (loads JSON configs for chatbot runtime)
+- **Voice Agent Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 9]* (loads JSON configs for voicebot runtime)
 - **Configuration Management Service** *[See MICROSERVICES_ARCHITECTURE_PART3.md Service 10]* (stores and distributes configs)
 - **GitHub API** (issue creation, status tracking)
 
@@ -2051,12 +2051,12 @@ CREATE POLICY follow_up_isolation ON dependency_follow_ups
    - **Runtime Service**: Agent Orchestration Service
    - **Framework**: LangGraph two-node workflow (agent node + tools node)
    - **Architecture Reference**: https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
-   - **YAML Config Features**:
+   - **JSON Config Features**:
      - StateGraph implementation with checkpointing
      - `external_integrations` field (Salesforce, Zendesk, etc.)
-     - Dynamic tool loading from YAML
+     - Dynamic tool loading from JSON
      - PostgreSQL-backed state persistence
-   - **Config Consumption**: Agent Orchestration Service reads chatbot YAML configs
+   - **Config Consumption**: Agent Orchestration Service reads chatbot JSON configs
    - **Documentation**: See MICROSERVICES_ARCHITECTURE_PART3.md (Agent Orchestration Service)
 
 2. **Voicebot Products** (LiveKit-based):
@@ -2067,32 +2067,32 @@ CREATE POLICY follow_up_isolation ON dependency_follow_ups
      - LLM Integration: Same as chatbot but optimized for voice latency
      - TTS Pipeline: ElevenLabs Flash v2.5 with dual streaming
      - SIP Integration: Twilio (primary), Telnyx (failover)
-   - **YAML Config Features**:
+   - **JSON Config Features**:
      - NO `external_integrations` field (voice-only channel)
      - SIP endpoint configured separately via SIP trunk provisioning
      - Voice-specific config: STT/TTS providers, voice_id, turn detection
      - Tool execution via LiveKit agent callbacks
-   - **Config Consumption**: Voice Agent Service reads voicebot YAML configs
+   - **Config Consumption**: Voice Agent Service reads voicebot JSON configs
    - **Documentation**: See MICROSERVICES_ARCHITECTURE_PART3.md (Voice Agent Service)
 
 3. **Hybrid Deployments**:
-   - Requires **separate YAML configs** for chatbot and voicebot
+   - Requires **separate JSON configs** for chatbot and voicebot
    - PRD includes distinct sprint roadmaps per product type
    - Shared PRD objectives but product-specific implementations
    - Cross-product communication via `cross_product_events` Kafka topic
 
 **Data Storage:**
 - PostgreSQL: Config metadata, versions, GitHub issue mapping, validation logs
-- S3: YAML config files, config snapshots
+- S3: JSON config files, config snapshots
 - Git Repository: Version-controlled config storage
 - Redis: Hot-reload notification queue
 
 #### Features
 
 **Must-Have:**
-1. ✅ YAML config generation from PRD
+1. ✅ JSON config generation from PRD
 2. ✅ Webchat UI for config refinement
-3. ✅ Canvas editor for manual YAML editing
+3. ✅ Canvas editor for manual JSON editing
 4. ✅ GitHub issue auto-creation for missing dependencies
 5. ✅ Tool/integration status tracking with auto-attachment
 6. ✅ JSON Schema validation
@@ -2106,13 +2106,13 @@ CREATE POLICY follow_up_isolation ON dependency_follow_ups
 12. 🔄 Config template marketplace
 
 **Feature Interactions:**
-- PRD approval → Auto-generates YAML config
+- PRD approval → Auto-generates JSON config
 - GitHub issue closed (tool implemented) → Auto-updates config
 - Config validation failure → Rollback to previous version
 
 #### API Specification
 
-**1. Generate YAML Config**
+**1. Generate JSON Config**
 ```http
 POST /api/v1/automation/configs/generate
 Authorization: Bearer {jwt_token}
@@ -2146,11 +2146,11 @@ Topic: config_events
 }
 ```
 
-**2. Get YAML Config**
+**2. Get JSON Config**
 ```http
 GET /api/v1/automation/configs/{config_id}
 Authorization: Bearer {jwt_token}
-Accept: application/json | text/yaml
+Accept: application/json
 
 Response (200 OK - JSON):
 {
@@ -2158,7 +2158,7 @@ Response (200 OK - JSON):
   "client_id": "uuid",
   "status": "generated",
   "config_name": "acme_support_bot",
-  "yaml_content": "...",
+  "json_content": "...",
   "parsed_config": {
     "config_metadata": {
       "config_id": "uuid",
@@ -2341,143 +2341,151 @@ Response (200 OK - JSON):
   ],
   "created_at": "2025-10-10T14:08:00Z"
 }
-
-Response (200 OK - YAML):
-config_metadata:
-  config_id: uuid
-  product_type: chatbot
-  client_id: uuid
-  version: 1
-  environment: staging
-  created_at: 2025-10-10T14:08:00Z
-
-system_prompt:
-  role: customer_support_agent
-  instructions: "You are a helpful customer support agent..."
-  constraints:
-    - Never share customer PII
-    - Escalate to human if user is frustrated
-  tone: friendly_professional
-
-tools_available:
-  - tool_name: fetch_order_status
-    status: implemented
-  - tool_name: initiate_refund
-    status: missing
-    github_issue: https://github.com/workflow/tools/issues/156
-...
 ```
 
-**Example: Voicebot YAML Config (LiveKit-based)**
-```yaml
-config_metadata:
-  config_id: uuid_voicebot
-  product_type: voicebot
-  client_id: uuid
-  version: 1
-  environment: staging
-  created_at: 2025-10-10T15:00:00Z
-
-system_prompt:
-  role: healthcare_appointment_scheduler
-  instructions: "You are a friendly voice assistant for HealthCare Plus. Help patients schedule, reschedule, or cancel medical appointments. Always confirm appointment details before booking."
-  constraints:
-    - Never share patient medical records over the phone
-    - Verify patient identity before any changes
-    - Escalate to human for emergency requests
-  tone: empathetic_professional
-  voice_specific:
-    speaking_rate: normal
-    interruption_sensitivity: medium
-    silence_timeout_ms: 2000
-
-tools_available:
-  - tool_name: check_appointment_availability
-    status: implemented
-  - tool_name: book_appointment
-    status: implemented
-  - tool_name: send_sms_confirmation
-    status: missing
-    github_issue: https://github.com/workflow/tools/issues/201
-
-integrations: []
-# NOTE: Voicebot products do NOT have external_integrations field
-# Voice channel is the ONLY input method via SIP trunks
-
-sip_config:
-  primary_provider: twilio
-  primary_endpoint: "+14155551234"
-  failover_provider: telnyx
-  failover_endpoint: "+14155555678"
-  inbound_calls_enabled: true
-  outbound_calls_enabled: true
-  call_recording: true
-  recording_retention_days: 90
-
-livekit_config:
-  room_prefix: healthcare_plus
-  stt_provider: deepgram
-  stt_model: nova-3
-  stt_language: en-US
-  tts_provider: elevenlabs
-  tts_voice_id: ErXwobaYiN019PkySvjV
-  tts_model: flash_v2_5
-  vad_enabled: true
-  vad_threshold: 0.5
-
-llm_config:
-  provider: openai
-  model: gpt-4o-mini
-  # Note: Voicebots use faster/cheaper models for low-latency responses
-  parameters:
-    temperature: 0.6
-    max_tokens: 150
-    top_p: 0.9
-  fallback:
-    provider: anthropic
-    model: claude-sonnet-4
-
-workflow_features:
-  pii_collection:
-    enabled: true
-    fields: ["patient_name", "date_of_birth", "phone"]
-  human_escalation:
-    enabled: true
-    triggers:
-      - condition: patient_requests_doctor
-        action: immediate_transfer
-      - condition: emergency_keywords_detected
-        action: immediate_transfer
-      - condition: ai_confidence < 0.4
-        action: suggest_transfer
-  call_transfer:
-    enabled: true
-    transfer_destinations:
-      - name: front_desk
-        phone: +14155556789
-      - name: emergency_line
-        phone: +14155559999
-  voicemail:
-    enabled: true
-    max_duration_seconds: 120
-    transcription_enabled: true
-  outbound_calling:
-    enabled: true
-    triggers:
-      - event: appointment_reminder_24h
-        template: reminder_script
-      - event: appointment_confirmation
-        template: confirmation_script
-
-database_config:
-  type: supabase
-  tables: ["call_logs", "appointments", "patient_records"]
-  rls_enabled: true
-
-vector_db_config:
-  type: pinecone
-  index_name: healthcare_knowledge_base
-  namespace: healthcare_plus
+**Example: Voicebot JSON Config (LiveKit-based)**
+```json
+{
+  "config_metadata": {
+    "config_id": "uuid_voicebot",
+    "product_type": "voicebot",
+    "client_id": "uuid",
+    "version": 1,
+    "environment": "staging",
+    "created_at": "2025-10-10T15:00:00Z"
+  },
+  "system_prompt": {
+    "role": "healthcare_appointment_scheduler",
+    "instructions": "You are a friendly voice assistant for HealthCare Plus. Help patients schedule, reschedule, or cancel medical appointments. Always confirm appointment details before booking.",
+    "constraints": [
+      "Never share patient medical records over the phone",
+      "Verify patient identity before any changes",
+      "Escalate to human for emergency requests"
+    ],
+    "tone": "empathetic_professional",
+    "voice_specific": {
+      "speaking_rate": "normal",
+      "interruption_sensitivity": "medium",
+      "silence_timeout_ms": 2000
+    }
+  },
+  "tools_available": [
+    {
+      "tool_name": "check_appointment_availability",
+      "status": "implemented"
+    },
+    {
+      "tool_name": "book_appointment",
+      "status": "implemented"
+    },
+    {
+      "tool_name": "send_sms_confirmation",
+      "status": "missing",
+      "github_issue": "https://github.com/workflow/tools/issues/201"
+    }
+  ],
+  "integrations": [],
+  "_comment": "NOTE: Voicebot products do NOT have external_integrations field. Voice channel is the ONLY input method via SIP trunks",
+  "sip_config": {
+    "primary_provider": "twilio",
+    "primary_endpoint": "+14155551234",
+    "failover_provider": "telnyx",
+    "failover_endpoint": "+14155555678",
+    "inbound_calls_enabled": true,
+    "outbound_calls_enabled": true,
+    "call_recording": true,
+    "recording_retention_days": 90
+  },
+  "livekit_config": {
+    "room_prefix": "healthcare_plus",
+    "stt_provider": "deepgram",
+    "stt_model": "nova-3",
+    "stt_language": "en-US",
+    "tts_provider": "elevenlabs",
+    "tts_voice_id": "ErXwobaYiN019PkySvjV",
+    "tts_model": "flash_v2_5",
+    "vad_enabled": true,
+    "vad_threshold": 0.5
+  },
+  "llm_config": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "_comment": "Voicebots use faster/cheaper models for low-latency responses",
+    "parameters": {
+      "temperature": 0.6,
+      "max_tokens": 150,
+      "top_p": 0.9
+    },
+    "fallback": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4"
+    }
+  },
+  "workflow_features": {
+    "pii_collection": {
+      "enabled": true,
+      "fields": ["patient_name", "date_of_birth", "phone"]
+    },
+    "human_escalation": {
+      "enabled": true,
+      "triggers": [
+        {
+          "condition": "patient_requests_doctor",
+          "action": "immediate_transfer"
+        },
+        {
+          "condition": "emergency_keywords_detected",
+          "action": "immediate_transfer"
+        },
+        {
+          "condition": "ai_confidence < 0.4",
+          "action": "suggest_transfer"
+        }
+      ]
+    },
+    "call_transfer": {
+      "enabled": true,
+      "transfer_destinations": [
+        {
+          "name": "front_desk",
+          "phone": "+14155556789"
+        },
+        {
+          "name": "emergency_line",
+          "phone": "+14155559999"
+        }
+      ]
+    },
+    "voicemail": {
+      "enabled": true,
+      "max_duration_seconds": 120,
+      "transcription_enabled": true
+    },
+    "outbound_calling": {
+      "enabled": true,
+      "triggers": [
+        {
+          "event": "appointment_reminder_24h",
+          "template": "reminder_script"
+        },
+        {
+          "event": "appointment_confirmation",
+          "template": "confirmation_script"
+        }
+      ]
+    }
+  },
+  "database_config": {
+    "type": "supabase",
+    "tables": ["call_logs", "appointments", "patient_records"],
+    "rls_enabled": true
+  },
+  "vector_db_config": {
+    "type": "pinecone",
+    "index_name": "healthcare_knowledge_base",
+    "namespace": "healthcare_plus"
+  }
+}
 ```
 
 **3. Update Config via Webchat**
@@ -2526,9 +2534,9 @@ Response (200 OK):
 ```http
 PATCH /api/v1/automation/configs/{config_id}
 Authorization: Bearer {jwt_token}
-Content-Type: text/yaml
+Content-Type: application/json
 
-Request Body (YAML):
+Request Body (JSON):
 system_prompt:
   instructions: "You are a VERY helpful customer support agent..."
   constraints:
@@ -2713,7 +2721,7 @@ The hot-reload mechanism uses version pinning to ensure in-progress conversation
 - Component: `ConfigEditor.tsx`
 - Features:
   - Left: Webchat for conversational editing
-  - Right: YAML canvas editor (Monaco Editor)
+  - Right: JSON canvas editor (Monaco Editor)
   - Syntax highlighting and validation
   - Auto-complete for config fields
   - Real-time validation indicators
@@ -2748,7 +2756,7 @@ The hot-reload mechanism uses version pinning to ensure in-progress conversation
 
 **State Management:**
 - Zustand for config editor state
-- Monaco Editor for YAML editing
+- Monaco Editor for JSON editing
 - React Query for API data fetching
 - WebSocket for real-time GitHub updates
 - Service Worker for offline config drafts
@@ -2780,8 +2788,8 @@ The hot-reload mechanism uses version pinning to ensure in-progress conversation
 **AI Agents:**
 
 1. **Config Generation Agent**
-   - Responsibility: Converts PRD to YAML config, identifies dependencies, creates GitHub issues
-   - Tools: YAML generators, JSON Schema validators, GitHub API, template engine
+   - Responsibility: Converts PRD to JSON config, identifies dependencies, creates GitHub issues
+   - Tools: JSON generators, JSON Schema validators, GitHub API, template engine
    - Autonomy: Fully autonomous for standard configs
    - Escalation: Platform Engineer review for complex custom logic
 
@@ -2840,17 +2848,23 @@ The hot-reload mechanism uses version pinning to ensure in-progress conversation
    - **Validation**: Auto-test credential validity (e.g., test API call for API keys)
    - **Rotation**: Support manual and automatic credential rotation with version history
    - **Expiration**: Auto-expire credentials with expiration dates, send alerts 7 days before
-   - **Revocation**: Immediate revocation with cascade updates to affected YAML configs
+   - **Revocation**: Immediate revocation with cascade updates to affected JSON configs
    - **Archival**: Soft-delete with 90-day retention for audit compliance
 
-4. **Integration with YAML Configs:**
-   - **Credential References**: YAML configs reference credentials by ID, not plaintext
-   ```yaml
-   integrations:
-     - integration_name: salesforce_crm
-       credentials:
-         credential_id: "cred_uuid_12345"
-         credential_type: "oauth2"
+4. **Integration with JSON Configs:**
+   - **Credential References**: JSON configs reference credentials by ID, not plaintext
+   ```json
+   {
+     "integrations": [
+       {
+         "integration_name": "salesforce_crm",
+         "credentials": {
+           "credential_id": "cred_uuid_12345",
+           "credential_type": "oauth2"
+         }
+       }
+     ]
+   }
    ```
    - **Runtime Resolution**: Agent Orchestration Service (Service 8) fetches decrypted credentials at runtime using temporary access tokens
    - **Hot-Reload Support**: Credential updates trigger config reload events without restarting agents
@@ -3146,7 +3160,7 @@ CREATE INDEX idx_audit_timestamp ON credential_audit_logs(timestamp);
 **Integration Points:**
 - **Service 8 (Agent Orchestration)**: Fetches credentials at runtime for chatbot integrations (Salesforce, Zendesk, etc.)
 - **Service 9 (Voice Agent)**: Does NOT use Credential Vault (voicebots have no external integrations, only SIP trunks)
-- **Service 7 (Automation Engine)**: Validates credential references in YAML configs before deployment
+- **Service 7 (Automation Engine)**: Validates credential references in JSON configs before deployment
 - **Service 11 (Monitoring)**: Monitors credential expiration, rotation schedules, access patterns
 - **Service 14 (Support Engine)**: Creates support tickets when credentials fail validation or expire
 
@@ -4324,7 +4338,7 @@ pip install workflow-config-sdk
 npm install @workflow/config-sdk
 ```
 
-**Used By**: All services requiring YAML configuration (Services 8, 9, and others)
+**Used By**: All services requiring JSON configuration (Services 8, 9, and others)
 
 **Key Features**:
 1. **Direct S3 Access**: No intermediate service, read configs directly from S3

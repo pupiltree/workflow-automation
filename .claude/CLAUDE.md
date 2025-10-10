@@ -93,7 +93,7 @@ Using the test-runner agent ensures:
 ### Agent Orchestration
 - **LangGraph two-node workflow**: Standard pattern is agent node + tools node
 - Reference: https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/
-- **YAML-driven configuration**: System prompts, tools, and integrations configured per client via YAML
+- **JSON-driven configuration**: System prompts, tools, and integrations configured per client via JSON
 - **Checkpointing**: Always implement state persistence for fault tolerance
 - **State typing**: Use strict TypedDict/Pydantic models for agent state
 
@@ -109,9 +109,9 @@ Using the test-runner agent ensures:
 - **Idempotency**: All event handlers MUST be idempotent (use idempotency keys)
 - **Saga pattern**: Use for distributed transactions across services
 
-### YAML Configuration
-- **JSON Schema validation**: Validate YAML configs before applying
-- **Version control**: All YAML configs tracked in Git with semantic versioning
+### JSON Configuration
+- **JSON Schema validation**: Validate JSON configs before applying
+- **Version control**: All JSON configs tracked in Git with semantic versioning
 - **Hot reload testing**: Test config updates without service restarts
 - **S3 storage**: Production configs stored in S3, cached in Redis
 

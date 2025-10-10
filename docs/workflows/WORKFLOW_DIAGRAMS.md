@@ -216,7 +216,7 @@ flowchart TB
     end
 
     subgraph Service7["Service 7: Automation Engine"]
-        Convert["🤖 AUTO: PRD → YAML<br/>• System prompts<br/>• Tool configs<br/>• Voice parameters"]
+        Convert["🤖 AUTO: PRD → JSON<br/>• System prompts<br/>• Tool configs<br/>• Voice parameters"]
         GitHub["🤖 AUTO: Create GitHub Issues<br/>for Missing Tools"]
         Wait["⏳ Platform Engineers<br/>Develop Tools"]
         ConfigGen["config_generated"]
