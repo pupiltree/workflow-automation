@@ -38,7 +38,7 @@ Service 21 (Agent Copilot) is the AI-powered context management and action plann
 
 **Feature 2: Human Agent Co-Pilot System** (Already Implemented)
 - Unified agent dashboard (single pane of glass for all client context)
-- Real-time context aggregation from 17 Kafka topics
+- Real-time context aggregation from 21 Kafka topics
 - Role-based views (Sales, Onboarding, Support, Success)
 - Intelligent notifications and alerts
 - Performance tracking vs. objectives

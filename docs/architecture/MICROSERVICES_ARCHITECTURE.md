@@ -158,13 +158,15 @@ All users (both client organization users AND platform human agents) authenticat
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Event Bus (Apache Kafka)                    │
-│   Topics (18): auth_events, billing_events, agent_events,       │
-│   client_events, prd_events, demo_events, sales_doc_events,     │
-│   research_events, config_events, conversation_events,          │
-│   voice_events, escalation_events, monitoring_incidents,        │
+│   Topics (23): auth_events, billing_events, agent_events,       │
+│   org_events, client_events, research_events, demo_events,      │
+│   sales_doc_events, prd_events, collaboration_events,           │
+│   config_events, conversation_events, voice_events,             │
+│   cross_product_events, rag_events, monitoring_incidents,       │
 │   analytics_experiments, customer_success_events,               │
-│   support_events, communication_events, cross_product_events    │
-│   (Consolidated from 22 topics)                                 │
+│   support_events, escalation_events, communication_events,      │
+│   agent_action_events, crm_events                               │
+│   (See KAFKA_TOPICS.md for complete list)                       │
 └────────────────────────────┬────────────────────────────────────┘
                              │
          ┌───────────────────┴──────────────────────┐

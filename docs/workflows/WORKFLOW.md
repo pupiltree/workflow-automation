@@ -2,7 +2,7 @@
 
 ## Overview
 
-This platform automates the complete B2B SaaS client lifecycle from research to customer success, achieving 95% automation within 12 months through 17 microservices (16 core services + 2 supporting libraries: @workflow/config-sdk and @workflow/llm-sdk) orchestrated via Kafka event-driven architecture. The system supports both **Chatbot** (LangGraph) and **Voicebot** (LiveKit) products with JSON-driven configuration and hot-reload capabilities.
+This platform automates the complete B2B SaaS client lifecycle from research to customer success, achieving 95% automation within 12 months through 17 microservices + 2 supporting libraries (@workflow/config-sdk and @workflow/llm-sdk) orchestrated via Kafka event-driven architecture. The system supports both **Chatbot** (LangGraph) and **Voicebot** (LiveKit) products with JSON-driven configuration and hot-reload capabilities.
 
 **Performance Benefits:** Service consolidation delivers 400-900ms faster workflows (3-service sales pipeline → 1-service, LLM gateway elimination saves 200-500ms per call, direct S3 config access saves 50-100ms).
 
@@ -27,22 +27,26 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 **Supporting Services (22)** - Billing & Revenue Management
 
 **Agent Productivity**
-- **Service 21: Agent Copilot** - AI-powered context management and action planning for human agents (Sales, Onboarding, Support, Success). Unified dashboard aggregating 17 Kafka topics, AI action planning, communication drafting, approval orchestration, CRM auto-sync, village knowledge integration, performance tracking.
+- **Service 21: Agent Copilot** - AI-powered context management and action planning for human agents (Sales, Onboarding, Support, Success). Unified dashboard aggregating 21 Kafka topics, AI action planning, communication drafting, approval orchestration, CRM auto-sync, village knowledge integration, performance tracking.
 
 **Supporting Libraries**
 - **@workflow/config-sdk** - Direct S3 config access library (replaces Service 10)
 - **@workflow/llm-sdk** - Direct LLM integration library (replaces Service 16)
 
-### Event-Driven Coordination (18 Kafka Topics)
+### Event-Driven Coordination (23 Kafka Topics)
 
-- `auth_events`, `agent_events`, `org_events` - Foundation layer
+**See KAFKA_TOPICS.md for complete topic registry and schemas**
+
+- `auth_events`, `agent_events`, `org_events`, `client_events` - Foundation layer
 - `research_events`, `demo_events`, `sales_doc_events`, `billing_events` - Pre-sales & revenue flow (unified NDA/Pricing/Proposal)
-- `prd_events`, `voice_events`, `cross_product_events` - Implementation & runtime coordination
-- `communication_events`, `escalation_events`, `collaboration_events` - Client engagement & optimization (unified outreach/personalization)
-- `client_events`, `monitoring_events`, `analytics_events` - Operations & intelligence
-- `support_events`, `success_events`, `customer_success_events`, `crm_events`, `knowledge_events` - Customer lifecycle
+- `prd_events`, `collaboration_events`, `config_events` - Implementation & configuration
+- `conversation_events`, `voice_events`, `cross_product_events`, `rag_events` - Runtime coordination
+- `monitoring_incidents`, `analytics_experiments` - System health & experimentation
+- `customer_success_events`, `support_events`, `escalation_events` - Customer lifecycle
+- `communication_events` - Unified outreach & hyperpersonalization
+- `agent_action_events` - Agent copilot tracking
 
-**Service 21 (Agent Copilot) consumes 17 of these topics** to provide real-time context aggregation for human agents across all lifecycle stages.
+**Service 21 (Agent Copilot) consumes 21 of these topics** to provide real-time context aggregation for human agents across all lifecycle stages.
 
 ### Product Differentiation
 
@@ -736,7 +740,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 **Core Capabilities:**
 
 1. **Unified Agent Dashboard**
-   - Single pane of glass for all client context (aggregates 17 Kafka topics in real-time)
+   - Single pane of glass for all client context (aggregates 21 Kafka topics in real-time)
    - Role-based views customized for Sales, Onboarding, Support, Success roles
    - Timeline of all client interactions across all services
    - WebSocket real-time updates for instant notifications
@@ -780,7 +784,7 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
    - Time allocation breakdown (sales vs. onboarding vs. support vs. success)
 
 **Integration Points:**
-- **Consumes:** 17 Kafka topics for real-time context (auth, research, demo, sales_doc, billing, prd, config, conversation, voice, monitoring, analytics, customer_success, support, communication, escalation, cross_product, crm)
+- **Consumes:** 21 Kafka topics for real-time context (auth, agent, org, client, research, demo, sales_doc, billing, prd, collaboration, config, conversation, voice, cross_product, monitoring, analytics, customer_success, support, escalation, communication, crm)
 - **Produces:** `agent_action_events`, `approval_events`, `performance_events`
 - **Uses:** @workflow/llm-sdk for action planning and communication drafting (200-500ms faster)
 - **Uses:** Service 15 (CRM Integration) for Salesforce/HubSpot/Zendesk sync
@@ -897,10 +901,10 @@ This platform automates the complete B2B SaaS client lifecycle from research to 
 
 This platform achieves 95% automation within 12 months through:
 
-1. **Optimized Event-Driven Architecture:** 17 microservices (16 core + 2 libraries) coordinated via 18 Kafka topics, delivering 400-900ms faster workflows through service consolidation
+1. **Optimized Event-Driven Architecture:** 17 microservices + 2 supporting libraries coordinated via 23 Kafka topics, delivering 400-900ms faster workflows through service consolidation
 2. **JSON-Driven Configuration:** Chatbot (LangGraph) and Voicebot (LiveKit) powered by dynamic configs with hot-reload via @workflow/config-sdk (50-100ms faster)
 3. **Human-in-the-Loop Orchestration:** Structured lifecycle handoffs (Sales → Onboarding → Support → Success) managed by Service 0, with automation percentages increasing from 60% → 90% → 80%
-4. **Agent Copilot (Service 21):** AI-powered unified dashboard for human agents aggregating 17 event streams, enabling 3x agent capacity through intelligent action planning, communication drafting, and village knowledge integration
+4. **Agent Copilot (Service 21):** AI-powered unified dashboard for human agents aggregating 21 event streams, enabling 3x agent capacity through intelligent action planning, communication drafting, and village knowledge integration
 5. **Client Self-Service:** Unified PRD Builder & Configuration Workspace (Service 6) enables 80% autonomy for config changes
 6. **Unified Communication & Hyperpersonalization:** Service 20 combines outbound communication with multi-armed bandit experimentation (50-100 variants) achieving 30% engagement improvement
 7. **Direct LLM Integration:** @workflow/llm-sdk library eliminates gateway hop, saving 200-500ms per LLM call

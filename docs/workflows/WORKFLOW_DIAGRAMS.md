@@ -2,7 +2,7 @@
 
 This document breaks down the complete platform workflow into digestible, renderable diagrams organized by phase and concern.
 
-**Architecture:** 17 microservices (16 core + 2 libraries) coordinated via 18 Kafka topics
+**Architecture:** 17 microservices + 2 supporting libraries coordinated via 23 Kafka topics
 **Performance:** 400-900ms faster workflows through service consolidation and direct library integration
 **Agent Productivity:** Service 21 (Agent Copilot) provides unified dashboard for all human agents, enabling 3x capacity increase
 
@@ -592,7 +592,7 @@ flowchart TB
         Dashboard["Unified Dashboard<br/>WebSocket Real-Time Updates"]
 
         subgraph CoreFeatures["7 Core Features"]
-            Context["Context Aggregation<br/>(17 Kafka Topics)"]
+            Context["Context Aggregation<br/>(21 Kafka Topics)"]
             ActionPlan["AI Action Planning<br/>(@workflow/llm-sdk)"]
             CommDraft["Communication Drafting<br/>(Emails, Agendas, QBRs)"]
             Approval["Approval Orchestration<br/>(Intelligent Routing)"]
@@ -602,7 +602,7 @@ flowchart TB
         end
     end
 
-    subgraph EventSources["Event Sources (17 Kafka Topics)"]
+    subgraph EventSources["Event Sources (21 Kafka Topics)"]
         Auth["auth_events<br/>agent_events"]
         Research["research_events"]
         Demo["demo_events"]
@@ -700,7 +700,7 @@ flowchart LR
         S22["Service 22:<br/>Billing Events"]
     end
 
-    subgraph Kafka["Apache Kafka (18 Topics - Optimized)"]
+    subgraph Kafka["Apache Kafka (23 Active Topics)"]
         T1["auth_events"]
         T2["agent_events"]
         T3["research_events"]
@@ -728,7 +728,7 @@ flowchart LR
         C_PRD["PRD Builder<br/>Triggers"]
         C_Auto["Automation Engine<br/>Triggers"]
         C_Runtime["Runtime Services<br/>(Hot-Reload via<br/>@workflow/config-sdk)"]
-        C_Copilot["Agent Copilot<br/>(Consumes 17 Topics)"]
+        C_Copilot["Agent Copilot<br/>(Consumes 21 Topics)"]
         C_Analytics["Analytics Service<br/>(All Events)"]
         C_Monitor["Monitoring Engine<br/>(All Events)"]
     end
@@ -897,11 +897,11 @@ These modular diagrams break down the complete platform workflow into digestible
 - **Agent productivity:** 3x capacity increase (Service 21 unified dashboard)
 - **Total workflow:** 400-900ms faster per complete client lifecycle
 
-**Kafka Topics:** 18 topics (optimized from 19 original topics)
+**Kafka Topics:** 23 active topics (consolidated from 27 original topics)
 - `sales_doc_events` replaces `nda_events`, `pricing_events`, `proposal_events`
 - `communication_events` replaces `outreach_events`, `personalization_events`
-- `billing_events` added for Service 22 (payment processing, subscription management)
-- **Service 21 consumes 17 topics** for real-time agent context aggregation
+- See KAFKA_TOPICS.md for complete registry of all 23 topics
+- **Service 21 consumes 21 topics** for real-time agent context aggregation
 
 **Key Patterns Across Diagrams:**
 - **Green boxes** (🤖 AUTO): Fully automated by AI/system
