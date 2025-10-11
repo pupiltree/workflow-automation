@@ -16,6 +16,7 @@
 5. [Technical Architecture](#technical-architecture)
    - [LangGraph Recursive Agent-Tools Pattern](#langgraph-recursive-agent-tools-pattern)
    - [State Management](#state-management)
+   - [Runtime Graph Compilation](#runtime-graph-compilation) ⚡ **NEW**
    - [Intelligent Termination Conditions](#intelligent-termination-conditions) ⚡ **NEW**
    - [Agent Node: Reasoning](#agent-node-reasoning)
    - [Tools Node: Execution](#tools-node-execution-mix-of-functions--sub-agents)
@@ -388,6 +389,408 @@ workflow.set_entry_point("agent")
 # Compile with checkpointing (PostgreSQL-backed) and recursion limit
 app = workflow.compile(checkpointer=PostgresCheckpointer())
 ```
+
+---
+
+### Runtime Graph Compilation
+
+**CRITICAL**: The Master Agent must be able to **dynamically rebuild its workflow graph** based on runtime configuration. This enables:
+- Different graph structures for different clients/scenarios
+- Dynamic tool/sub-agent availability per tenant
+- A/B testing different workflows
+- Adaptive complexity scaling (simple vs complex problem handling)
+
+#### The Problem with Static Compilation
+
+**Static compilation** (compile once, use everywhere):
+```python
+# ❌ ANTI-PATTERN: Static workflow doesn't adapt
+workflow = StateGraph(MasterAgentState)
+workflow.add_node("agent", agent_node)
+workflow.add_node("tools", tools_node)
+# ... edges ...
+app = workflow.compile()  # Compiled ONCE
+
+# All clients get the SAME workflow
+client_a_result = await app.invoke({"goal": "...", "client_id": "client_a"})
+client_b_result = await app.invoke({"goal": "...", "client_id": "client_b"})
+```
+
+**Limitations**:
+- Cannot customize graph structure per client (e.g., Client A has custom sub-agents, Client B doesn't)
+- Cannot adapt complexity based on problem type (simple vs strategic goals)
+- Cannot A/B test different workflows
+- Cannot hot-reload new sub-agents without service restart
+
+#### LangGraph Runtime Compilation Pattern (2024-2025)
+
+**Dynamic compilation** (rebuild graph on each invocation):
+
+```python
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.postgres import PostgresCheckpointer
+from langchain_core.runnables import RunnableConfig
+
+def make_master_agent_graph(config: RunnableConfig) -> StateGraph:
+    """
+    Graph-making function that dynamically builds workflow based on runtime config.
+
+    This function is called on EVERY invocation, allowing the graph to adapt
+    to different clients, problem types, and available capabilities.
+    """
+
+    # Extract configuration
+    client_id = config.get("configurable", {}).get("client_id")
+    problem_complexity = config.get("configurable", {}).get("complexity", "standard")
+    available_sub_agents = config.get("configurable", {}).get("sub_agents", [])
+
+    # Create base workflow
+    workflow = StateGraph(MasterAgentState)
+
+    # Add core nodes (always present)
+    workflow.add_node("agent", agent_reasoning_node)
+
+    # DYNAMIC: Add tools node with client-specific capabilities
+    tools_node_fn = create_tools_node(
+        client_id=client_id,
+        available_sub_agents=available_sub_agents
+    )
+    workflow.add_node("tools", tools_node_fn)
+
+    # DYNAMIC: Conditional edges based on problem complexity
+    if problem_complexity == "simple":
+        # Simple problems: Direct execution, minimal recursion
+        workflow.add_conditional_edges(
+            "agent",
+            should_continue_simple,  # More aggressive termination
+            {
+                "continue": "tools",
+                "end": END
+            }
+        )
+    elif problem_complexity == "strategic":
+        # Strategic problems: Allow deeper recursion, human escalation
+        workflow.add_conditional_edges(
+            "agent",
+            should_continue_strategic,  # More lenient termination
+            {
+                "continue": "tools",
+                "end": END,
+                "escalate_to_human": "human_review"
+            }
+        )
+        # Add human review node for strategic decisions
+        workflow.add_node("human_review", human_review_node)
+        workflow.add_edge("human_review", "agent")
+
+    # DYNAMIC: Add client-specific sub-agent nodes
+    if "planner_agent" in available_sub_agents:
+        # Client has access to advanced Planner sub-agent
+        workflow.add_node("planner", planner_agent_node)
+        workflow.add_edge("planner", "agent")
+
+    # Standard edges
+    workflow.add_edge("tools", "agent")
+    workflow.set_entry_point("agent")
+
+    return workflow
+
+def create_tools_node(client_id: str, available_sub_agents: list):
+    """
+    Dynamically create tools node with client-specific capabilities.
+    """
+
+    # Load client-specific configuration
+    client_config = load_client_config(client_id)
+
+    # Build tool registry
+    tools_registry = {
+        # Core tools (always available)
+        "check_database": check_database_tool,
+        "calculate_metrics": calculate_metrics_tool,
+    }
+
+    # Add client-specific sub-agents
+    if "research_agent" in available_sub_agents:
+        tools_registry["research_agent"] = ResearchAgent
+
+    if "strategy_generator" in available_sub_agents:
+        tools_registry["strategy_generator"] = StrategyGeneratorAgent
+
+    # Custom sub-agents (enterprise clients only)
+    if client_config.get("tier") == "enterprise":
+        if "custom_ml_agent" in client_config.get("custom_agents", []):
+            tools_registry["custom_ml_agent"] = client_config["custom_agents"]["custom_ml_agent"]
+
+    async def tools_node_fn(state: MasterAgentState):
+        """Tools node with dynamically configured capabilities"""
+        tool_calls = state["pending_actions"]
+        results = []
+
+        for tool_call in tool_calls:
+            if tool_call.name in tools_registry:
+                tool = tools_registry[tool_call.name]
+
+                # Execute simple function or invoke sub-agent
+                if callable(tool):
+                    result = await tool(**tool_call.args)
+                else:
+                    # Sub-agent class
+                    sub_agent = tool()
+                    result = await sub_agent.invoke(tool_call.args)
+
+                results.append(ToolMessage(
+                    content=str(result),
+                    tool_call_id=tool_call.id
+                ))
+            else:
+                results.append(ToolMessage(
+                    content=f"Error: Tool {tool_call.name} not available for this client",
+                    tool_call_id=tool_call.id
+                ))
+
+        return {
+            **state,
+            "messages": state["messages"] + results
+        }
+
+    return tools_node_fn
+```
+
+#### Configuration File Pattern (langgraph.json)
+
+**For LangGraph Cloud deployment**, update `langgraph.json` to point to graph-making function:
+
+```json
+{
+  "graphs": {
+    "master_agent": "./services/customer_success/master_agent.py:make_master_agent_graph"
+  },
+  "dependencies": ["langchain", "langgraph", "openai"],
+  "env": {
+    "OPENAI_API_KEY": "$OPENAI_API_KEY",
+    "DATABASE_URL": "$DATABASE_URL"
+  }
+}
+```
+
+#### Runtime Invocation with Configuration
+
+```python
+# Client A: Simple problem, standard tools
+response_a = await master_agent.invoke(
+    {"goal": "Calculate health score for client XYZ", "messages": []},
+    config={
+        "configurable": {
+            "client_id": "client_a",
+            "complexity": "simple",
+            "sub_agents": ["research_agent"]
+        },
+        "recursion_limit": 11  # 2 * 5 + 1 for simple problems
+    }
+)
+
+# Client B: Strategic problem, advanced tools, enterprise tier
+response_b = await master_agent.invoke(
+    {"goal": "Increase Samsung Store attach rate by 20%", "messages": []},
+    config={
+        "configurable": {
+            "client_id": "client_b",
+            "complexity": "strategic",
+            "sub_agents": [
+                "research_agent",
+                "strategy_generator",
+                "implementation_planner",
+                "custom_ml_agent"  # Enterprise-only
+            ],
+            "tier": "enterprise"
+        },
+        "recursion_limit": 21  # 2 * 10 + 1 for strategic problems
+    }
+)
+```
+
+#### Use Cases for Runtime Compilation
+
+**1. Multi-Tenant Capability Isolation**
+```python
+def make_master_agent_graph(config: RunnableConfig):
+    client_tier = get_client_tier(config.get("configurable", {}).get("client_id"))
+
+    if client_tier == "free":
+        # Limited capabilities
+        available_sub_agents = ["research_agent"]
+    elif client_tier == "pro":
+        # Standard capabilities
+        available_sub_agents = ["research_agent", "strategy_generator"]
+    elif client_tier == "enterprise":
+        # Full capabilities + custom agents
+        available_sub_agents = get_all_sub_agents() + get_custom_agents(client_id)
+
+    # Build graph with appropriate capabilities
+    # ...
+```
+
+**2. A/B Testing Different Workflows**
+```python
+def make_master_agent_graph(config: RunnableConfig):
+    experiment_variant = config.get("configurable", {}).get("ab_test_variant", "control")
+
+    if experiment_variant == "control":
+        # Original workflow: agent → tools → agent
+        workflow.add_conditional_edges("agent", should_continue, ...)
+
+    elif experiment_variant == "planner_first":
+        # Experimental: planner → agent → tools → agent
+        workflow.set_entry_point("planner")  # Start with planning step
+        workflow.add_edge("planner", "agent")
+
+    elif experiment_variant == "parallel_research":
+        # Experimental: Run multiple research agents in parallel
+        workflow.add_node("parallel_research", parallel_research_node)
+        workflow.add_edge("agent", "parallel_research")
+        workflow.add_edge("parallel_research", "agent")
+
+    return workflow
+```
+
+**3. Adaptive Complexity Scaling**
+```python
+def make_master_agent_graph(config: RunnableConfig):
+    goal_text = config.get("configurable", {}).get("goal", "")
+
+    # Use LLM to classify problem complexity
+    complexity = classify_goal_complexity(goal_text)
+
+    if complexity == "trivial":
+        # Direct execution, no sub-agents needed
+        return make_simple_workflow()
+
+    elif complexity == "moderate":
+        # Standard Master Agent workflow
+        return make_standard_workflow()
+
+    elif complexity == "strategic":
+        # Full recursive sub-agent orchestration
+        return make_strategic_workflow(enable_all_sub_agents=True)
+```
+
+**4. Dynamic Planner Agent (Meta-Planning)**
+```python
+def make_master_agent_graph(config: RunnableConfig):
+    """
+    Instead of pre-defining the workflow, use a Planner Agent to
+    dynamically design the execution graph at runtime.
+    """
+
+    goal = config.get("configurable", {}).get("goal")
+
+    # Step 1: Planner Agent designs the workflow DAG
+    planner_agent = PlannerAgent()
+    plan = await planner_agent.invoke({"goal": goal})
+
+    # plan = {
+    #   "steps": [
+    #     {"id": "step1", "agent": "research_agent", "depends_on": []},
+    #     {"id": "step2", "agent": "data_analysis_agent", "depends_on": ["step1"]},
+    #     {"id": "step3", "agent": "strategy_generator", "depends_on": ["step1", "step2"]},
+    #   ]
+    # }
+
+    # Step 2: Convert plan into LangGraph StateGraph
+    workflow = StateGraph(MasterAgentState)
+
+    for step in plan["steps"]:
+        # Add node for each planned step
+        workflow.add_node(step["id"], get_agent_node(step["agent"]))
+
+        # Add edges based on dependencies
+        if not step["depends_on"]:
+            workflow.set_entry_point(step["id"])
+        else:
+            for dependency in step["depends_on"]:
+                workflow.add_edge(dependency, step["id"])
+
+    return workflow
+```
+
+#### Hot Reload with LangGraph CLI
+
+**Development Mode** (auto-reload on code changes):
+```bash
+langgraph dev --no-docker
+```
+
+**What triggers a rebuild**:
+- Python source code changes → **Hot reload** (fast, no full rebuild)
+- `langgraph.json` changes → **Full rebuild** (slower, rebuilds Docker image)
+- `requirements.txt` / `pyproject.toml` changes → **Full rebuild**
+
+**Production**: Use LangGraph Cloud with versioned deployments
+```bash
+langgraph deploy --version v2.1.0
+```
+
+#### Best Practices
+
+| Practice | Why | Example |
+|----------|-----|---------|
+| **Use graph-making functions** | Enables runtime customization | `make_master_agent_graph(config)` |
+| **Pass RunnableConfig** | Standard LangGraph pattern for runtime config | `config.get("configurable", {})` |
+| **Load client config from database** | Dynamic per-tenant capabilities | `load_client_config(client_id)` |
+| **Version your graphs** | A/B test safely | `ab_test_variant: "control" vs "experimental"` |
+| **Classify problem complexity** | Optimize for simple vs complex goals | `if complexity == "simple": use_fast_workflow()` |
+| **Cache compiled graphs** | Performance optimization | Cache graph per `(client_id, complexity)` tuple for 5min |
+
+#### Performance Optimization
+
+```python
+from functools import lru_cache
+from typing import Tuple
+
+@lru_cache(maxsize=100)
+def get_compiled_graph(client_id: str, complexity: str) -> CompiledGraph:
+    """
+    Cache compiled graphs to avoid rebuilding on every invocation.
+
+    Cache key: (client_id, complexity)
+    Cache TTL: 5 minutes (handled externally)
+    """
+
+    config = {
+        "configurable": {
+            "client_id": client_id,
+            "complexity": complexity,
+            "sub_agents": get_client_sub_agents(client_id),
+            "tier": get_client_tier(client_id)
+        }
+    }
+
+    workflow = make_master_agent_graph(config)
+    return workflow.compile(checkpointer=PostgresCheckpointer())
+
+# Usage
+async def invoke_master_agent(goal: str, client_id: str):
+    complexity = classify_goal_complexity(goal)
+
+    # Get cached compiled graph (or compile new one)
+    app = get_compiled_graph(client_id, complexity)
+
+    # Invoke with full config
+    return await app.invoke(
+        {"goal": goal, "messages": []},
+        config={
+            "configurable": {"client_id": client_id},
+            "recursion_limit": get_recursion_limit(complexity)
+        }
+    )
+```
+
+#### Key Principle
+
+> **"In most cases, customizing behavior based on the config should be handled by a single graph"** - LangGraph Docs
+
+The Master Agent uses **one graph-making function** (`make_master_agent_graph`) with **conditional logic** to adapt the graph structure, rather than maintaining multiple separate graph definitions.
 
 ---
 
@@ -2483,6 +2886,21 @@ Automation: 95%
    - URL: https://langchain-ai.github.io/langgraph/concepts/low_level/
    - Key Quote: "Conditional edges allow dynamic routing between nodes and can optionally terminate graph execution"
    - Relevance: Foundation for implementing should_continue termination logic
+
+8. **Rebuild Graph at Runtime**
+   - URL: https://docs.langchain.com/langgraph-platform/graph-rebuild
+   - Key Quote: "To make your graph rebuild on each new run with custom configuration, provide a function that takes a config and returns a graph (or compiled graph) instance"
+   - Relevance: Core pattern for runtime graph compilation and dynamic workflow adaptation
+
+9. **Building Dynamic Agentic Workflows at Runtime**
+   - URL: https://github.com/langchain-ai/langgraph/discussions/2219
+   - Key Quote: "Instead of pre-defining workflows, graphs can be dynamically created at runtime via a Planner agent, allowing the system to adapt to any query by generating a tailored execution plan"
+   - Relevance: Advanced pattern for meta-planning and dynamic graph generation
+
+10. **LangGraph CLI Documentation**
+    - URL: https://docs.langchain.com/langgraph-platform/cli
+    - Key Quote: "`langgraph dev` runs the API server in development mode with hot reloading and debugging capabilities"
+    - Relevance: Hot reload functionality for rapid development and testing of dynamic graphs
 
 ---
 
