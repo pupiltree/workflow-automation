@@ -18,6 +18,7 @@
    - [State Management](#state-management)
    - [Dynamic Tool Registry](#dynamic-tool-registry-no-recompilation-needed) ⚡ **NEW**
    - [Handling Missing Tools (Self-Evolution)](#handling-missing-tools-self-evolution) ⚡ **NEW**
+   - [Human-in-the-Loop (Intelligent Feedback Collection)](#human-in-the-loop-intelligent-feedback-collection) ⚡ **NEW**
    - [LLM-Driven Termination](#llm-driven-termination) ⚡ **NEW**
    - [Agent Node: Reasoning](#agent-node-reasoning)
    - [Tools Node: Execution](#tools-node-execution-mix-of-functions--sub-agents)
@@ -963,6 +964,370 @@ All future clients automatically have access
 1. Partial solution with available tools
 2. Request for new capability (with ETA)
 3. Manual workaround instructions for humans
+
+---
+
+### Human-in-the-Loop (Intelligent Feedback Collection)
+
+**CRITICAL INSIGHT**: The agent should **INTELLIGENTLY DETECT** when it needs human input during self-reflection, not just on errors.
+
+#### When to Request Human Feedback
+
+The Master Agent should interrupt and request human feedback when:
+
+1. **Low Confidence on Critical Decision** (during self-reflection)
+   ```python
+   # Agent is self-reflecting
+   if state["confidence_score"] < 0.60 and decision_is_critical(state["goal"]):
+       # Agent THINKS: "I'm not confident enough to proceed alone"
+       human_input = interrupt({
+           "reason": "low_confidence_critical_decision",
+           "confidence": state["confidence_score"],
+           "question": "I'm 55% confident about this strategy. Should I proceed or pivot?",
+           "context": state["findings"],
+           "options": ["proceed", "pivot", "need_more_data"]
+       })
+   ```
+
+2. **Conflicting Information** (during research)
+   ```python
+   # Agent detected contradictory data
+   if detect_contradictions(state["findings"]):
+       human_clarification = interrupt({
+           "reason": "conflicting_data",
+           "question": "I found conflicting information. Which source is authoritative?",
+           "conflict_details": {
+               "source_a": "Staff burnout is the issue",
+               "source_b": "Product mix is the issue"
+           }
+       })
+   ```
+
+3. **Ethical/High-Risk Decision** (during strategy design)
+   ```python
+   # Agent detects high-risk decision
+   if is_high_risk_decision(state["solution"]):
+       approval = interrupt({
+           "reason": "high_risk_decision",
+           "question": "This strategy involves layoffs. Approve?",
+           "impact_analysis": state["solution"]["risks"],
+           "alternatives": state["solution"]["alternative_strategies"]
+       })
+   ```
+
+4. **Missing Critical Information** (during planning)
+   ```python
+   # Agent can't proceed without specific data
+   if missing_critical_info(state):
+       required_info = interrupt({
+           "reason": "missing_critical_info",
+           "question": "What is the actual budget for this initiative?",
+           "why_needed": "Can't design strategy without budget constraints",
+           "default_assumption": "$10K (industry average)"
+       })
+   ```
+
+5. **Stuck in Analysis Paralysis** (during self-reflection)
+   ```python
+   # Agent detects it's overthinking
+   if state["iteration_count"] >= 7 and state["confidence_score"] < 0.65:
+       human_direction = interrupt({
+           "reason": "analysis_paralysis",
+           "question": "I've analyzed for 7 iterations but confidence is still 60%. Should I:",
+           "options": [
+               "Continue research (may not improve confidence)",
+               "Proceed with current 60% confidence solution",
+               "Escalate to human expert"
+           ],
+           "current_findings": summarize_findings(state)
+       })
+   ```
+
+#### LangGraph `interrupt()` Pattern
+
+**Key LangGraph Concept**:
+> "`interrupt()` pauses graph execution, marks thread as 'interrupted', and stores input in persistence layer. Unlike Python's `input()`, it works in production and can be resumed months later on different machines."
+
+**Implementation**:
+
+```python
+from langgraph.types import interrupt, Command
+
+def agent_reasoning_node_with_hitl(state: MasterAgentState):
+    """
+    Agent node with intelligent human-in-the-loop detection.
+
+    Agent THINKS about whether it needs human feedback during self-reflection.
+    """
+
+    # Build self-reflection prompt
+    system_prompt = build_reflection_prompt(state)
+
+    # LLM reasons about next steps
+    response = await llm.ainvoke(
+        messages=[SystemMessage(content=system_prompt)] + state["messages"],
+        tools=get_available_tools(state["client_id"])
+    )
+
+    # Check if agent should request human feedback
+    if should_request_human_feedback(state, response):
+        # Agent DETECTED it needs human input
+        feedback_request = build_feedback_request(state, response)
+
+        # Pause execution and wait for human
+        human_input = interrupt(feedback_request)
+
+        # Resume with human feedback incorporated
+        return {
+            **state,
+            "messages": state["messages"] + [
+                response,
+                HumanMessage(content=f"Human feedback: {human_input}")
+            ],
+            "human_feedback_received": True,
+            "iteration_count": state.get("iteration_count", 0) + 1
+        }
+
+    # No human feedback needed - continue normally
+    return {
+        **state,
+        "messages": state["messages"] + [response],
+        "pending_actions": response.tool_calls if hasattr(response, 'tool_calls') else [],
+        "iteration_count": state.get("iteration_count", 0) + 1
+    }
+
+
+def should_request_human_feedback(state: MasterAgentState, response) -> bool:
+    """
+    Agent INTELLIGENTLY DETECTS when it needs human feedback.
+
+    This is called during self-reflection, not just on errors.
+    """
+
+    # 1. Low confidence on critical decision
+    if state.get("confidence_score", 0) < 0.60 and is_critical_goal(state["goal"]):
+        logger.info("Requesting human feedback: low confidence on critical decision")
+        return True
+
+    # 2. Agent explicitly asks for human input (LLM signaled it)
+    if "request_human_feedback" in response.content.lower():
+        logger.info("Requesting human feedback: agent explicitly requested it")
+        return True
+
+    # 3. Stuck in analysis paralysis
+    if state.get("iteration_count", 0) >= 7 and state.get("confidence_score", 0) < 0.65:
+        logger.info("Requesting human feedback: analysis paralysis detected")
+        return True
+
+    # 4. High-risk decision detected
+    if detect_high_risk_decision(state.get("solution", {})):
+        logger.info("Requesting human feedback: high-risk decision detected")
+        return True
+
+    # 5. Conflicting data detected
+    if detect_contradictions(state.get("findings", {})):
+        logger.info("Requesting human feedback: conflicting data detected")
+        return True
+
+    return False
+
+
+def build_feedback_request(state: MasterAgentState, response) -> dict:
+    """
+    Build a structured feedback request for humans.
+    """
+
+    # Determine reason for feedback request
+    if state.get("confidence_score", 0) < 0.60:
+        reason = "low_confidence_critical_decision"
+        question = f"I'm {state['confidence_score']*100:.0f}% confident about this approach. Should I proceed?"
+
+    elif state.get("iteration_count", 0) >= 7:
+        reason = "analysis_paralysis"
+        question = "I've analyzed for multiple iterations but confidence remains low. What should I do?"
+
+    elif detect_high_risk_decision(state.get("solution", {})):
+        reason = "high_risk_decision"
+        question = "This strategy has significant risks. Approve proceeding?"
+
+    else:
+        reason = "general_guidance"
+        question = "I need human guidance to proceed effectively."
+
+    return {
+        "reason": reason,
+        "question": question,
+        "goal": state["goal"],
+        "current_findings": state.get("findings", {}),
+        "current_confidence": state.get("confidence_score", 0),
+        "iteration_count": state.get("iteration_count", 0),
+        "completed_steps": state.get("completed_steps", []),
+        "suggested_options": generate_options_for_human(state)
+    }
+```
+
+#### Resuming Execution with Human Feedback
+
+```python
+# Human reviews the interrupt
+# Thread is marked as "interrupted" in database
+# Human provides feedback via API or UI
+
+# Resume execution
+response = await graph.invoke(
+    Command(resume={
+        "decision": "proceed",
+        "additional_context": "Focus on quick wins first",
+        "budget_clarification": "$15K approved"
+    }),
+    config={"configurable": {"thread_id": thread_id}}
+)
+```
+
+#### Design Patterns for Human Feedback
+
+**Pattern 1: Approval Gate** (before critical action)
+```python
+def strategy_approval_node(state: MasterAgentState):
+    """Pause before executing high-risk strategy"""
+
+    if state["solution"]["estimated_cost"] > 50000:
+        approval = interrupt({
+            "type": "approval_required",
+            "question": f"Approve ${state['solution']['estimated_cost']} spend?",
+            "strategy_summary": state["solution"]["summary"],
+            "expected_outcome": state["solution"]["expected_outcome"],
+            "risks": state["solution"]["risks"]
+        })
+
+        if approval.get("approved"):
+            return Command(goto="execute_strategy")
+        else:
+            return Command(goto="redesign_strategy", update={
+                "feedback": approval.get("feedback"),
+                "budget_constraint": approval.get("revised_budget")
+            })
+
+    # Under budget threshold - no approval needed
+    return Command(goto="execute_strategy")
+```
+
+**Pattern 2: Edit State** (correct mistakes)
+```python
+def validate_findings_node(state: MasterAgentState):
+    """Allow human to review and correct findings"""
+
+    if state.get("request_human_validation"):
+        validated_findings = interrupt({
+            "type": "validate_and_edit",
+            "question": "Please review and correct these findings:",
+            "findings": state["findings"],
+            "editable_fields": ["root_cause", "confidence_score", "assumptions"]
+        })
+
+        # Update state with human-corrected data
+        return {
+            **state,
+            "findings": validated_findings,
+            "human_validated": True
+        }
+
+    return state
+```
+
+**Pattern 3: Multi-Turn Conversation** (collaborative problem-solving)
+```python
+def collaborative_strategy_design(state: MasterAgentState):
+    """
+    Agent and human collaborate on strategy design.
+
+    Agent proposes, human refines, repeat until approved.
+    """
+
+    while True:
+        # Agent proposes strategy
+        strategy_proposal = generate_strategy(state)
+
+        # Human reviews
+        feedback = interrupt({
+            "type": "strategy_review",
+            "proposal": strategy_proposal,
+            "question": "Thoughts on this strategy? Approve or suggest changes?",
+            "iteration": state.get("strategy_iterations", 0)
+        })
+
+        if feedback.get("approved"):
+            return {
+                **state,
+                "solution": strategy_proposal,
+                "human_approved": True
+            }
+
+        # Incorporate human feedback and iterate
+        state = incorporate_human_feedback(state, feedback)
+        state["strategy_iterations"] = state.get("strategy_iterations", 0) + 1
+
+        # Safety: max 3 collaborative iterations
+        if state["strategy_iterations"] >= 3:
+            return {
+                **state,
+                "solution": strategy_proposal,
+                "needs_escalation": True
+            }
+```
+
+#### Self-Reflection with Human Feedback Integration
+
+**Updated self-reflection prompt**:
+
+```python
+system_prompt = f"""
+You are a Master Agent solving: {state['goal']}
+
+SELF-REFLECTION (Iteration {state['iteration_count']}):
+
+... [existing reflection content] ...
+
+HUMAN FEEDBACK PROTOCOL:
+
+You can request human feedback by including "REQUEST_HUMAN_FEEDBACK" in your response when:
+1. Confidence < 60% on critical decisions
+2. Conflicting information requires clarification
+3. High-risk decision needs approval
+4. Stuck after 6+ iterations with stagnating confidence
+
+HOW TO REQUEST FEEDBACK:
+Include in your response:
+REQUEST_HUMAN_FEEDBACK: [Your specific question]
+REASON: [Why you need human input]
+OPTIONS: [Specific choices for human to select]
+
+Example:
+"I've researched for 7 iterations but confidence is stuck at 58%.
+
+REQUEST_HUMAN_FEEDBACK: Should I proceed with current findings or escalate?
+REASON: Analysis paralysis - more research may not improve confidence
+OPTIONS:
+1. Proceed with 58% confidence solution
+2. Escalate to human expert
+3. Focus research on [specific gap]"
+
+The system will PAUSE and collect human feedback, then resume with their input.
+"""
+```
+
+#### Best Practices
+
+| Scenario | When to Interrupt | What to Ask |
+|----------|------------------|-------------|
+| **Low Confidence** | confidence < 60% on critical goals | "I'm X% confident. Proceed or pivot?" |
+| **High-Risk Decision** | Potential negative impact > $50K or affects >100 people | "Approve this high-risk strategy?" |
+| **Conflicting Data** | Research yields contradictory findings | "Which data source is authoritative?" |
+| **Analysis Paralysis** | 7+ iterations, confidence stagnating | "Continue research or proceed with current findings?" |
+| **Missing Critical Info** | Can't proceed without specific data | "What is [specific missing data]?" |
+| **Ethical Dilemma** | Solution involves layoffs, privacy concerns, etc. | "Approve this approach given ethical considerations?" |
+
+**Key Principle**: Agent should be **PROACTIVE** about requesting feedback, not reactive. During self-reflection, it should THINK: "Do I have enough information and confidence to proceed alone, or should I involve a human?"
 
 ---
 
