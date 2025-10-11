@@ -12,8 +12,14 @@
 1. [Executive Summary](#executive-summary)
 2. [The Founder's Vision](#the-founders-vision)
 3. [Core Concept: PRD Builder as General Problem Solver](#core-concept-prd-builder-as-general-problem-solver)
-4. [The Personal Assistant Mental Model](#the-personal-assistant-mental-model)
+4. [The Business Goal Orchestration Mental Model](#the-business-goal-orchestration-mental-model)
 5. [Technical Architecture](#technical-architecture)
+   - [LangGraph Recursive Agent-Tools Pattern](#langgraph-recursive-agent-tools-pattern)
+   - [State Management](#state-management)
+   - [Intelligent Termination Conditions](#intelligent-termination-conditions) ⚡ **NEW**
+   - [Agent Node: Reasoning](#agent-node-reasoning)
+   - [Tools Node: Execution](#tools-node-execution-mix-of-functions--sub-agents)
+   - [Sub-Agent Registry](#sub-agent-registry)
 6. [Service 13 Integration](#service-13-integration)
 7. [Samsung Store Example Walkthrough](#samsung-store-example-walkthrough)
 8. [Implementation Roadmap](#implementation-roadmap)
@@ -353,6 +359,11 @@ class MasterAgentState(TypedDict):
     learnings: list
     confidence_score: float
 
+    # Termination tracking
+    iteration_count: int
+    max_iterations: int
+    progress_score: float  # 0.0 to 1.0, measures goal completion
+
 # Create workflow
 workflow = StateGraph(MasterAgentState)
 
@@ -374,9 +385,279 @@ workflow.add_conditional_edges(
 workflow.add_edge("tools", "agent")  # Tools always return to agent
 workflow.set_entry_point("agent")
 
-# Compile with checkpointing (PostgreSQL-backed)
+# Compile with checkpointing (PostgreSQL-backed) and recursion limit
 app = workflow.compile(checkpointer=PostgresCheckpointer())
 ```
+
+---
+
+### Intelligent Termination Conditions
+
+**CRITICAL**: The Master Agent must NOT run indefinitely. It requires intelligent stopping criteria engineered through context and state management.
+
+#### Termination Strategy
+
+**LangGraph Best Practice (2024-2025)**:
+- Default recursion limit: 25 steps
+- Configurable at runtime: `recursion_limit` parameter
+- Throws `GraphRecursionError` when limit exceeded
+
+**Master Agent Termination Conditions** (evaluated in `should_continue` function):
+
+1. **Goal Completion** (Primary)
+   ```python
+   # Solution is comprehensive and confidence is high
+   if state["solution"] and state["confidence_score"] >= 0.75:
+       return "end"
+   ```
+
+2. **Max Iterations Reached** (Safety)
+   ```python
+   # Prevent infinite loops (3-5 iterations typical for most goals)
+   if state["iteration_count"] >= state["max_iterations"]:
+       return "escalate_to_human"
+   ```
+
+3. **Progress Stagnation** (Efficiency)
+   ```python
+   # No meaningful progress in last 2 iterations
+   if not making_progress(state):
+       return "escalate_to_human"
+   ```
+
+4. **Human Escalation Triggers** (Safety)
+   ```python
+   # Low confidence or high-risk decision detected
+   if state["confidence_score"] < 0.50 or high_risk_detected(state):
+       return "escalate_to_human"
+   ```
+
+5. **LLM Signals Completion** (Primary)
+   ```python
+   # LLM explicitly indicates task is done (no tool calls)
+   if not state["pending_actions"]:
+       return "end"
+   ```
+
+#### should_continue Implementation
+
+```python
+from typing import Literal
+
+def should_continue(state: MasterAgentState) -> Literal["continue", "end", "escalate_to_human"]:
+    """
+    Intelligent termination logic using multiple criteria.
+
+    This function is the CORE of termination control - it prevents infinite loops
+    while allowing the agent to complete complex multi-step reasoning.
+    """
+
+    # 1. Check if LLM signaled completion (no more tool calls)
+    messages = state["messages"]
+    last_message = messages[-1] if messages else None
+
+    if last_message and not getattr(last_message, "tool_calls", None):
+        # LLM provided final response without requesting tools
+        # This means it believes the task is complete
+        return "end"
+
+    # 2. Check iteration limit (safety mechanism)
+    iteration_count = state.get("iteration_count", 0)
+    max_iterations = state.get("max_iterations", 10)  # Default: 10 iterations
+
+    if iteration_count >= max_iterations:
+        # Exceeded max iterations - escalate to human
+        logger.warning(f"Max iterations ({max_iterations}) reached for goal: {state['goal']}")
+        return "escalate_to_human"
+
+    # 3. Check progress score (efficiency mechanism)
+    progress_score = state.get("progress_score", 0.0)
+
+    if progress_score >= 0.95:
+        # Goal is 95%+ complete - can safely end
+        logger.info(f"Goal {progress_score*100:.1f}% complete - ending")
+        return "end"
+
+    # 4. Check confidence score (quality mechanism)
+    confidence_score = state.get("confidence_score", 0.0)
+
+    if confidence_score < 0.50 and iteration_count >= 5:
+        # Low confidence after 5 iterations - escalate
+        logger.warning(f"Low confidence ({confidence_score:.2f}) after {iteration_count} iterations")
+        return "escalate_to_human"
+
+    # 5. Check progress stagnation (efficiency mechanism)
+    completed_steps = state.get("completed_steps", [])
+
+    if iteration_count >= 3:
+        # After 3 iterations, check if we're making progress
+        recent_steps = completed_steps[-3:] if len(completed_steps) >= 3 else completed_steps
+        unique_recent_steps = len(set(recent_steps))
+
+        if unique_recent_steps <= 1:
+            # Stuck in a loop (same step repeated) - escalate
+            logger.warning(f"Progress stagnation detected: {recent_steps}")
+            return "escalate_to_human"
+
+    # 6. Continue iteration
+    return "continue"
+```
+
+#### Context Engineering for Termination
+
+**System Prompt Engineering** (Critical for intelligent termination):
+
+```python
+system_prompt = f"""
+You are a Master Agent solving: {state['goal']}
+
+TERMINATION INSTRUCTIONS:
+- When you have gathered SUFFICIENT information to create a comprehensive solution, STOP calling tools
+- Respond with your final solution WITHOUT requesting additional tool calls
+- A "sufficient" solution includes:
+  1. Root cause identified (confidence >= 75%)
+  2. Strategy designed (with success probability)
+  3. Implementation plan created (with timeline and resources)
+  4. Risks assessed and mitigation planned
+
+ITERATION AWARENESS:
+- Current iteration: {state['iteration_count']} / {state['max_iterations']}
+- Progress: {state['progress_score']*100:.0f}%
+- If approaching max iterations ({state['max_iterations']}), prioritize COMPLETING the solution over PERFECTING it
+
+DECISION CRITERIA:
+- If confidence >= 75% AND all required components exist → FINISH
+- If confidence < 50% after 5 iterations → ESCALATE to human
+- If stuck repeating same analysis → ESCALATE to human
+
+Your approach:
+1. Break down the goal into sub-goals
+2. Determine what capabilities you need
+3. Call available tools/sub-agents
+4. **IMPORTANT**: Synthesize results and DECIDE when to stop
+
+Available capabilities:
+{get_available_tools_and_subagents()}
+
+Context:
+{state['context']}
+
+Think step-by-step and decide: Should I call more tools, or do I have enough to provide a final solution?
+"""
+```
+
+#### Recursion Limit Configuration
+
+```python
+# Recommended recursion limit calculation
+max_iterations = 10  # Business logic iterations
+recursion_limit = 2 * max_iterations + 1  # LangGraph formula: account for agent+tools nodes
+
+# Runtime configuration
+try:
+    response = await master_agent.invoke(
+        {"goal": "Increase Samsung Store attach rate by 20%", "messages": []},
+        config={"recursion_limit": recursion_limit}
+    )
+except GraphRecursionError:
+    logger.error("Agent exceeded recursion limit - likely infinite loop")
+    # Escalate to human or retry with different parameters
+```
+
+#### Progress Tracking
+
+```python
+def calculate_progress_score(state: MasterAgentState) -> float:
+    """
+    Calculate how close we are to goal completion (0.0 to 1.0).
+
+    This score is used in termination logic to determine if we should continue.
+    """
+    score = 0.0
+
+    # Component 1: Root cause identified (25%)
+    if state.get("findings", {}).get("root_cause"):
+        score += 0.25
+
+    # Component 2: Strategy designed (25%)
+    if state.get("solution", {}).get("strategy"):
+        score += 0.25
+
+    # Component 3: Implementation plan created (25%)
+    if state.get("solution", {}).get("implementation_plan"):
+        score += 0.25
+
+    # Component 4: Confidence threshold met (25%)
+    confidence = state.get("confidence_score", 0.0)
+    if confidence >= 0.75:
+        score += 0.25
+    elif confidence >= 0.50:
+        score += 0.15  # Partial credit
+
+    return score
+
+def update_state_progress(state: MasterAgentState) -> MasterAgentState:
+    """
+    Update progress tracking in state after each iteration.
+    """
+    return {
+        **state,
+        "iteration_count": state.get("iteration_count", 0) + 1,
+        "progress_score": calculate_progress_score(state)
+    }
+```
+
+#### Termination Monitoring and Debugging
+
+```python
+class TerminationMonitor:
+    """
+    Tracks termination patterns for debugging and optimization.
+    """
+
+    def log_termination(self, state: MasterAgentState, reason: str):
+        """Log why agent terminated."""
+        logger.info(f"""
+Master Agent Termination Report:
+- Goal: {state['goal']}
+- Reason: {reason}
+- Iterations: {state.get('iteration_count', 0)} / {state.get('max_iterations', 0)}
+- Progress: {state.get('progress_score', 0.0)*100:.1f}%
+- Confidence: {state.get('confidence_score', 0.0)*100:.1f}%
+- Completed Steps: {len(state.get('completed_steps', []))}
+        """)
+
+    async def analyze_termination_patterns(self):
+        """
+        Analyze termination patterns across all executions.
+
+        Used to optimize max_iterations and termination thresholds.
+        """
+        patterns = await self.db.query("""
+            SELECT
+                reason,
+                AVG(iteration_count) as avg_iterations,
+                AVG(progress_score) as avg_progress,
+                COUNT(*) as count
+            FROM master_agent_executions
+            GROUP BY reason
+        """)
+
+        return patterns
+```
+
+#### Best Practices Summary
+
+| Mechanism | Purpose | Threshold | Escalation |
+|-----------|---------|-----------|------------|
+| **LLM Signal** | Primary termination | No tool calls in response | END |
+| **Progress Score** | Goal completion | >= 95% | END |
+| **Max Iterations** | Safety limit | 10 iterations | ESCALATE |
+| **Confidence Score** | Quality gate | < 50% after 5 iterations | ESCALATE |
+| **Stagnation Detection** | Efficiency | Same step 3x in a row | ESCALATE |
+| **Recursion Limit** | Hard safety | 21 steps (2*10+1) | GraphRecursionError |
+
+**Key Principle**: The agent should terminate when it has **sufficient** information to solve the problem, not **perfect** information. Over-optimization leads to wasted compute and user frustration.
 
 ### Agent Node: Reasoning
 
@@ -2187,6 +2468,21 @@ Automation: 95%
    - URL: https://blog.langchain.com/langgraph-multi-agent-workflows/
    - Key Quote: "Multi-agent designs allow you to divide complicated problems into tractable units of work that can be targeted by specialized agents."
    - Relevance: Validates Master Agent → Specialist sub-agents pattern
+
+5. **Graph Recursion Limit Error Documentation**
+   - URL: https://langchain-ai.github.io/langgraph/troubleshooting/errors/GRAPH_RECURSION_LIMIT/
+   - Key Quote: "The recursion limit sets the maximum number of super-steps the graph can execute during a single execution. Default is 25 steps."
+   - Relevance: Essential for configuring termination safety mechanisms
+
+6. **Run an Agent with Iteration Limits**
+   - URL: https://langchain-ai.github.io/langgraph/agents/run_agents/
+   - Key Quote: "For AgentExecutor equivalence, set recursion_limit = 2 * max_iterations + 1"
+   - Relevance: Shows how to configure intelligent termination bounds
+
+7. **Low-Level Concepts: Conditional Edges**
+   - URL: https://langchain-ai.github.io/langgraph/concepts/low_level/
+   - Key Quote: "Conditional edges allow dynamic routing between nodes and can optionally terminate graph execution"
+   - Relevance: Foundation for implementing should_continue termination logic
 
 ---
 
