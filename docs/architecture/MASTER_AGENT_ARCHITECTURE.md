@@ -16,8 +16,8 @@
 5. [Technical Architecture](#technical-architecture)
    - [LangGraph Recursive Agent-Tools Pattern](#langgraph-recursive-agent-tools-pattern)
    - [State Management](#state-management)
-   - [Runtime Graph Compilation](#runtime-graph-compilation) ⚡ **NEW**
-   - [Intelligent Termination Conditions](#intelligent-termination-conditions) ⚡ **NEW**
+   - [Dynamic Tool Registry](#dynamic-tool-registry-no-recompilation-needed) ⚡ **NEW**
+   - [LLM-Driven Termination](#llm-driven-termination) ⚡ **NEW**
    - [Agent Node: Reasoning](#agent-node-reasoning)
    - [Tools Node: Execution](#tools-node-execution-mix-of-functions--sub-agents)
    - [Sub-Agent Registry](#sub-agent-registry)
@@ -392,561 +392,453 @@ app = workflow.compile(checkpointer=PostgresCheckpointer())
 
 ---
 
-### Runtime Graph Compilation
+### Dynamic Tool Registry (No Recompilation Needed)
 
-**CRITICAL**: The Master Agent must be able to **dynamically rebuild its workflow graph** based on runtime configuration. This enables:
-- Different graph structures for different clients/scenarios
-- Dynamic tool/sub-agent availability per tenant
-- A/B testing different workflows
-- Adaptive complexity scaling (simple vs complex problem handling)
-
-#### The Problem with Static Compilation
-
-**Static compilation** (compile once, use everywhere):
-```python
-# ❌ ANTI-PATTERN: Static workflow doesn't adapt
-workflow = StateGraph(MasterAgentState)
-workflow.add_node("agent", agent_node)
-workflow.add_node("tools", tools_node)
-# ... edges ...
-app = workflow.compile()  # Compiled ONCE
-
-# All clients get the SAME workflow
-client_a_result = await app.invoke({"goal": "...", "client_id": "client_a"})
-client_b_result = await app.invoke({"goal": "...", "client_id": "client_b"})
+**KEY INSIGHT**: The Master Agent graph structure is **always the same**:
+```
+agent → tools → agent (loop until done)
 ```
 
-**Limitations**:
-- Cannot customize graph structure per client (e.g., Client A has custom sub-agents, Client B doesn't)
-- Cannot adapt complexity based on problem type (simple vs strategic goals)
-- Cannot A/B test different workflows
-- Cannot hot-reload new sub-agents without service restart
+The graph is **compiled once**. What changes dynamically is:
+- Which tools/sub-agents are available (handled by tool registry lookup)
+- Termination thresholds (handled by agent reasoning)
+- Client data access (handled by Row-Level Security)
 
-#### LangGraph Runtime Compilation Pattern (2024-2025)
+**No graph recompilation needed for 99% of use cases.**
 
-**Dynamic compilation** (rebuild graph on each invocation):
+#### Compile Once, Use Everywhere
 
 ```python
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.postgres import PostgresCheckpointer
-from langchain_core.runnables import RunnableConfig
 
-def make_master_agent_graph(config: RunnableConfig) -> StateGraph:
-    """
-    Graph-making function that dynamically builds workflow based on runtime config.
+# Graph is compiled ONCE during service startup
+workflow = StateGraph(MasterAgentState)
+workflow.add_node("agent", agent_reasoning_node)
+workflow.add_node("tools", tools_execution_node)  # Tool registry is dynamic
+workflow.add_conditional_edges("agent", should_continue, {"continue": "tools", "end": END})
+workflow.add_edge("tools", "agent")
+workflow.set_entry_point("agent")
 
-    This function is called on EVERY invocation, allowing the graph to adapt
-    to different clients, problem types, and available capabilities.
-    """
+# Compile ONCE - never recompiled
+app = workflow.compile(checkpointer=PostgresCheckpointer())
 
-    # Extract configuration
-    client_id = config.get("configurable", {}).get("client_id")
-    problem_complexity = config.get("configurable", {}).get("complexity", "standard")
-    available_sub_agents = config.get("configurable", {}).get("sub_agents", [])
-
-    # Create base workflow
-    workflow = StateGraph(MasterAgentState)
-
-    # Add core nodes (always present)
-    workflow.add_node("agent", agent_reasoning_node)
-
-    # DYNAMIC: Add tools node with client-specific capabilities
-    tools_node_fn = create_tools_node(
-        client_id=client_id,
-        available_sub_agents=available_sub_agents
-    )
-    workflow.add_node("tools", tools_node_fn)
-
-    # DYNAMIC: Conditional edges based on problem complexity
-    if problem_complexity == "simple":
-        # Simple problems: Direct execution, minimal recursion
-        workflow.add_conditional_edges(
-            "agent",
-            should_continue_simple,  # More aggressive termination
-            {
-                "continue": "tools",
-                "end": END
-            }
-        )
-    elif problem_complexity == "strategic":
-        # Strategic problems: Allow deeper recursion, human escalation
-        workflow.add_conditional_edges(
-            "agent",
-            should_continue_strategic,  # More lenient termination
-            {
-                "continue": "tools",
-                "end": END,
-                "escalate_to_human": "human_review"
-            }
-        )
-        # Add human review node for strategic decisions
-        workflow.add_node("human_review", human_review_node)
-        workflow.add_edge("human_review", "agent")
-
-    # DYNAMIC: Add client-specific sub-agent nodes
-    if "planner_agent" in available_sub_agents:
-        # Client has access to advanced Planner sub-agent
-        workflow.add_node("planner", planner_agent_node)
-        workflow.add_edge("planner", "agent")
-
-    # Standard edges
-    workflow.add_edge("tools", "agent")
-    workflow.set_entry_point("agent")
-
-    return workflow
-
-def create_tools_node(client_id: str, available_sub_agents: list):
-    """
-    Dynamically create tools node with client-specific capabilities.
-    """
-
-    # Load client-specific configuration
-    client_config = load_client_config(client_id)
-
-    # Build tool registry
-    tools_registry = {
-        # Core tools (always available)
-        "check_database": check_database_tool,
-        "calculate_metrics": calculate_metrics_tool,
-    }
-
-    # Add client-specific sub-agents
-    if "research_agent" in available_sub_agents:
-        tools_registry["research_agent"] = ResearchAgent
-
-    if "strategy_generator" in available_sub_agents:
-        tools_registry["strategy_generator"] = StrategyGeneratorAgent
-
-    # Custom sub-agents (enterprise clients only)
-    if client_config.get("tier") == "enterprise":
-        if "custom_ml_agent" in client_config.get("custom_agents", []):
-            tools_registry["custom_ml_agent"] = client_config["custom_agents"]["custom_ml_agent"]
-
-    async def tools_node_fn(state: MasterAgentState):
-        """Tools node with dynamically configured capabilities"""
-        tool_calls = state["pending_actions"]
-        results = []
-
-        for tool_call in tool_calls:
-            if tool_call.name in tools_registry:
-                tool = tools_registry[tool_call.name]
-
-                # Execute simple function or invoke sub-agent
-                if callable(tool):
-                    result = await tool(**tool_call.args)
-                else:
-                    # Sub-agent class
-                    sub_agent = tool()
-                    result = await sub_agent.invoke(tool_call.args)
-
-                results.append(ToolMessage(
-                    content=str(result),
-                    tool_call_id=tool_call.id
-                ))
-            else:
-                results.append(ToolMessage(
-                    content=f"Error: Tool {tool_call.name} not available for this client",
-                    tool_call_id=tool_call.id
-                ))
-
-        return {
-            **state,
-            "messages": state["messages"] + results
-        }
-
-    return tools_node_fn
+# All clients use the SAME compiled graph
+client_a_result = await app.invoke({"goal": "...", "client_id": "client_a", "messages": []})
+client_b_result = await app.invoke({"goal": "...", "client_id": "client_b", "messages": []})
 ```
 
-#### Configuration File Pattern (langgraph.json)
+#### Dynamic Tool Registry Pattern
 
-**For LangGraph Cloud deployment**, update `langgraph.json` to point to graph-making function:
+**The tools node dynamically loads available tools/sub-agents per client:**
 
-```json
-{
-  "graphs": {
-    "master_agent": "./services/customer_success/master_agent.py:make_master_agent_graph"
-  },
-  "dependencies": ["langchain", "langgraph", "openai"],
-  "env": {
-    "OPENAI_API_KEY": "$OPENAI_API_KEY",
-    "DATABASE_URL": "$DATABASE_URL"
-  }
+```python
+# Centralized sub-agent registry (add new agents without recompiling)
+SUB_AGENT_REGISTRY = {
+    "research_agent": ResearchAgent,
+    "strategy_generator": StrategyGeneratorAgent,
+    "implementation_planner": ImplementationPlannerAgent,
+    "data_analysis_agent": DataAnalysisAgent,
+    "playbook_generator": PlaybookGeneratorAgent,
+    # New sub-agents can be added here anytime - NO recompilation needed
+}
+
+def get_client_tools(client_id: str) -> dict:
+    """
+    Dynamically load available tools/sub-agents for a specific client.
+
+    This is called at RUNTIME within the tools node - NO recompilation needed.
+    """
+    # Load client configuration from database
+    client_config = db.query(
+        "SELECT tier, available_sub_agents FROM clients WHERE id = ?",
+        client_id
+    )
+
+    # Build tool registry
+    tools = {
+        # Core tools (always available)
+        "check_database": check_database_fn,
+        "calculate_metrics": calculate_metrics_fn,
+        "schedule_task": schedule_task_fn,
+    }
+
+    # Add tier-based sub-agents
+    if client_config["tier"] == "free":
+        # Limited capabilities
+        tools["research_agent"] = SUB_AGENT_REGISTRY["research_agent"]
+
+    elif client_config["tier"] == "pro":
+        # Standard capabilities
+        tools["research_agent"] = SUB_AGENT_REGISTRY["research_agent"]
+        tools["strategy_generator"] = SUB_AGENT_REGISTRY["strategy_generator"]
+
+    elif client_config["tier"] == "enterprise":
+        # Full capabilities + custom agents
+        for agent_name in SUB_AGENT_REGISTRY:
+            tools[agent_name] = SUB_AGENT_REGISTRY[agent_name]
+
+        # Add client-specific custom agents
+        for custom_agent_name in client_config.get("custom_agents", []):
+            tools[custom_agent_name] = load_custom_agent(client_id, custom_agent_name)
+
+    return tools
+
+async def tools_execution_node(state: MasterAgentState):
+    """
+    Tools node - dynamically loads available tools/sub-agents per client.
+
+    This node implementation NEVER changes - it just looks up tools dynamically.
+    """
+    client_id = state["client_id"]
+    tool_calls = state["pending_actions"]
+    results = []
+
+    # DYNAMIC: Load tools for this client
+    available_tools = get_client_tools(client_id)
+
+    for tool_call in tool_calls:
+        if tool_call.name not in available_tools:
+            # Tool not available for this client
+            results.append(ToolMessage(
+                content=f"Error: Tool '{tool_call.name}' not available for your tier",
+                tool_call_id=tool_call.id
+            ))
+            continue
+
+        tool = available_tools[tool_call.name]
+
+        # Execute simple function OR invoke sub-agent
+        if callable(tool):
+            # Simple function tool
+            result = await tool(**tool_call.args)
+        else:
+            # Sub-agent class - instantiate and invoke
+            sub_agent = tool()
+            result = await sub_agent.invoke(tool_call.args)
+
+        results.append(ToolMessage(
+            content=str(result),
+            tool_call_id=tool_call.id
+        ))
+
+    return {
+        **state,
+        "messages": state["messages"] + results,
+        "completed_steps": state["completed_steps"] + [tc.name for tc in tool_calls]
+    }
+```
+
+#### Adding New Sub-Agents (No Recompilation)
+
+**To add a new sub-agent:**
+
+1. **Add to registry** (code deployment):
+```python
+# sub_agent_registry.py
+SUB_AGENT_REGISTRY = {
+    "research_agent": ResearchAgent,
+    "strategy_generator": StrategyGeneratorAgent,
+    "implementation_planner": ImplementationPlannerAgent,
+    # NEW: Add new sub-agent here
+    "market_intelligence_agent": MarketIntelligenceAgent,  # ← NEW
 }
 ```
 
-#### Runtime Invocation with Configuration
-
-```python
-# Client A: Simple problem, standard tools
-response_a = await master_agent.invoke(
-    {"goal": "Calculate health score for client XYZ", "messages": []},
-    config={
-        "configurable": {
-            "client_id": "client_a",
-            "complexity": "simple",
-            "sub_agents": ["research_agent"]
-        },
-        "recursion_limit": 11  # 2 * 5 + 1 for simple problems
-    }
-)
-
-# Client B: Strategic problem, advanced tools, enterprise tier
-response_b = await master_agent.invoke(
-    {"goal": "Increase Samsung Store attach rate by 20%", "messages": []},
-    config={
-        "configurable": {
-            "client_id": "client_b",
-            "complexity": "strategic",
-            "sub_agents": [
-                "research_agent",
-                "strategy_generator",
-                "implementation_planner",
-                "custom_ml_agent"  # Enterprise-only
-            ],
-            "tier": "enterprise"
-        },
-        "recursion_limit": 21  # 2 * 10 + 1 for strategic problems
-    }
-)
+2. **Grant access to clients** (database update):
+```sql
+-- Enable for enterprise clients
+UPDATE clients
+SET available_sub_agents = array_append(available_sub_agents, 'market_intelligence_agent')
+WHERE tier = 'enterprise';
 ```
 
-#### Use Cases for Runtime Compilation
-
-**1. Multi-Tenant Capability Isolation**
+3. **Agent discovers it automatically**:
 ```python
-def make_master_agent_graph(config: RunnableConfig):
-    client_tier = get_client_tier(config.get("configurable", {}).get("client_id"))
-
-    if client_tier == "free":
-        # Limited capabilities
-        available_sub_agents = ["research_agent"]
-    elif client_tier == "pro":
-        # Standard capabilities
-        available_sub_agents = ["research_agent", "strategy_generator"]
-    elif client_tier == "enterprise":
-        # Full capabilities + custom agents
-        available_sub_agents = get_all_sub_agents() + get_custom_agents(client_id)
-
-    # Build graph with appropriate capabilities
-    # ...
+# On next invocation, LLM sees new tool in schema
+system_prompt = f"""
+Available tools:
+- research_agent: Analyzes data
+- strategy_generator: Designs solutions
+- implementation_planner: Creates plans
+- market_intelligence_agent: Competitor analysis (NEW!)  ← LLM can now use this
+"""
 ```
 
-**2. A/B Testing Different Workflows**
+**No service restart. No graph recompilation. It just works.**
+
+#### Multi-Tenant Example
+
 ```python
-def make_master_agent_graph(config: RunnableConfig):
-    experiment_variant = config.get("configurable", {}).get("ab_test_variant", "control")
+# Client A (Free Tier)
+client_a_tools = get_client_tools("client_a")
+# Returns: {"check_database": fn, "calculate_metrics": fn, "research_agent": ResearchAgent}
 
-    if experiment_variant == "control":
-        # Original workflow: agent → tools → agent
-        workflow.add_conditional_edges("agent", should_continue, ...)
+# Client B (Enterprise Tier)
+client_b_tools = get_client_tools("client_b")
+# Returns: {
+#   "check_database": fn,
+#   "calculate_metrics": fn,
+#   "research_agent": ResearchAgent,
+#   "strategy_generator": StrategyGeneratorAgent,
+#   "implementation_planner": ImplementationPlannerAgent,
+#   "custom_ml_agent": ClientBCustomMLAgent,  ← Client-specific
+# }
 
-    elif experiment_variant == "planner_first":
-        # Experimental: planner → agent → tools → agent
-        workflow.set_entry_point("planner")  # Start with planning step
-        workflow.add_edge("planner", "agent")
-
-    elif experiment_variant == "parallel_research":
-        # Experimental: Run multiple research agents in parallel
-        workflow.add_node("parallel_research", parallel_research_node)
-        workflow.add_edge("agent", "parallel_research")
-        workflow.add_edge("parallel_research", "agent")
-
-    return workflow
+# SAME compiled graph handles both clients
+app.invoke({"goal": "...", "client_id": "client_a", "messages": []})
+app.invoke({"goal": "...", "client_id": "client_b", "messages": []})
 ```
 
-**3. Adaptive Complexity Scaling**
+#### When You WOULD Need Runtime Compilation
+
+**Only for truly different graph structures** (rare):
+
 ```python
-def make_master_agent_graph(config: RunnableConfig):
-    goal_text = config.get("configurable", {}).get("goal", "")
-
-    # Use LLM to classify problem complexity
-    complexity = classify_goal_complexity(goal_text)
-
-    if complexity == "trivial":
-        # Direct execution, no sub-agents needed
-        return make_simple_workflow()
-
-    elif complexity == "moderate":
-        # Standard Master Agent workflow
-        return make_standard_workflow()
-
-    elif complexity == "strategic":
-        # Full recursive sub-agent orchestration
-        return make_strategic_workflow(enable_all_sub_agents=True)
-```
-
-**4. Dynamic Planner Agent (Meta-Planning)**
-```python
-def make_master_agent_graph(config: RunnableConfig):
+# Meta-Planning: Planner Agent designs a custom workflow DAG at runtime
+def make_custom_workflow_from_plan(plan: dict):
     """
-    Instead of pre-defining the workflow, use a Planner Agent to
-    dynamically design the execution graph at runtime.
+    For advanced use cases where the workflow structure itself is dynamic.
+
+    Example: Planner Agent determines we need:
+    - Step 1: Research (parallel with 3 sub-agents)
+    - Step 2: Analysis (depends on Research)
+    - Step 3: Strategy (depends on Analysis)
+    - Step 4: Implementation (depends on Strategy)
+
+    This creates a DIFFERENT graph structure than the standard agent→tools→agent loop.
     """
-
-    goal = config.get("configurable", {}).get("goal")
-
-    # Step 1: Planner Agent designs the workflow DAG
-    planner_agent = PlannerAgent()
-    plan = await planner_agent.invoke({"goal": goal})
-
-    # plan = {
-    #   "steps": [
-    #     {"id": "step1", "agent": "research_agent", "depends_on": []},
-    #     {"id": "step2", "agent": "data_analysis_agent", "depends_on": ["step1"]},
-    #     {"id": "step3", "agent": "strategy_generator", "depends_on": ["step1", "step2"]},
-    #   ]
-    # }
-
-    # Step 2: Convert plan into LangGraph StateGraph
     workflow = StateGraph(MasterAgentState)
 
     for step in plan["steps"]:
-        # Add node for each planned step
         workflow.add_node(step["id"], get_agent_node(step["agent"]))
 
-        # Add edges based on dependencies
-        if not step["depends_on"]:
-            workflow.set_entry_point(step["id"])
-        else:
-            for dependency in step["depends_on"]:
-                workflow.add_edge(dependency, step["id"])
+    for step in plan["steps"]:
+        for dependency in step["depends_on"]:
+            workflow.add_edge(dependency, step["id"])
 
-    return workflow
+    return workflow.compile()
 ```
 
-#### Hot Reload with LangGraph CLI
-
-**Development Mode** (auto-reload on code changes):
-```bash
-langgraph dev --no-docker
-```
-
-**What triggers a rebuild**:
-- Python source code changes → **Hot reload** (fast, no full rebuild)
-- `langgraph.json` changes → **Full rebuild** (slower, rebuilds Docker image)
-- `requirements.txt` / `pyproject.toml` changes → **Full rebuild**
-
-**Production**: Use LangGraph Cloud with versioned deployments
-```bash
-langgraph deploy --version v2.1.0
-```
-
-#### Best Practices
-
-| Practice | Why | Example |
-|----------|-----|---------|
-| **Use graph-making functions** | Enables runtime customization | `make_master_agent_graph(config)` |
-| **Pass RunnableConfig** | Standard LangGraph pattern for runtime config | `config.get("configurable", {})` |
-| **Load client config from database** | Dynamic per-tenant capabilities | `load_client_config(client_id)` |
-| **Version your graphs** | A/B test safely | `ab_test_variant: "control" vs "experimental"` |
-| **Classify problem complexity** | Optimize for simple vs complex goals | `if complexity == "simple": use_fast_workflow()` |
-| **Cache compiled graphs** | Performance optimization | Cache graph per `(client_id, complexity)` tuple for 5min |
-
-#### Performance Optimization
-
-```python
-from functools import lru_cache
-from typing import Tuple
-
-@lru_cache(maxsize=100)
-def get_compiled_graph(client_id: str, complexity: str) -> CompiledGraph:
-    """
-    Cache compiled graphs to avoid rebuilding on every invocation.
-
-    Cache key: (client_id, complexity)
-    Cache TTL: 5 minutes (handled externally)
-    """
-
-    config = {
-        "configurable": {
-            "client_id": client_id,
-            "complexity": complexity,
-            "sub_agents": get_client_sub_agents(client_id),
-            "tier": get_client_tier(client_id)
-        }
-    }
-
-    workflow = make_master_agent_graph(config)
-    return workflow.compile(checkpointer=PostgresCheckpointer())
-
-# Usage
-async def invoke_master_agent(goal: str, client_id: str):
-    complexity = classify_goal_complexity(goal)
-
-    # Get cached compiled graph (or compile new one)
-    app = get_compiled_graph(client_id, complexity)
-
-    # Invoke with full config
-    return await app.invoke(
-        {"goal": goal, "messages": []},
-        config={
-            "configurable": {"client_id": client_id},
-            "recursion_limit": get_recursion_limit(complexity)
-        }
-    )
-```
-
-#### Key Principle
-
-> **"In most cases, customizing behavior based on the config should be handled by a single graph"** - LangGraph Docs
-
-The Master Agent uses **one graph-making function** (`make_master_agent_graph`) with **conditional logic** to adapt the graph structure, rather than maintaining multiple separate graph definitions.
+**But for 99% of use cases: Static graph + Dynamic tool registry is sufficient.**
 
 ---
 
-### Intelligent Termination Conditions
+### LLM-Driven Termination
 
-**CRITICAL**: The Master Agent must NOT run indefinitely. It requires intelligent stopping criteria engineered through context and state management.
+**CRITICAL INSIGHT**: The Master Agent should **THINK** about whether to continue, not just count iterations.
 
-#### Termination Strategy
-
-**LangGraph Best Practice (2024-2025)**:
-- Default recursion limit: 25 steps
-- Configurable at runtime: `recursion_limit` parameter
-- Throws `GraphRecursionError` when limit exceeded
-
-**Master Agent Termination Conditions** (evaluated in `should_continue` function):
-
-1. **Goal Completion** (Primary)
-   ```python
-   # Solution is comprehensive and confidence is high
-   if state["solution"] and state["confidence_score"] >= 0.75:
-       return "end"
-   ```
-
-2. **Max Iterations Reached** (Safety)
-   ```python
-   # Prevent infinite loops (3-5 iterations typical for most goals)
-   if state["iteration_count"] >= state["max_iterations"]:
-       return "escalate_to_human"
-   ```
-
-3. **Progress Stagnation** (Efficiency)
-   ```python
-   # No meaningful progress in last 2 iterations
-   if not making_progress(state):
-       return "escalate_to_human"
-   ```
-
-4. **Human Escalation Triggers** (Safety)
-   ```python
-   # Low confidence or high-risk decision detected
-   if state["confidence_score"] < 0.50 or high_risk_detected(state):
-       return "escalate_to_human"
-   ```
-
-5. **LLM Signals Completion** (Primary)
-   ```python
-   # LLM explicitly indicates task is done (no tool calls)
-   if not state["pending_actions"]:
-       return "end"
-   ```
-
-#### should_continue Implementation
+#### The Wrong Approach (Mechanical Counting)
 
 ```python
-from typing import Literal
-
-def should_continue(state: MasterAgentState) -> Literal["continue", "end", "escalate_to_human"]:
-    """
-    Intelligent termination logic using multiple criteria.
-
-    This function is the CORE of termination control - it prevents infinite loops
-    while allowing the agent to complete complex multi-step reasoning.
-    """
-
-    # 1. Check if LLM signaled completion (no more tool calls)
-    messages = state["messages"]
-    last_message = messages[-1] if messages else None
-
-    if last_message and not getattr(last_message, "tool_calls", None):
-        # LLM provided final response without requesting tools
-        # This means it believes the task is complete
-        return "end"
-
-    # 2. Check iteration limit (safety mechanism)
-    iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 10)  # Default: 10 iterations
-
-    if iteration_count >= max_iterations:
-        # Exceeded max iterations - escalate to human
-        logger.warning(f"Max iterations ({max_iterations}) reached for goal: {state['goal']}")
-        return "escalate_to_human"
-
-    # 3. Check progress score (efficiency mechanism)
-    progress_score = state.get("progress_score", 0.0)
-
-    if progress_score >= 0.95:
-        # Goal is 95%+ complete - can safely end
-        logger.info(f"Goal {progress_score*100:.1f}% complete - ending")
-        return "end"
-
-    # 4. Check confidence score (quality mechanism)
-    confidence_score = state.get("confidence_score", 0.0)
-
-    if confidence_score < 0.50 and iteration_count >= 5:
-        # Low confidence after 5 iterations - escalate
-        logger.warning(f"Low confidence ({confidence_score:.2f}) after {iteration_count} iterations")
-        return "escalate_to_human"
-
-    # 5. Check progress stagnation (efficiency mechanism)
-    completed_steps = state.get("completed_steps", [])
-
-    if iteration_count >= 3:
-        # After 3 iterations, check if we're making progress
-        recent_steps = completed_steps[-3:] if len(completed_steps) >= 3 else completed_steps
-        unique_recent_steps = len(set(recent_steps))
-
-        if unique_recent_steps <= 1:
-            # Stuck in a loop (same step repeated) - escalate
-            logger.warning(f"Progress stagnation detected: {recent_steps}")
-            return "escalate_to_human"
-
-    # 6. Continue iteration
-    return "continue"
+# ❌ BAD: Dumb iteration counting
+if iteration_count >= 10:
+    return "end"  # Stop because we hit a number
 ```
 
-#### Context Engineering for Termination
+**Problem**: The agent might stop when it's making real progress, or continue when it's stuck in a loop. Iteration counting doesn't understand the **quality** of progress.
 
-**System Prompt Engineering** (Critical for intelligent termination):
+#### The Right Approach (LLM Reasoning)
+
+**The agent should THINK about its own progress:**
 
 ```python
 system_prompt = f"""
 You are a Master Agent solving: {state['goal']}
 
-TERMINATION INSTRUCTIONS:
-- When you have gathered SUFFICIENT information to create a comprehensive solution, STOP calling tools
-- Respond with your final solution WITHOUT requesting additional tool calls
-- A "sufficient" solution includes:
-  1. Root cause identified (confidence >= 75%)
-  2. Strategy designed (with success probability)
-  3. Implementation plan created (with timeline and resources)
-  4. Risks assessed and mitigation planned
+SELF-REFLECTION (Iteration {state['iteration_count']}):
 
-ITERATION AWARENESS:
-- Current iteration: {state['iteration_count']} / {state['max_iterations']}
-- Progress: {state['progress_score']*100:.0f}%
-- If approaching max iterations ({state['max_iterations']}), prioritize COMPLETING the solution over PERFECTING it
+What you've accomplished so far:
+{format_completed_steps(state['completed_steps'])}
 
-DECISION CRITERIA:
-- If confidence >= 75% AND all required components exist → FINISH
-- If confidence < 50% after 5 iterations → ESCALATE to human
-- If stuck repeating same analysis → ESCALATE to human
+Your last 3 actions:
+1. {state['completed_steps'][-3] if len(state['completed_steps']) >= 3 else 'N/A'}
+2. {state['completed_steps'][-2] if len(state['completed_steps']) >= 2 else 'N/A'}
+3. {state['completed_steps'][-1] if len(state['completed_steps']) >= 1 else 'N/A'}
 
-Your approach:
-1. Break down the goal into sub-goals
-2. Determine what capabilities you need
-3. Call available tools/sub-agents
-4. **IMPORTANT**: Synthesize results and DECIDE when to stop
+Current confidence: {state['confidence_score'] * 100:.0f}%
+Current findings: {summarize_findings(state['findings'])}
 
-Available capabilities:
-{get_available_tools_and_subagents()}
+TERMINATION DECISION CRITERIA:
 
-Context:
-{state['context']}
+1. **Are you repeating yourself?**
+   - If your last 2-3 actions are the same research → STOP and provide best answer
+   - If you're gathering new insights each iteration → CONTINUE
 
-Think step-by-step and decide: Should I call more tools, or do I have enough to provide a final solution?
+2. **Is your confidence increasing?**
+   - If confidence is rising (0.5 → 0.65 → 0.75) → CONTINUE
+   - If confidence is stagnating or decreasing → STOP
+
+3. **Do you have SUFFICIENT information?**
+   - You don't need PERFECT information, just SUFFICIENT (≥75% confidence)
+   - If you have enough to make a good recommendation → STOP
+   - If critical gaps remain → CONTINUE with specific next action
+
+4. **Are you approaching the safety limit?**
+   - Iteration {state['iteration_count']} / {state['max_iterations']} (hard limit)
+   - If close to limit, prioritize COMPLETING over PERFECTING
+
+DECISION:
+Think carefully: Should you CONTINUE gathering more data, or FINISH with your current solution?
+
+If CONTINUE: Explain what specific information you still need and why
+If FINISH: Provide your final solution with current confidence level
 """
+```
+
+#### Termination Mechanisms
+
+**Layer 1: LLM Reasoning (Primary)**
+
+The agent uses its reasoning capability to decide when to stop:
+
+```python
+def agent_reasoning_node(state: MasterAgentState):
+    """
+    Agent thinks about whether to continue or finish.
+    """
+
+    # Build self-reflection prompt
+    system_prompt = build_reflection_prompt(state)
+
+    # LLM decides: continue with more tools OR finish with solution
+    response = await llm.ainvoke(
+        messages=[SystemMessage(content=system_prompt)] + state["messages"],
+        tools=get_available_tools(state["client_id"])
+    )
+
+    # If LLM provides response WITHOUT tool calls → it decided to finish
+    if not response.tool_calls:
+        # Agent is DONE - it has sufficient information
+        return {
+            **state,
+            "messages": state["messages"] + [response],
+            "pending_actions": [],  # No more actions
+            "agent_decision": "FINISH"
+        }
+    else:
+        # Agent wants to continue - it requested more tools
+        return {
+            **state,
+            "messages": state["messages"] + [response],
+            "pending_actions": response.tool_calls,
+            "agent_decision": "CONTINUE"
+        }
+```
+
+**Layer 2: Hard Safety Limit (Fallback)**
+
+```python
+def should_continue(state: MasterAgentState) -> Literal["continue", "end"]:
+    """
+    Safety check AFTER LLM reasoning.
+
+    This is NOT the primary termination mechanism - it's a safety fallback.
+    """
+
+    # 1. LLM decided to finish (no tool calls)
+    if not state["pending_actions"]:
+        return "end"  # Respect LLM's decision
+
+    # 2. HARD SAFETY LIMIT (fallback only)
+    if state["iteration_count"] >= state["max_iterations"]:
+        logger.warning(f"Hit safety limit at {state['max_iterations']} iterations")
+        # Force termination - agent failed to self-regulate
+        return "end"
+
+    # 3. Continue (LLM wants to call more tools)
+    return "continue"
+```
+
+#### Complete Implementation Example
+
+```python
+def build_reflection_prompt(state: MasterAgentState) -> str:
+    """Build self-reflection prompt that helps LLM decide when to terminate"""
+
+    return f"""
+You are a Master Agent solving: {state['goal']}
+
+SELF-REFLECTION (Iteration {state['iteration_count']} / {state['max_iterations']}):
+
+What you've accomplished so far:
+{chr(10).join(f'  - {step}' for step in state['completed_steps'])}
+
+Your last 3 actions:
+1. {state['completed_steps'][-3] if len(state['completed_steps']) >= 3 else 'N/A'}
+2. {state['completed_steps'][-2] if len(state['completed_steps']) >= 2 else 'N/A'}
+3. {state['completed_steps'][-1] if len(state['completed_steps']) >= 1 else 'N/A'}
+
+Current confidence: {state['confidence_score'] * 100:.0f}%
+Current findings: {state.get('findings', {}).get('summary', 'No findings yet')}
+
+TERMINATION DECISION CRITERIA:
+
+1. **Are you repeating yourself?**
+   - If your last 2-3 actions are the same → STOP and provide best answer with current data
+   - If you're gathering NEW insights each iteration → CONTINUE
+
+2. **Is your confidence increasing?**
+   - If confidence rising (0.5 → 0.65 → 0.75) → CONTINUE, you're making progress
+   - If confidence stagnating or decreasing → STOP, more data won't help
+
+3. **Do you have SUFFICIENT information?**
+   - You need SUFFICIENT (≥75% confidence), not PERFECT (100%)
+   - If you can make a good recommendation now → STOP
+   - If critical gaps remain → CONTINUE with specific next action
+
+4. **Are you approaching the safety limit?**
+   - You're at iteration {state['iteration_count']} of {state['max_iterations']}
+   - If close to limit, prioritize COMPLETING over PERFECTING
+
+DECISION:
+Think carefully: Should you CONTINUE gathering more data, or FINISH with your current solution?
+
+If CONTINUE: Call the specific tools you need and explain why
+If FINISH: Provide your final solution (DO NOT call any tools)
+"""
+
+
+def agent_reasoning_node(state: MasterAgentState):
+    """Agent node with self-reflection for intelligent termination"""
+
+    system_prompt = build_reflection_prompt(state)
+
+    response = await llm.ainvoke(
+        messages=[SystemMessage(content=system_prompt)] + state["messages"],
+        tools=get_available_tools(state["client_id"])
+    )
+
+    # Update state
+    new_state = {
+        **state,
+        "messages": state["messages"] + [response],
+        "pending_actions": response.tool_calls if hasattr(response, 'tool_calls') else [],
+        "iteration_count": state.get("iteration_count", 0) + 1
+    }
+
+    return new_state
+
+
+def should_continue(state: MasterAgentState) -> Literal["continue", "end"]:
+    """
+    Simple safety check - LLM reasoning is the primary termination mechanism
+    """
+
+    # 1. LLM decided to finish (no tool calls requested)
+    if not state.get("pending_actions"):
+        return "end"
+
+    # 2. HARD SAFETY LIMIT (should rarely be hit if LLM reasoning works well)
+    if state.get("iteration_count", 0) >= state.get("max_iterations", 25):
+        logger.warning(
+            f"Hit hard safety limit at {state['max_iterations']} iterations. "
+            f"LLM failed to self-regulate. Goal: {state['goal']}"
+        )
+        return "end"
+
+    # 3. Continue (LLM wants more tools)
+    return "continue"
 ```
 
 #### Recursion Limit Configuration
@@ -1051,16 +943,20 @@ Master Agent Termination Report:
 
 #### Best Practices Summary
 
-| Mechanism | Purpose | Threshold | Escalation |
-|-----------|---------|-----------|------------|
-| **LLM Signal** | Primary termination | No tool calls in response | END |
-| **Progress Score** | Goal completion | >= 95% | END |
-| **Max Iterations** | Safety limit | 10 iterations | ESCALATE |
-| **Confidence Score** | Quality gate | < 50% after 5 iterations | ESCALATE |
-| **Stagnation Detection** | Efficiency | Same step 3x in a row | ESCALATE |
-| **Recursion Limit** | Hard safety | 21 steps (2*10+1) | GraphRecursionError |
+| Mechanism | How It Works | When It Triggers | Action |
+|-----------|--------------|------------------|--------|
+| **LLM Reasoning** (Primary) | Agent THINKS about whether to continue | Each iteration via self-reflection prompt | END when sufficient information gathered |
+| **No Tool Calls** | LLM responds without requesting tools | Agent decides it's done | END |
+| **Hard Safety Limit** (Fallback) | Iteration counter (should rarely trigger) | 25 iterations (configurable) | END + warning log |
+| **GraphRecursionError** | LangGraph's built-in limit | 2 * max_iterations + 1 steps | Exception thrown |
 
-**Key Principle**: The agent should terminate when it has **sufficient** information to solve the problem, not **perfect** information. Over-optimization leads to wasted compute and user frustration.
+**Key Principle**: The agent **THINKS** about when to stop, not just counts iterations. The hard limit is a safety fallback, NOT the primary termination mechanism.
+
+**Termination Decision Process:**
+1. Agent reflects on progress (self-reflection prompt)
+2. Agent evaluates: "Do I have SUFFICIENT information?" (not perfect, just sufficient)
+3. Agent decides: CONTINUE (calls more tools) or FINISH (no tool calls)
+4. Hard limit catches edge cases where LLM reasoning fails
 
 ### Agent Node: Reasoning
 
@@ -2887,20 +2783,10 @@ Automation: 95%
    - Key Quote: "Conditional edges allow dynamic routing between nodes and can optionally terminate graph execution"
    - Relevance: Foundation for implementing should_continue termination logic
 
-8. **Rebuild Graph at Runtime**
-   - URL: https://docs.langchain.com/langgraph-platform/graph-rebuild
-   - Key Quote: "To make your graph rebuild on each new run with custom configuration, provide a function that takes a config and returns a graph (or compiled graph) instance"
-   - Relevance: Core pattern for runtime graph compilation and dynamic workflow adaptation
-
-9. **Building Dynamic Agentic Workflows at Runtime**
+8. **Building Dynamic Agentic Workflows at Runtime (Meta-Planning)**
    - URL: https://github.com/langchain-ai/langgraph/discussions/2219
-   - Key Quote: "Instead of pre-defining workflows, graphs can be dynamically created at runtime via a Planner agent, allowing the system to adapt to any query by generating a tailored execution plan"
-   - Relevance: Advanced pattern for meta-planning and dynamic graph generation
-
-10. **LangGraph CLI Documentation**
-    - URL: https://docs.langchain.com/langgraph-platform/cli
-    - Key Quote: "`langgraph dev` runs the API server in development mode with hot reloading and debugging capabilities"
-    - Relevance: Hot reload functionality for rapid development and testing of dynamic graphs
+   - Key Quote: "Instead of pre-defining workflows, graphs can be dynamically created at runtime via a Planner agent"
+   - Relevance: Advanced pattern for truly dynamic graph structures (rare use case, only when workflow structure itself changes based on problem)
 
 ---
 
