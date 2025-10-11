@@ -17,6 +17,7 @@
    - [LangGraph Recursive Agent-Tools Pattern](#langgraph-recursive-agent-tools-pattern)
    - [State Management](#state-management)
    - [Dynamic Tool Registry](#dynamic-tool-registry-no-recompilation-needed) ⚡ **NEW**
+   - [Handling Missing Tools (Self-Evolution)](#handling-missing-tools-self-evolution) ⚡ **NEW**
    - [LLM-Driven Termination](#llm-driven-termination) ⚡ **NEW**
    - [Agent Node: Reasoning](#agent-node-reasoning)
    - [Tools Node: Execution](#tools-node-execution-mix-of-functions--sub-agents)
@@ -621,6 +622,347 @@ def make_custom_workflow_from_plan(plan: dict):
 ```
 
 **But for 99% of use cases: Static graph + Dynamic tool registry is sufficient.**
+
+---
+
+### Handling Missing Tools (Self-Evolution)
+
+**CRITICAL QUESTION**: What if the agent needs a tool/sub-agent that doesn't exist yet?
+
+#### The Problem
+
+```python
+GOAL: "Analyze customer sentiment from support tickets"
+
+Agent thinks: "I need a sentiment_analysis_agent to process ticket text"
+Agent tries to call: sentiment_analysis_agent(tickets=...)
+
+# ❌ ERROR: Tool 'sentiment_analysis_agent' not in registry
+Result: Agent is stuck - can't complete the goal
+```
+
+**This is where SELF-EVOLUTION happens** - the core feature from the Founder's PRD!
+
+#### LangGraph Tool Pattern Review
+
+**Key Insight from LangGraph docs**:
+> "The supervisor can be thought of as an agent whose tools are other agents"
+
+In LangGraph, there are two ways to make capabilities available to an agent:
+
+1. **Simple Tools** (functions with `@tool` decorator):
+```python
+from langchain_core.tools import tool
+
+@tool
+def calculate_metrics(data: dict) -> dict:
+    """Calculate performance metrics from data"""
+    return {"avg": sum(data.values()) / len(data)}
+```
+
+2. **Sub-agents as Tools** (compiled subgraphs):
+```python
+# A sub-agent IS a compiled graph
+research_agent = StateGraph(ResearchState)
+research_agent.add_node("analyze", analyze_node)
+research_agent.add_node("tools", tools_node)
+research_subgraph = research_agent.compile()
+
+# Make it available as a tool to parent agent
+def research_tool(query: str) -> str:
+    """Research a topic using the Research Agent"""
+    result = research_subgraph.invoke({"query": query})
+    return result["answer"]
+
+# Now parent agent can call it
+tools = [calculate_metrics, research_tool]
+```
+
+#### Solution 1: Meta-Tool for Sub-Agent Creation
+
+**Add a special tool that creates new sub-agents**:
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def create_sub_agent(
+    name: str,
+    description: str,
+    required_capabilities: list[str],
+    input_schema: dict,
+    output_schema: dict
+) -> str:
+    """
+    Create a new specialized sub-agent when existing tools are insufficient.
+
+    This is the SELF-EVOLUTION mechanism.
+
+    Args:
+        name: Name of the new sub-agent (e.g., "sentiment_analysis_agent")
+        description: What this sub-agent does
+        required_capabilities: What it needs (e.g., ["text_processing", "ml_inference"])
+        input_schema: JSON schema for inputs
+        output_schema: JSON schema for outputs
+
+    Returns:
+        Success message with the new agent's name
+    """
+    # 1. Validate that this capability is truly missing
+    if name in SUB_AGENT_REGISTRY:
+        return f"Sub-agent '{name}' already exists. Use existing agent instead."
+
+    # 2. Design the sub-agent structure
+    sub_agent_spec = {
+        "name": name,
+        "description": description,
+        "capabilities": required_capabilities,
+        "input_schema": input_schema,
+        "output_schema": output_schema,
+        "created_by": "master_agent_self_evolution",
+        "created_at": datetime.now(),
+        "status": "pending_implementation"
+    }
+
+    # 3. Store specification in database
+    db.insert("pending_sub_agents", sub_agent_spec)
+
+    # 4. Notify implementation team (human-in-the-loop for now)
+    notify_engineering_team({
+        "type": "new_sub_agent_request",
+        "spec": sub_agent_spec,
+        "priority": "high",
+        "requestor": "master_agent"
+    })
+
+    # 5. For NOW: Return placeholder response
+    return f"""
+Sub-agent '{name}' specification created and queued for implementation.
+
+IMMEDIATE WORKAROUND:
+Since this agent doesn't exist yet, I'll use available tools to approximate the functionality:
+- {get_closest_available_tools(required_capabilities)}
+
+LONG-TERM:
+Engineering team notified. Expected implementation: 2-3 sprints.
+Once implemented, this capability will be available to all clients.
+"""
+
+# Register the meta-tool
+CORE_TOOLS = {
+    "check_database": check_database_fn,
+    "calculate_metrics": calculate_metrics_fn,
+    "create_sub_agent": create_sub_agent,  # ← META-TOOL for self-evolution
+}
+```
+
+#### Solution 2: LLM Approximates with Available Tools
+
+**Agent's reasoning when tool is missing**:
+
+```python
+system_prompt = f"""
+You are solving: {state['goal']}
+
+Available tools:
+{format_available_tools(state['client_id'])}
+
+IMPORTANT - Tool Unavailability Protocol:
+
+If you need a capability that doesn't exist in your available tools:
+
+1. **Check for approximation**: Can you achieve the goal using COMBINATION of existing tools?
+   Example: No "sentiment_analysis_agent"? → Use "text_processing" + "keyword_extraction"
+
+2. **Request new capability**: If truly no workaround exists, use create_sub_agent() to specify:
+   - What capability you need
+   - Why existing tools are insufficient
+   - Input/output requirements
+
+3. **Provide partial solution**: While the new agent is being built, deliver what you CAN do:
+   - "I've completed X and Y using available tools"
+   - "For Z, I've requested a specialized agent (ETA: 2-3 sprints)"
+   - "Here's a manual workaround until then: ..."
+
+NEVER say "I can't do this" - always find a path forward.
+"""
+```
+
+#### Solution 3: Dynamically Generate Simple Sub-Agents (Advanced)
+
+**For simple analytical tasks, generate code on the fly**:
+
+```python
+@tool
+async def generate_analytical_agent(
+    task_description: str,
+    sample_input: dict,
+    expected_output_format: dict
+) -> str:
+    """
+    Automatically generate a simple analytical sub-agent using code generation.
+
+    Only works for:
+    - Data transformation tasks
+    - Statistical analysis
+    - Pattern matching
+    - Rule-based logic
+
+    NOT for:
+    - Complex ML models (requires training)
+    - External API integrations (requires authentication)
+    - Multi-step workflows (use create_sub_agent instead)
+    """
+
+    # 1. Use LLM to generate Python code
+    code_prompt = f"""
+Generate a Python function that:
+- Task: {task_description}
+- Input: {sample_input}
+- Output: {expected_output_format}
+
+Requirements:
+- Use only standard libraries (no external dependencies)
+- Include type hints
+- Add error handling
+- Return data in specified format
+"""
+
+    generated_code = await code_gen_llm.ainvoke(code_prompt)
+
+    # 2. Validate generated code (security check)
+    if not is_safe_code(generated_code):
+        return "ERROR: Generated code failed security validation. Use create_sub_agent for manual review."
+
+    # 3. Create sandboxed execution environment
+    sandbox = CodeSandbox(timeout=30, memory_limit="256MB")
+
+    # 4. Test with sample input
+    try:
+        test_result = sandbox.execute(generated_code, sample_input)
+        if validate_output(test_result, expected_output_format):
+            # Success! Register as a temporary tool
+            temp_tool_name = f"auto_{task_description[:20].replace(' ', '_')}"
+
+            # Wrap in @tool decorator
+            new_tool = create_tool_from_code(temp_tool_name, generated_code)
+
+            # Add to THIS client's registry (not global)
+            client_tools = get_client_tools(state["client_id"])
+            client_tools[temp_tool_name] = new_tool
+
+            return f"✅ Auto-generated agent '{temp_tool_name}' created and ready to use!"
+        else:
+            return "ERROR: Generated code output doesn't match expected format. Use create_sub_agent instead."
+    except Exception as e:
+        return f"ERROR: Generated code failed execution: {e}. Use create_sub_agent for manual implementation."
+```
+
+#### Complete Implementation Flow
+
+```python
+async def tools_execution_node(state: MasterAgentState):
+    """Tools node with missing tool handling"""
+
+    client_id = state["client_id"]
+    tool_calls = state["pending_actions"]
+    results = []
+
+    # Load available tools
+    available_tools = get_client_tools(client_id)
+
+    # ALWAYS include meta-tools (available to all clients)
+    available_tools.update({
+        "create_sub_agent": create_sub_agent,
+        "generate_analytical_agent": generate_analytical_agent,
+    })
+
+    for tool_call in tool_calls:
+        if tool_call.name not in available_tools:
+            # Tool doesn't exist - provide helpful error with suggestions
+            similar_tools = find_similar_tools(tool_call.name, available_tools.keys())
+
+            error_message = f"""
+Tool '{tool_call.name}' is not available.
+
+Did you mean one of these?
+{chr(10).join(f'  - {tool}' for tool in similar_tools[:3])}
+
+OR you can:
+1. Use create_sub_agent() to request this capability be built
+2. Use generate_analytical_agent() if this is a simple data transformation
+3. Approximate using combination of available tools
+
+Available tools: {', '.join(available_tools.keys())}
+"""
+
+            results.append(ToolMessage(
+                content=error_message,
+                tool_call_id=tool_call.id
+            ))
+            continue
+
+        # Tool exists - execute normally
+        tool = available_tools[tool_call.name]
+
+        if callable(tool):
+            result = await tool(**tool_call.args)
+        else:
+            # Sub-agent (compiled graph)
+            sub_agent = tool()
+            result = await sub_agent.invoke(tool_call.args)
+
+        results.append(ToolMessage(
+            content=str(result),
+            tool_call_id=tool_call.id
+        ))
+
+    return {
+        **state,
+        "messages": state["messages"] + results,
+        "completed_steps": state["completed_steps"] + [tc.name for tc in tool_calls]
+    }
+```
+
+#### Self-Evolution Workflow
+
+```
+ITERATION 1:
+Agent: "I need sentiment_analysis_agent"
+System: "Tool not found. Similar tools: text_processing, keyword_extraction"
+Agent: "I'll use create_sub_agent() to request it"
+
+ITERATION 2:
+Agent calls create_sub_agent(
+    name="sentiment_analysis_agent",
+    description="Analyze sentiment from text",
+    required_capabilities=["nlp", "ml_inference"],
+    ...
+)
+
+ITERATION 3:
+System: "Specification created. Engineering notified. ETA: 2-3 sprints"
+System: "WORKAROUND: Use text_processing + keyword_extraction for now"
+Agent: "I'll proceed with the workaround and provide partial results"
+
+LATER (after implementation):
+New sentiment_analysis_agent added to SUB_AGENT_REGISTRY
+All future clients automatically have access
+```
+
+#### Best Practices
+
+| Scenario | Recommended Approach |
+|----------|---------------------|
+| **Simple data transformation** | Use `generate_analytical_agent()` (auto-generated code) |
+| **Complex ML/AI capability** | Use `create_sub_agent()` (human implementation) |
+| **Urgent need** | Approximate with available tools while new agent is built |
+| **Similar capability exists** | Use suggested similar tool from error message |
+
+**Key Principle**: The agent should NEVER be fully blocked. It should always find a path forward, even if that path is:
+1. Partial solution with available tools
+2. Request for new capability (with ETA)
+3. Manual workaround instructions for humans
 
 ---
 
