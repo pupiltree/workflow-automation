@@ -2,13 +2,20 @@
 <sprint_planning_prompt>
   <metadata>
     <title>AI-Powered Workflow Automation Platform: Sprint-by-Sprint Implementation Plan Generator</title>
-    <version>1.0</version>
+    <version>2.3</version>
     <created_date>2025-10-10</created_date>
-    <methodology>Agile/Scrum with microservices best practices</methodology>
+    <updated_date>2025-10-11</updated_date>
+    <methodology>Agile/Scrum with microservices best practices, parallel development, and research-aligned sprint phasing</methodology>
+    <changelog>
+      <change version="2.3">MAJOR REVISION - Research-aligned MVP scope: Redefined MVP to Sprint 1-6 foundation (Services 0, 7, 8 + libraries @workflow/llm-sdk, @workflow/config-sdk); Moved Services 2, 6, 9, 15, 20 AND Service 17 to post-MVP phases per RESEARCH.md Sprint 1-18 guidance; Service 17 RAG is Sprint 7-8 (basic) and Sprint 11-12 (GraphRAG); Clarified Service 11 (basic monitoring MVP, advanced features Sprint 15-16), Service 20 (basic email Sprint 13-14, hyperpersonalization Sprint 19+); Added Helicone integration Sprint 3-4, realistic team scaling (2→4→6→8 devs), and phased parallel workstream timing</change>
+      <change version="2.2">Final architecture validation corrections: Fixed Service 11 (added incident detection/RCA), Service 20 (full hyperpersonalization capabilities), Service 2 (removed incorrect scope limitation); Enhanced mvp_008 clarity; Added Service 11 MVP scope flexibility note; Added dependency warning for Services 1,3 coordination with Service 2</change>
+      <change version="2.1">Corrected MVP definition based on architecture validation: Added Services 2, 15, 20 to MVP critical path; Fixed capability descriptions (removed "intelligent" language, clarified webhook-driven workflows); Defined Service 11 scope; Updated parallel workstreams accordingly</change>
+      <change version="2.0">Enabled parallel development from Sprint 1 with independent workstreams to maximize Claude Code effectiveness and deliver incremental automation value</change>
+    </changelog>
   </metadata>
 
   <objective>
-    Generate a comprehensive, detailed sprint-by-sprint implementation plan for building an AI-powered B2B SaaS workflow automation platform following agile methodology and microservices architecture best practices. The plan must account for realistic developer productivity metrics when using Claude Code and prioritize MVP delivery with core team before expanding to full feature set.
+    Generate a comprehensive, detailed sprint-by-sprint implementation plan for building an AI-powered B2B SaaS workflow automation platform following agile methodology and microservices architecture best practices. The plan must account for realistic developer productivity metrics when using Claude Code and enable PARALLEL DEVELOPMENT from Sprint 1, where core team builds MVP while additional developers work independently on non-MVP services. This ensures continuous automation value delivery (X% automation) even if MVP timeline extends, maximizing Claude Code's effectiveness through independent, well-scoped workstreams.
   </objective>
 
   <architecture_analysis>
@@ -153,106 +160,408 @@
     </required_actions>
   </agile_methodology_research>
 
-  <mvp_core_development_strategy>
+  <parallel_development_strategy>
+    <philosophy>
+      <principle id="phil_001">START PARALLEL DEVELOPMENT FROM SPRINT 1 - Do not wait for MVP completion</principle>
+      <principle id="phil_002">INCREMENTAL AUTOMATION VALUE - Each completed service adds X% automation capability</principle>
+      <principle id="phil_003">CLAUDE CODE OPTIMIZATION - Independent workstreams with minimal inter-developer dependencies maximize AI coding assistant effectiveness</principle>
+      <principle id="phil_004">RISK MITIGATION - If MVP timeline extends, non-MVP services still deliver measurable automation value</principle>
+      <principle id="phil_005">CONTINUOUS DELIVERY - Platform grows organically with services integrating as they complete</principle>
+    </philosophy>
+
     <team_structure>
       <core_team>
-        <size>2 developers (user + 1 additional developer)</size>
-        <focus>Core platform logic for MVP delivery</focus>
+        <size>2 developers (user + 1 additional developer) for Sprint 1-6 MVP foundation</size>
+        <focus>Sprint 1-6 MVP: Foundation + Basic Chatbot + Multi-tenancy (Services 0, 7, 8 + shared libraries @workflow/llm-sdk with Helicone, @workflow/config-sdk). Service 17 RAG is Sprint 7-8 post-MVP enhancement.</focus>
         <leverage>Claude Code for 3-4x productivity on well-defined tasks</leverage>
+        <timeline>Sprint 1-6 foundational MVP, then team scales for post-MVP services</timeline>
+        <research_alignment>Aligns with RESEARCH.md Sprint 1-2 (basic chatbot), Sprint 3-4 (persistence), Sprint 5-6 (multi-tenancy) guidance for realistic 2-developer timeline</research_alignment>
       </core_team>
-      <extended_team>
-        <timing>After MVP sandbox deployment</timing>
-        <focus>Parallel development on remaining services and features</focus>
-        <coordination>Iterate using agile methodology while core team continues improvements</coordination>
-      </extended_team>
+      <parallel_developers>
+        <size>Scales from 2→4→6→8 developers based on sprint phase and budget</size>
+        <focus>Independent non-MVP services starting after foundational infrastructure complete</focus>
+        <timing>Phased entry: Sprint 2-3 (simple services), Sprint 7+ (complex services requiring foundation)</timing>
+        <coordination>
+          <sync_mechanism>Weekly integration syncs with core team to align on shared infrastructure (Kafka topics, databases, auth patterns)</sync_mechanism>
+          <sync_mechanism>Shared development environment and CI/CD pipelines</sync_mechanism>
+          <sync_mechanism>Common observability patterns (logging, metrics, tracing)</sync_mechanism>
+          <sync_mechanism>Standardized API contracts and event schemas</sync_mechanism>
+        </coordination>
+        <workstream_assignment>
+          Each developer owns 1-2 services end-to-end, minimizing cross-developer dependencies and maximizing Claude Code effectiveness
+        </workstream_assignment>
+      </parallel_developers>
+
+      <realistic_team_scaling>
+        <phase id="sprint_1_6">
+          <sprints>Sprint 1-6 (Weeks 1-12): MVP Foundation</sprints>
+          <team_size>2 developers (core team)</team_size>
+          <focus>Foundation infrastructure + Basic chatbot + Multi-tenancy</focus>
+          <services>Services 0, 7, 8 + @workflow/llm-sdk with Helicone, @workflow/config-sdk (Service 17 RAG is Sprint 7-8 post-MVP)</services>
+        </phase>
+        <phase id="sprint_7_12">
+          <sprints>Sprint 7-12 (Weeks 13-24): Voice + Advanced Features</sprints>
+          <team_size>3-4 developers (add 1-2 for parallel work)</team_size>
+          <focus>Voice agent + GraphRAG + Advanced orchestration</focus>
+          <services>Service 9 (Voice), Service 17 GraphRAG enhancement, Service 11 full monitoring, parallel: Services 1, 3, 13, 14</services>
+        </phase>
+        <phase id="sprint_13_18">
+          <sprints>Sprint 13-18 (Weeks 25-36): PRD/Demo/CRM Integration</sprints>
+          <team_size>5-6 developers (scale for integration complexity)</team_size>
+          <focus>Business automation + Enterprise integrations</focus>
+          <services>Service 6 (PRD Builder), Service 2 (Demo Gen), Service 15 (CRM), Service 20 (basic email), parallel: Services 12, 22</services>
+        </phase>
+        <phase id="sprint_19_plus">
+          <sprints>Sprint 19+ (Weeks 37+): Full Platform + Hyperpersonalization</sprints>
+          <team_size>6-8 developers (full platform team)</team_size>
+          <focus>Advanced features + Optimization + Scale</focus>
+          <services>Service 20 hyperpersonalization features, Service 21 (Agent Copilot), optimization, production hardening</services>
+        </phase>
+        <rationale>Research shows 20-sprint roadmap (40 weeks) requires phased scaling, not immediate parallel development from Sprint 1. Each phase builds on previous foundation.</rationale>
+      </realistic_team_scaling>
     </team_structure>
 
     <mvp_definition>
+      <scope_note>Sprint 1-6 MVP focuses on FOUNDATION + BASIC CHATBOT + MULTI-TENANCY per RESEARCH.md guidance. Advanced features (PRD Builder, Voice, CRM, Hyperpersonalization) are Sprint 7-18+ post-MVP enhancements.</scope_note>
+
       <primary_capabilities>
         <capability id="mvp_001">
-          PRD Builder generates comprehensive Product Requirements Documents from client input
+          Basic chatbot execution: Service 8 (Agent Orchestration) runs zero-shot LangGraph agents with 3-5 tools, simple prompt templates, synchronous request-response
         </capability>
         <capability id="mvp_002">
-          Automation Engine generates JSON configurations from PRD Builder output
+          Persistent conversations: PostgreSQL checkpointing enables multi-turn conversations with conversation history and memory compression for long sessions
         </capability>
         <capability id="mvp_003">
-          Agent Orchestration (Service 8) runs chatbot workflows based on JSON configs
+          JSON-based configuration: Service 7 (Automation Engine) manages tenant-specific agent configs with hot-reloading (30-60 second propagation via Kafka)
         </capability>
         <capability id="mvp_004">
-          Voice Agent (Service 9) runs voicebot workflows based on JSON configs
+          Basic knowledge retrieval: Service 17 (RAG Pipeline) provides vector search with Qdrant, SPLICE chunking, namespace-per-tenant isolation (GraphRAG enhancement in Sprint 11-12)
         </capability>
         <capability id="mvp_005">
-          Intelligent tool discovery: system identifies required tools from PRD/config requirements
+          Multi-tenancy: Complete tenant isolation using PostgreSQL RLS with immutable tenant_id, Kong Workspaces for API isolation, namespace-scoped vector storage
         </capability>
         <capability id="mvp_006">
-          Intelligent tool attachment: system automatically attaches discovered tools to agent configs
+          LLM observability: Helicone integration in @workflow/llm-sdk provides semantic caching (20-30% cost savings), per-tenant token tracking, cost attribution
         </capability>
         <capability id="mvp_007">
-          Gap identification: system detects missing tools and missing integrations
+          Basic monitoring: Prometheus + Grafana for metrics, OpenTelemetry distributed tracing, basic alerting (advanced RCA reports in Sprint 15-16)
         </capability>
         <capability id="mvp_008">
-          GitHub issue automation: system creates GitHub issues for missing tools/integrations with config_id reference
-        </capability>
-        <capability id="mvp_009">
-          Config update workflow: when GitHub issue resolved, system automatically adds tool/integration to config via config_id
-        </capability>
-        <capability id="mvp_010">
-          Sandbox environment: isolated testing environment with full workflow execution
-        </capability>
-        <capability id="mvp_011">
-          Deployment workflow: one-click deployment from sandbox to production environment
-        </capability>
-        <capability id="mvp_012">
-          Multi-tenancy: complete tenant isolation using PostgreSQL RLS and namespace patterns
+          Quota management: Rate limiting via Kong (tiered: Free 100 req/hour, Pro 10K req/hour), Redis-backed distributed counting, tenant-specific limits
         </capability>
       </primary_capabilities>
 
-      <supporting_services_for_mvp>
-        <service id="svc_0">Organization &amp; Identity Management (auth, tenant setup)</service>
-        <service id="svc_6">PRD Builder &amp; Configuration Workspace</service>
-        <service id="svc_7">Automation Engine</service>
-        <service id="svc_8">Agent Orchestration (Chatbot)</service>
-        <service id="svc_9">Voice Agent (Voicebot)</service>
-        <service id="svc_11">Monitoring Engine (basic health checks)</service>
-        <service id="svc_17">RAG Pipeline (for knowledge injection)</service>
-        <lib id="lib_1">@workflow/llm-sdk</lib>
-        <lib id="lib_2">@workflow/config-sdk</lib>
-      </supporting_services_for_mvp>
+      <post_mvp_capabilities>
+        <note>The following capabilities are POST-MVP, delivered in Sprint 7-18+ per research-aligned phasing</note>
+        <capability id="post_mvp_001">Sprint 7-8: GraphRAG with Neo4j (35% accuracy improvement), SPLICE chunking optimization, reranking with ColBERT</capability>
+        <capability id="post_mvp_002">Sprint 9-10: Voice Agent (Service 9) with sub-500ms latency, LiveKit infrastructure, STT/TTS integration</capability>
+        <capability id="post_mvp_003">Sprint 11-12: Advanced multi-agent patterns (supervisor-worker, parallel tool execution, map-reduce workflows)</capability>
+        <capability id="post_mvp_004">Sprint 13-14: PRD Builder (Service 6) with multi-agent workflow, Demo Generator (Service 2) with K8s sandbox provisioning</capability>
+        <capability id="post_mvp_005">Sprint 15-16: Full monitoring (Service 11) with incident detection/creation, AI-generated RCA reports, SLA compliance tracking</capability>
+        <capability id="post_mvp_006">Sprint 17-18: CRM Integration (Service 15) with Salesforce/HubSpot bidirectional sync, OAuth 2.0 flows, idempotent operations</capability>
+        <capability id="post_mvp_007">Sprint 19+: Communication Engine hyperpersonalization (Service 20) - lifecycle personalization, cohort segmentation, A/B testing, multi-armed bandit optimization</capability>
+      </post_mvp_capabilities>
+
+      <services_by_sprint_phase>
+        <sprint_1_6_mvp_services>
+          <scope_note>Sprint 1-6 MVP services for 2-developer team - RESEARCH.md aligned foundation</scope_note>
+
+        <service id="svc_0">
+          Organization &amp; Identity Management (auth, tenant setup, JWT tokens, PostgreSQL RLS enforcement)
+          <mvp_scope>Sprint 1-2: Basic tenant CRUD, JWT auth, RLS policies. Human agent roles in Sprint 13+</mvp_scope>
+        </service>
+
+        <service id="svc_7">
+          Automation Engine (JSON config management, GitHub issue creation, hot-reload via Kafka)
+          <mvp_scope>Sprint 3-4: S3 config storage, JSON Schema validation, hot-reload. GitHub automation in Sprint 5-6</mvp_scope>
+        </service>
+
+        <service id="svc_8">
+          Agent Orchestration (Chatbot) (LangGraph two-node workflow, PostgreSQL checkpointing, zero-shot agents)
+          <mvp_scope>Sprint 1-2: Basic zero-shot agent. Sprint 3-4: Checkpointing. Sprint 5-6: Multi-tenancy with RLS</mvp_scope>
+        </service>
+
+        <lib id="lib_1">
+          @workflow/llm-sdk library (direct OpenAI/Anthropic calls, model routing, token counting, semantic caching via Helicone)
+          <mvp_scope>Sprint 1-2: Core library with OpenAI/Anthropic clients, model routing</mvp_scope>
+          <helicone_integration>Sprint 3-4: One-line Helicone integration provides 20-30% cost savings via semantic caching, per-tenant token tracking, cost attribution (RESEARCH.md Sprint 15-16 emphasis)</helicone_integration>
+          <architecture_note>Replaces Service 16 (LLM Gateway microservice). Eliminates 200-500ms network hop latency per LLM call.</architecture_note>
+        </lib>
+
+        <lib id="lib_2">
+          @workflow/config-sdk library (S3 direct access, JSON Schema validation, client-side caching)
+          <mvp_scope>Sprint 1-2: Core library with S3 client, validation, caching patterns</mvp_scope>
+          <architecture_note>Replaces Service 10 (Configuration Management microservice). Eliminates 50-100ms network hop latency per config fetch.</architecture_note>
+        </lib>
+        </sprint_1_6_mvp_services>
+
+        <sprint_7_plus_post_mvp_services>
+          <scope_note>Sprint 7-18+ post-MVP services per research-aligned phasing</scope_note>
+
+        <service id="svc_17">
+          RAG Pipeline (Qdrant vector search, SPLICE chunking, namespace-per-tenant)
+          <sprint_7_8_basic_rag>Basic RAG with Qdrant only. Sprint 7-8 per RESEARCH.md Sprint 7-8 (RAG and knowledge management) guidance.</sprint_7_8_basic_rag>
+          <sprint_11_12_graphrag>GraphRAG enhancement with Neo4j. Sprint 11-12 per RESEARCH.md Sprint 11-12 (Advanced orchestration) guidance for 35% accuracy improvement.</sprint_11_12_graphrag>
+          <research_note>RESEARCH.md shows RAG as Sprint 7-8 capability, NOT Sprint 1-6 MVP foundation. Sprint 1-6 MVP functions with zero-shot agents only.</research_note>
+        </service>
+
+        <post_mvp_additional_services>
+          <note>The following services are POST-MVP (Sprint 7-18+) per research-aligned phasing</note>
+          <service id="svc_2">Demo Generator - Sprint 13-14 (requires PRD Builder foundation)</service>
+          <service id="svc_6">PRD Builder &amp; Configuration Workspace - Sprint 13-14 (complex multi-agent workflow)</service>
+          <service id="svc_9">Voice Agent (Voicebot) - Sprint 9-10 (requires LiveKit infrastructure, sub-500ms optimization)</service>
+          <service id="svc_11">Monitoring Engine (full) - Sprint 15-16 (MVP has basic Prometheus/Grafana; AI-generated RCA reports are Sprint 15-16 per RESEARCH.md)</service>
+          <service id="svc_15">CRM Integration - Sprint 17-18 (OAuth flows, Salesforce/HubSpot sync)</service>
+          <service id="svc_20">Communication Engine (full) - Sprint 19+ (MVP may have basic email in Sprint 13-14; hyperpersonalization features are Sprint 19+)</service>
+        </post_mvp_additional_services>
+        </sprint_7_plus_post_mvp_services>
+      </services_by_sprint_phase>
 
       <infrastructure_for_mvp>
-        <component id="infra_001">PostgreSQL with Row-Level Security</component>
-        <component id="infra_002">Qdrant vector database with namespace isolation</component>
-        <component id="infra_003">Redis for caching and hot-reload</component>
-        <component id="infra_004">Apache Kafka (subset of topics for MVP)</component>
-        <component id="infra_005">Kong API Gateway (basic routing and auth)</component>
-        <component id="infra_006">Kubernetes cluster (development + sandbox + production)</component>
-        <component id="infra_007">GitHub integration for issue automation</component>
-        <component id="infra_008">S3 for configuration storage</component>
+        <scope_note>Sprint 1-6 MVP infrastructure - phased deployment per research guidance</scope_note>
+
+        <component id="infra_001">
+          PostgreSQL with Row-Level Security (Supabase)
+          <mvp_phase>Sprint 1: Setup, Sprint 2: RLS policies, Sprint 5-6: Multi-tenant schema refinement</mvp_phase>
+        </component>
+
+        <component id="infra_002">
+          Qdrant vector database with namespace isolation
+          <mvp_phase>Sprint 7-8 (POST-MVP): RAG Pipeline implementation. NOT required for Sprint 1-6 MVP foundation</mvp_phase>
+          <research_note>RESEARCH.md shows RAG as Sprint 7-8, zero-shot agents sufficient for Sprint 1-6 MVP</research_note>
+        </component>
+
+        <component id="infra_003">
+          Redis (caching, hot-reload notifications, distributed counting)
+          <mvp_phase>Sprint 1: Setup, Sprint 3-4: Hot-reload notifications, Sprint 5-6: Rate limiting counters</mvp_phase>
+        </component>
+
+        <component id="infra_004">
+          Apache Kafka (event bus for service coordination)
+          <mvp_phase>Sprint 1: Basic cluster setup with 3-5 core topics (auth_events, client_events, config_events)</mvp_phase>
+          <topics>Sprint 1-6 MVP topics: auth_events, client_events, config_events, conversation_events. Full 18 topics in Sprint 7+</topics>
+        </component>
+
+        <component id="infra_005">
+          Kong API Gateway (routing, auth, rate limiting)
+          <mvp_phase>Sprint 1: Basic setup with JWT auth plugin, Sprint 5-6: Workspaces for tenant isolation, rate limiting</mvp_phase>
+        </component>
+
+        <component id="infra_006">
+          Kubernetes cluster (container orchestration)
+          <mvp_phase>Sprint 1: Dev/staging/prod namespaces, basic deployments. Sprint 3-4: Service mesh (optional), autoscaling</mvp_phase>
+        </component>
+
+        <component id="infra_007">
+          Helicone (LLM observability proxy)
+          <mvp_phase>Sprint 3-4: One-line integration in @workflow/llm-sdk for semantic caching (20-30% cost savings), per-tenant token tracking</mvp_phase>
+          <research_note>RESEARCH.md Sprint 15-16 emphasizes Helicone for LLM observability with one-line integration, immediate value</research_note>
+        </component>
+
+        <component id="infra_008">
+          S3 (configuration storage)
+          <mvp_phase>Sprint 1-2: Bucket setup, @workflow/config-sdk implementation for direct access</mvp_phase>
+        </component>
+
+        <component id="infra_009">
+          Prometheus + Grafana (metrics and dashboards)
+          <mvp_phase>Sprint 1-2: Basic setup, Sprint 3-4: Service metrics dashboards, Sprint 5-6: Alerting rules</mvp_phase>
+          <research_note>Advanced monitoring (AI-generated RCA reports) is Sprint 15-16, basic observability sufficient for MVP</research_note>
+        </component>
+
+        <component id="infra_010">
+          OpenTelemetry (distributed tracing)
+          <mvp_phase>Sprint 1-2: SDK integration in services, basic trace visualization</mvp_phase>
+        </component>
+
+        <component id="infra_011">
+          GitHub (issue automation, CI/CD)
+          <mvp_phase>Sprint 1: CI/CD pipelines, Sprint 5-6: Automated issue creation from Service 7</mvp_phase>
+        </component>
+
+        <post_mvp_infrastructure>
+          <note>The following infrastructure is POST-MVP (Sprint 7+)</note>
+          <component id="infra_012">Neo4j (graph database) - Sprint 11-12 for GraphRAG (35% accuracy improvement)</component>
+          <component id="infra_013">LiveKit (voice infrastructure) - Sprint 9-10 for Voice Agent (Service 9)</component>
+          <component id="infra_014">TimescaleDB (time-series analytics) - Sprint 12+ for Analytics service</component>
+        </post_mvp_infrastructure>
       </infrastructure_for_mvp>
     </mvp_definition>
 
-    <post_mvp_expansion>
-      <parallel_workstreams>
-        <workstream id="ws_001">
-          Sales pipeline services (Services 1, 2, 3): research, demo generation, document generation
-        </workstream>
-        <workstream id="ws_002">
-          Customer operations (Services 13, 14, 15, 21): customer success, support, CRM integration, agent copilot
-        </workstream>
-        <workstream id="ws_003">
-          Analytics and monitoring enhancements (Services 11, 12): advanced monitoring, business intelligence
-        </workstream>
-        <workstream id="ws_004">
-          Communication engine (Service 20): email/SMS, hyperpersonalization, A/B testing
-        </workstream>
-        <workstream id="ws_005">
-          Billing system (Service 22): subscription management, invoicing, payment processing
-        </workstream>
-      </parallel_workstreams>
-    </post_mvp_expansion>
-  </mvp_core_development_strategy>
+    <parallel_workstreams>
+      <scope_note>Research-aligned parallel development strategy: Core team (2 devs) focuses on Sprint 1-6 MVP foundation while team scales to 3-4 developers in Sprint 7-12, then 5-6 developers in Sprint 13-18 for parallel workstreams</scope_note>
+
+      <critical_path_analysis>
+        <action>Identify Sprint 1-6 MVP critical path services: Services 0, 7, 8 + libraries (@workflow/llm-sdk with Helicone, @workflow/config-sdk). Service 17 RAG is Sprint 7-8.</action>
+        <action>Identify Sprint 7-12 parallel-ready services: Services 1, 3, 9 (Voice), 11 (full monitoring), 13, 14, 17 GraphRAG enhancement</action>
+        <action>Identify Sprint 13-18 complex services requiring foundation: Services 2, 6, 15, 20 (basic email), 12, 22</action>
+        <action>Sequence services with dependencies: Service 2 (Demo Gen) requires Service 1 (Research); Service 6 (PRD) is complex multi-agent</action>
+        <action>Calculate earliest possible start date for each parallel workstream based on infrastructure readiness</action>
+        <action>Plan integration points where parallel services coordinate with core team (weekly syncs)</action>
+        <action>PHASED PARALLEL WORK - Research shows 20-sprint (40-week) roadmap requires phased team scaling, not immediate Sprint 1 parallelism</action>
+        <action>Calculate cumulative automation value as each service completes (independent of MVP completion)</action>
+      </critical_path_analysis>
+
+      <workstream id="ws_001">
+        <name>Sales Pipeline Automation (Sprint 7-14)</name>
+        <services>Services 1 (Research Engine), 3 (Sales Document Generator), 2 (Demo Generator)</services>
+        <dependencies>
+          - Service 1: Minimal (requires Service 0 auth, PostgreSQL, Kafka) - START Sprint 7-9
+          - Service 3: Minimal (requires Service 0 auth) - START Sprint 7-9
+          - Service 2: HIGH (requires Service 1 research_events, Service 6 PRD patterns) - START Sprint 13-14
+        </dependencies>
+        <start_timing>Sprint 7-9 (Services 1, 3 parallel), Sprint 13-14 (Service 2 after PRD Builder foundation)</start_timing>
+        <automation_value>35% automation of sales pipeline (research → proposals → demo environments)</automation_value>
+        <claude_code_optimization>High for Services 1,3 (document generation, clear patterns); Medium for Service 2 (K8s sandbox complexity)</claude_code_optimization>
+        <developer_count>2 developers Sprint 7-12 (1 for Service 1, 1 for Service 3), +1 developer Sprint 13-14 (Service 2)</developer_count>
+        <research_alignment>Service 1,3 are straightforward CRUD/document generation per research. Service 2 delayed to Sprint 13-14 for K8s complexity.</research_alignment>
+      </workstream>
+
+      <workstream id="ws_002">
+        <name>Voice + Advanced RAG (Sprint 9-12)</name>
+        <services>Service 9 (Voice Agent), Service 17 GraphRAG enhancement, Service 11 (full monitoring)</services>
+        <dependencies>
+          - Service 9: HIGH (requires Service 8 agent patterns, LiveKit infrastructure) - START Sprint 9-10
+          - Service 17 GraphRAG: MEDIUM (requires Sprint 7-8 basic RAG foundation, Neo4j setup) - START Sprint 11-12
+          - Service 11 full: MEDIUM (requires basic Prometheus/Grafana from Sprint 1-6) - START Sprint 15-16
+        </dependencies>
+        <start_timing>Sprint 9-10 (Voice), Sprint 11-12 (GraphRAG), Sprint 15-16 (full monitoring with RCA)</start_timing>
+        <automation_value>25% automation value (voice interactions, 35% better RAG accuracy, intelligent incident detection)</automation_value>
+        <claude_code_optimization>Medium - Voice requires sub-500ms optimization, GraphRAG requires Neo4j expertise, RCA requires LLM integration</claude_code_optimization>
+        <developer_count>1-2 developers Sprint 9-12 (Voice + GraphRAG can overlap), +1 developer Sprint 15-16 (RCA reports)</developer_count>
+        <research_alignment>RESEARCH.md Sprint 9-10 (Voice), Sprint 11-12 (GraphRAG), Sprint 15-16 (advanced monitoring) guidance</research_alignment>
+      </workstream>
+
+      <workstream id="ws_003">
+        <name>Customer Operations (Sprint 7-12)</name>
+        <services>Services 13 (Customer Success), 14 (Support Engine)</services>
+        <dependencies>Minimal - requires Service 0 (auth), Kafka topics, PostgreSQL RLS</dependencies>
+        <start_timing>Sprint 7-9 (both services can start in parallel, relatively simple CRUD + webhooks)</start_timing>
+        <automation_value>20% automation of customer support and success workflows (health scoring, ticket automation)</automation_value>
+        <claude_code_optimization>High - CRUD APIs, webhook integrations, playbook automation, well-defined patterns</claude_code_optimization>
+        <developer_count>1 developer (Services 13+14 built sequentially by same developer, or 2 devs in parallel)</developer_count>
+        <research_alignment>Customer ops services straightforward per research, no blocking dependencies on MVP</research_alignment>
+      </workstream>
+
+      <workstream id="ws_004">
+        <name>PRD Builder + CRM Integration (Sprint 13-18)</name>
+        <services>Service 6 (PRD Builder), Service 15 (CRM Integration), Service 20 (basic email)</services>
+        <dependencies>
+          - Service 6: HIGH (complex multi-agent workflow, requires Service 8 agent patterns mature, Service 17 RAG) - START Sprint 13-14
+          - Service 15: MEDIUM (OAuth flows, Salesforce/HubSpot APIs) - START Sprint 17-18
+          - Service 20 basic: LOW (email sending, templates) - START Sprint 13-14
+        </dependencies>
+        <start_timing>Sprint 13-14 (PRD Builder, basic email), Sprint 17-18 (CRM integration)</start_timing>
+        <automation_value>30% automation (PRD generation, CRM sync, automated email workflows)</automation_value>
+        <claude_code_optimization>Low-Medium for Service 6 (complex multi-agent), Medium for Service 15 (OAuth complexity), High for Service 20 basic</claude_code_optimization>
+        <developer_count>2-3 developers Sprint 13-18 (1 for PRD Builder, 1 for CRM, 1 for email)</developer_count>
+        <research_alignment>RESEARCH.md Sprint 13-14 (PRD Builder complexity), Sprint 17-18 (CRM integrations) guidance</research_alignment>
+      </workstream>
+
+      <workstream id="ws_005">
+        <name>Analytics + Billing (Sprint 7-12)</name>
+        <services>Service 12 (Analytics), Service 22 (Billing)</services>
+        <dependencies>
+          - Service 12: MEDIUM (requires Kafka events from other services) - START Sprint 10-12 after events flowing
+          - Service 22: MINIMAL (requires Service 0 auth, Stripe API) - START Sprint 7-9
+        </dependencies>
+        <start_timing>Sprint 7-9 (Billing), Sprint 10-12 (Analytics after event schemas stable)</start_timing>
+        <automation_value>15% automation (subscription management, usage analytics, automated billing)</automation_value>
+        <claude_code_optimization>High for Service 22 (Stripe integration well-documented), Medium for Service 12 (event aggregation complexity)</claude_code_optimization>
+        <developer_count>1 developer Sprint 7-9 (Billing), +1 developer Sprint 10-12 (Analytics)</developer_count>
+        <research_alignment>Billing critical for monetization, Analytics requires event maturity per best practices</research_alignment>
+      </workstream>
+
+      <workstream id="ws_006">
+        <name>Hyperpersonalization + Agent Copilot (Sprint 19+)</name>
+        <services>Service 20 (full hyperpersonalization features), Service 21 (Agent Copilot)</services>
+        <dependencies>
+          - Service 20 hyperpersonalization: HIGH (requires Service 12 Analytics, A/B testing infrastructure) - START Sprint 19-20
+          - Service 21: VERY HIGH (aggregates 21+ event topics, requires all services operational) - START Sprint 21+
+        </dependencies>
+        <start_timing>Sprint 19-20 (Hyperpersonalization), Sprint 21+ (Agent Copilot after platform stabilization)</start_timing>
+        <automation_value>20% automation (lifecycle personalization, cohort segmentation, agent assistance across all services)</automation_value>
+        <claude_code_optimization>Medium for Service 20 (A/B testing, multi-armed bandit), Low for Service 21 (21+ event topics integration)</claude_code_optimization>
+        <developer_count>1-2 developers Sprint 19+ (Service 20), 1-2 developers Sprint 21+ (Service 21 very complex)</developer_count>
+        <research_alignment>Advanced features post-MVP, Service 21 requires full platform maturity</research_alignment>
+      </workstream>
+
+      <cumulative_automation_value>
+        <principle>Each workstream completion adds automation capability independent of MVP completion timing</principle>
+        <scenario id="scenario_1">
+          <timeline>Sprint 12 (Week 24)</timeline>
+          <mvp_status>Sprint 1-6 MVP complete (Foundation + Basic Chatbot), Sprint 7-8 RAG complete</mvp_status>
+          <parallel_completion>Services 1, 3, 13, 14, 22 (Sales research/docs, Customer ops, Billing)</parallel_completion>
+          <automation_delivered>45% automation (35% sales + 20% customer ops + 15% billing - some overlap)</automation_delivered>
+        </scenario>
+        <scenario id="scenario_2">
+          <timeline>Sprint 18 (Week 36)</timeline>
+          <mvp_status>Sprint 1-12 complete (MVP + Voice + GraphRAG + Advanced orchestration)</mvp_status>
+          <parallel_completion>Services 1, 2, 3, 6, 13, 14, 15, 20 basic, 22, 12</parallel_completion>
+          <automation_delivered>70% automation (full sales pipeline, PRD generation, CRM sync, customer ops, billing, analytics)</automation_delivered>
+        </scenario>
+        <scenario id="scenario_3">
+          <timeline>Sprint 24+ (Week 48+)</timeline>
+          <mvp_status>Full platform operational</mvp_status>
+          <parallel_completion>All services including Service 20 hyperpersonalization, Service 21 Agent Copilot</parallel_completion>
+          <automation_delivered>90-95% automation (complete platform with advanced AI features)</automation_delivered>
+        </scenario>
+        <risk_mitigation>Research-aligned phasing ensures realistic timelines. If MVP extends, parallel workstreams still deliver incremental value per scenario planning.</risk_mitigation>
+        <team_scaling_note>Parallel development increases from Sprint 7 (3-4 devs) to Sprint 13 (5-6 devs) to Sprint 19+ (6-8 devs), not immediate Sprint 1 parallelism</team_scaling_note>
+      </cumulative_automation_value>
+    </parallel_workstreams>
+  </parallel_development_strategy>
 
   <sprint_planning_requirements>
+    <sprint_1_foundation>
+      <objective>Sprint 1-6 MVP establishes foundation infrastructure + basic chatbot + multi-tenancy (RESEARCH.md-aligned 2-developer roadmap)</objective>
+      <scope_note>Sprint 1-6 foundation enables team scaling to 3-4 developers in Sprint 7, then 5-6 in Sprint 13, 6-8 in Sprint 19+ per research guidance</scope_note>
+
+      <critical_deliverables>
+        <deliverable id="sprint1_001">PostgreSQL setup with Row-Level Security (RLS) patterns and multi-tenancy schema design</deliverable>
+        <deliverable id="sprint1_002">Kafka cluster setup with topic naming conventions (3-5 core topics: auth_events, client_events, config_events, conversation_events)</deliverable>
+        <deliverable id="sprint1_003">Kong API Gateway with JWT authentication, basic routing (Workspaces + rate limiting in Sprint 5-6)</deliverable>
+        <deliverable id="sprint1_004">Service 0 (Organization &amp; Identity Management) - Basic tenant CRUD, JWT auth, RLS policies</deliverable>
+        <deliverable id="sprint1_005">@workflow/llm-sdk - Core library with OpenAI/Anthropic clients, model routing (Helicone in Sprint 3-4)</deliverable>
+        <deliverable id="sprint1_006">@workflow/config-sdk - S3 direct access, JSON Schema validation, caching</deliverable>
+        <deliverable id="sprint1_007">Service 8 (Agent Orchestration) - Basic zero-shot LangGraph agent (checkpointing Sprint 3-4, multi-tenancy Sprint 5-6)</deliverable>
+        <deliverable id="sprint1_008">Service 7 (Automation Engine) - S3 config storage, JSON validation, hot-reload (GitHub automation Sprint 5-6)</deliverable>
+        <deliverable id="sprint1_009">CI/CD pipeline templates per service (GitHub Actions)</deliverable>
+        <deliverable id="sprint1_010">Kubernetes cluster (dev/staging/prod namespaces, basic deployments)</deliverable>
+        <deliverable id="sprint1_011">Observability foundation: OpenTelemetry, Prometheus + Grafana, logging patterns</deliverable>
+        <deliverable id="sprint1_012">Development environment documentation for team scaling in Sprint 7+</deliverable>
+        <deliverable id="sprint1_013">Architecture Decision Records (ADRs) documenting foundational patterns</deliverable>
+      </critical_deliverables>
+
+      <parallel_enablement>
+        <phase id="sprint_7_enablement">
+          After Sprint 1-6 MVP completion, team scales to 3-4 developers. Parallel developers can independently start:
+          - Services 1, 3 (Sales Pipeline) - Minimal dependencies on Service 0 auth, PostgreSQL, Kafka
+          - Services 13, 14 (Customer Ops) - Minimal dependencies on Service 0, Kafka, PostgreSQL RLS
+          - Service 22 (Billing) - Minimal dependencies on Service 0, Stripe API
+          - Service 9 (Voice) - HIGH dependency on Service 8 agent patterns, requires LiveKit infrastructure
+          - Service 17 (RAG) - Basic RAG with Qdrant (GraphRAG Sprint 11-12 requires Neo4j)
+        </phase>
+
+        <phase id="sprint_13_enablement">
+          After Sprint 7-12 (Voice + GraphRAG + Advanced orchestration), team scales to 5-6 developers. Additional services:
+          - Service 6 (PRD Builder) - Complex multi-agent workflow requires Service 8 patterns mature, Service 17 RAG
+          - Service 2 (Demo Gen) - Requires Service 1 (research_events), K8s sandbox provisioning
+          - Service 15 (CRM) - OAuth flows, Salesforce/HubSpot APIs
+          - Service 20 basic (Email) - Email sending, templates (hyperpersonalization Sprint 19+)
+          - Service 12 (Analytics) - Requires stable Kafka event schemas
+        </phase>
+
+        <phase id="sprint_19_enablement">
+          After Sprint 13-18, team scales to 6-8 developers for advanced features:
+          - Service 20 hyperpersonalization - A/B testing, cohort segmentation, multi-armed bandit
+          - Service 21 (Agent Copilot) - Aggregates 21+ event topics, requires full platform maturity
+        </phase>
+
+        <research_alignment_note>RESEARCH.md shows 20-sprint (40-week) roadmap requires phased team scaling: Sprint 1-6 (2 devs foundation), Sprint 7-12 (3-4 devs), Sprint 13-18 (5-6 devs), Sprint 19+ (6-8 devs). Not immediate Sprint 1 parallelism.</research_alignment_note>
+      </parallel_enablement>
+    </sprint_1_foundation>
+
     <sprint_structure>
       <duration>2 weeks per sprint</duration>
       <ceremonies>
@@ -261,6 +570,7 @@
         <ceremony>Sprint Review (2 hours at sprint end)</ceremony>
         <ceremony>Sprint Retrospective (1.5 hours at sprint end)</ceremony>
         <ceremony>Backlog Refinement (ongoing throughout sprint)</ceremony>
+        <ceremony>Weekly Integration Sync (1 hour) - Core team + Parallel developers to align on shared infrastructure and integration points</ceremony>
       </ceremonies>
     </sprint_structure>
 
@@ -304,13 +614,26 @@
 
     <critical_path_analysis>
       <required_actions>
-        <action id="crit_001">Identify services that block other services (foundation layer must complete first)</action>
-        <action id="crit_002">Map dependencies between services using event topics and API calls</action>
-        <action id="crit_003">Determine parallel work opportunities where teams can work independently</action>
-        <action id="crit_004">Calculate earliest possible start date for each service based on dependencies</action>
-        <action id="crit_005">Identify integration points requiring multi-sprint coordination</action>
-        <action id="crit_006">Plan integration sprints where multiple services come together</action>
+        <action id="crit_001">Identify Sprint 1-6 MVP critical path services (Services 0, 7, 8 + libraries @workflow/llm-sdk with Helicone, @workflow/config-sdk). Service 17 RAG is Sprint 7-8, not Sprint 1-6 MVP.</action>
+        <action id="crit_002">Identify Sprint 7-12 parallel-ready services (Services 1, 3, 9, 13, 14, 17 GraphRAG enhancement, 22, Service 11 full monitoring Sprint 15-16)</action>
+        <action id="crit_003">Identify Sprint 13-18 complex services requiring foundation (Services 2, 6, 12, 15, Service 20 basic email)</action>
+        <action id="crit_004">Identify Sprint 19+ advanced services (Service 20 hyperpersonalization, Service 21 Agent Copilot)</action>
+        <action id="crit_005">Map dependencies between services using event topics and API calls to determine earliest possible start dates</action>
+        <action id="crit_006">Calculate earliest possible start date for each parallel workstream based on infrastructure readiness and dependency satisfaction</action>
+        <action id="crit_007">Identify integration points requiring coordination between core team (Sprint 1-6) and parallel developers (Sprint 7+)</action>
+        <action id="crit_008">Plan team scaling strategy: 2 devs (Sprint 1-6) → 3-4 devs (Sprint 7-12) → 5-6 devs (Sprint 13-18) → 6-8 devs (Sprint 19+)</action>
+        <action id="crit_009">PHASED PARALLEL WORK per research alignment - No immediate Sprint 1 parallelism, team scales as foundation matures</action>
+        <action id="crit_010">Calculate cumulative automation value as each service completes (independent of MVP completion timing)</action>
       </required_actions>
+
+      <claude_code_optimization_strategy>
+        <principle id="opt_001">Research-aligned phasing (Sprint 1-6 MVP foundation) enables stable foundation before parallel scaling</principle>
+        <principle id="opt_002">Independent developer workstreams minimize context switching and coordination overhead</principle>
+        <principle id="opt_003">Well-scoped services with clear boundaries maximize Claude Code effectiveness (3-4x productivity)</principle>
+        <principle id="opt_004">Each developer owns 1-2 services end-to-end, reducing inter-developer dependencies</principle>
+        <principle id="opt_005">Sprint 1-6 foundation establishes shared patterns enabling Sprint 7+ parallel developers to start independently</principle>
+        <principle id="opt_006">Weekly integration syncs prevent divergence while maintaining developer independence</principle>
+      </claude_code_optimization_strategy>
     </critical_path_analysis>
 
     <testing_strategy>
@@ -352,46 +675,75 @@
     <structure>
       <section id="executive_summary">
         High-level overview of total sprint count, MVP timeline, full platform timeline
+        PARALLEL DEVELOPMENT STRATEGY: Core team MVP timeline vs. Parallel workstream timelines
+        CUMULATIVE AUTOMATION VALUE: X% automation delivered as each service completes (independent of MVP)
       </section>
       <section id="productivity_analysis">
         Validated productivity metrics from research with citations
         Explanation of how metrics were applied to sprint calculations
         Comparison of user observations vs. research findings
+        CLAUDE CODE OPTIMIZATION: Why independent workstreams maximize AI coding assistant effectiveness
       </section>
       <section id="architecture_summary">
         Service inventory with complexity ratings
-        Critical path dependencies visualization
+        Critical path dependencies visualization (MVP critical path vs. parallel-ready services)
         Technology stack per service
+        DEPENDENCY MATRIX: Which services can start in Sprint 1-3 vs. which require MVP blockers
       </section>
       <section id="mvp_roadmap">
-        Detailed sprint-by-sprint plan for MVP (core team focus)
+        Detailed sprint-by-sprint plan for Sprint 1-6 MVP FOUNDATION (core team 2 developers)
         Each sprint includes: goal, services, user stories, tasks, story points, capacity, dependencies, risks, DoD
+        SPRINT 1-6 MVP SERVICES: Services 0, 7, 8 + shared libraries (@workflow/llm-sdk with Helicone, @workflow/config-sdk)
+        SERVICE 17 RAG: Sprint 7-8 (POST-MVP) - Basic RAG with Qdrant, GraphRAG Sprint 11-12 with Neo4j
+        RESEARCH ALIGNMENT: Aligns with RESEARCH.md Sprint 1-2 (basic chatbot), Sprint 3-4 (persistence), Sprint 5-6 (multi-tenancy)
       </section>
-      <section id="post_mvp_roadmap">
-        Detailed sprint-by-sprint plan for remaining services (extended team)
-        Parallel workstream coordination
+      <section id="parallel_workstream_roadmap">
+        Detailed sprint-by-sprint plan for PHASED PARALLEL WORKSTREAMS (team scaling Sprint 7+)
+        SPRINT 7-12 WORKSTREAMS (3-4 developers): Services 1, 3, 9, 13, 14, 17 GraphRAG, 22
+        SPRINT 13-18 WORKSTREAMS (5-6 developers): Services 2, 6, 12, 15, Service 20 basic email
+        SPRINT 19+ WORKSTREAMS (6-8 developers): Service 20 hyperpersonalization, Service 21 Agent Copilot
+        Each workstream includes: services, dependencies, start timing, automation value, Claude Code optimization rating
+        WORKSTREAM ASSIGNMENTS: Which developer works on which services, minimizing inter-developer dependencies
+        INTEGRATION POINTS: When parallel services integrate with core team deliverables (weekly syncs)
+      </section>
+      <section id="cumulative_automation_tracking">
+        Sprint-by-sprint cumulative automation value calculation per research-aligned phasing
+        Track automation percentage as services complete (independent of MVP completion timing)
+        Example scenarios (REVISED per v2.3):
+        - Sprint 6 (Week 12): Sprint 1-6 MVP complete (Foundation + Basic Chatbot + Multi-tenancy) - 15% automation baseline
+        - Sprint 12 (Week 24): Sprint 7-8 RAG + parallel Services 1, 3, 13, 14, 22 complete - 45% automation
+        - Sprint 18 (Week 36): Sprint 9-12 Voice/GraphRAG + parallel Services 2, 6, 15, 20 basic, 12 complete - 70% automation
+        - Sprint 24+ (Week 48+): Full platform with Service 20 hyperpersonalization, Service 21 Agent Copilot - 90-95% automation
       </section>
       <section id="team_scaling_plan">
-        When to add developers
-        How to organize teams around services
-        Cross-team coordination mechanisms
+        PHASED TEAM SCALING per research guidance (NOT immediate Sprint 1 parallelism):
+        - Sprint 1-6 (Weeks 1-12): 2 developers (Core team MVP foundation)
+        - Sprint 7-12 (Weeks 13-24): 3-4 developers (Core team + parallel developers for Services 1, 3, 9, 13, 14, 17 GraphRAG, 22)
+        - Sprint 13-18 (Weeks 25-36): 5-6 developers (Scale for Services 2, 6, 12, 15, Service 20 basic)
+        - Sprint 19+ (Weeks 37+): 6-8 developers (Advanced features + optimization)
+        How to organize teams around independent workstreams per phase
+        Cross-team coordination mechanisms (weekly integration syncs starting Sprint 7)
+        Sprint 1-6 foundation establishes shared patterns enabling Sprint 7+ parallel work
       </section>
       <section id="risk_register">
         Identified risks across all sprints
         Mitigation strategies
         Contingency plans
+        PARALLEL DEVELOPMENT RISKS: Integration complexity, version drift, conflicting patterns - and mitigations
       </section>
       <section id="success_metrics">
         KPIs to track per sprint
-        Velocity tracking
+        Velocity tracking (per team and per workstream)
         Quality metrics (test coverage, bug rates, incident rates)
+        AUTOMATION VALUE TRACKING: % automation delivered independent of MVP completion
       </section>
     </structure>
     <format>
       Detailed narrative with embedded tables, charts, and diagrams (described in text)
       Each sprint documented comprehensively
-      Clear dependencies and sequencing
+      Clear dependencies and sequencing for BOTH MVP critical path AND parallel workstreams
       Realistic timelines based on validated productivity data
+      VISUAL GANTT-STYLE REPRESENTATION: Core team timeline vs. parallel developer timelines (described in text)
     </format>
   </output_format>
 
@@ -478,19 +830,31 @@
       Prioritize MVP delivery with clear definition of what constitutes deployable minimum viable product
     </instruction>
     <instruction id="final_006">
-      Show how core team (2 developers) builds MVP first, then extended team joins for parallel workstreams
+      CRITICAL: Show PARALLEL DEVELOPMENT from Sprint 1 - core team (2 developers) builds MVP critical path while additional developers work independently on non-MVP services starting Sprint 2-3
     </instruction>
     <instruction id="final_007">
-      Include specific user stories, acceptance criteria, and technical tasks for each sprint
+      CRITICAL: Calculate and track cumulative automation value as each service completes, independent of MVP completion
     </instruction>
     <instruction id="final_008">
-      Identify all risks, dependencies, and blockers explicitly
+      CRITICAL: Optimize for Claude Code effectiveness by assigning independent workstreams (each developer owns 1-2 services end-to-end) to minimize inter-developer dependencies
     </instruction>
     <instruction id="final_009">
-      Provide clear definition of "Done" for each sprint aligned with quality standards
+      Include specific user stories, acceptance criteria, and technical tasks for each sprint (both MVP critical path and parallel workstreams)
     </instruction>
     <instruction id="final_010">
-      Format output as detailed document suitable for project management tool import (Jira, Linear, etc.)
+      Identify all risks, dependencies, and blockers explicitly for BOTH MVP critical path and parallel workstreams
+    </instruction>
+    <instruction id="final_011">
+      Provide clear definition of "Done" for each sprint aligned with quality standards
+    </instruction>
+    <instruction id="final_012">
+      Format output as detailed document suitable for project management tool import (Jira, Linear, etc.) with separate epics/tracks for MVP critical path and each parallel workstream
+    </instruction>
+    <instruction id="final_013">
+      Show integration points where parallel workstreams coordinate with core team (weekly syncs, shared infrastructure dependencies)
+    </instruction>
+    <instruction id="final_014">
+      Demonstrate risk mitigation: If MVP takes 20 sprints instead of 12, parallel workstreams still deliver 70-80% automation value
     </instruction>
   </final_instructions>
 </sprint_planning_prompt>
